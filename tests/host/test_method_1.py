@@ -305,8 +305,38 @@ def test_kmc_fmm_1():
     A.domain = domain.BaseDomainHalo(extent=(E,E,E))
     A.domain.boundary_condition = domain.BoundaryTypePeriodic()
 
-    fmm = KMCFMM(domain=A.domain, r=R, l=L, boundary_condition='pbc')
+    A.npart = N
 
+
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+
+    A.crr = data.ScalarArray(ncomp=1)
+
+    rng = np.random.RandomState(seed=1234)
+
+    if N == 4:
+        ra = 0.25 * E
+        nra = -0.25 * E
+
+        A.P[0,:] = ( 1.6,  1.6, 0.0)
+        A.P[1,:] = (-1.500001,  1.499999, 0.0)
+        A.P[2,:] = (-1.500001, -1.500001, 0.0)
+        A.P[3,:] = ( 0.0,  0.0, 0.0)
+
+        A.Q[0,0] = -1.
+        A.Q[1,0] = 1.
+        A.Q[2,0] = -1.
+        A.Q[3,0] = 0.
+
+    A.scatter_data_from(0)
+
+    kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
+        domain=A.domain, r=R, l=L, boundary_condition='free_space')
+    
+    kmc_fmm.initialise()
+    
+    print(kmc_fmm.energy)
 
 
 
