@@ -82,7 +82,6 @@ def get_cell_disp(s, ix, R):
     
     disp = (px[0] - ec[0], px[1] - ec[1], px[2] - ec[2])
     sph = spherical(disp)
-
     
     return sph
 
@@ -280,7 +279,7 @@ def test_method_1():
     u2 = charge_indirect_energy(A, 0, fmm)
     
     phi_py = phi_py - u1 + u2 
-
+    
     phi_direct = _direct()
     print_diff()
     
