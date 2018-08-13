@@ -162,137 +162,13 @@ def charge_indirect_energy(s, ix, fmm):
     return s.Q[ix,0] * compute_phi_local(fmm.L, lexp, disp)[0]
 
 
-@pytest.mark.skipif("MPISIZE>1")
-def test_method_1():
-
-    R = 3
-    eps = 10.**-6
-    L = 10
-    free_space = True
-
-    N = 4
-    E = 4.
-    rc = E/4
-
-    A = state.State()
-    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
-    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
-
-    ASYNC = False
-    DIRECT = True if MPISIZE == 1 else False
-
-    DIRECT= True
-    EWALD = True
-
-    fmm = PyFMM(domain=A.domain, r=R, l=L, free_space=free_space)
-
-    A.npart = N
-
-    rng = np.random.RandomState(seed=1234)
-
-    A.P = data.PositionDat(ncomp=3)
-    A.F = data.ParticleDat(ncomp=3)
-    A.FE = data.ParticleDat(ncomp=3)
-    A.Q = data.ParticleDat(ncomp=1)
-
-    A.crr = data.ScalarArray(ncomp=1)
-    A.cri = data.ScalarArray(ncomp=1)
-    A.crs = data.ScalarArray(ncomp=1)
 
 
-    if N == 4:
-        ra = 0.25 * E
-        nra = -0.25 * E
+def test_kmc_fmm_free_space_1():
+    """
+    Tests proposed moves one by one against direct calculation.
+    """
 
-        A.P[0,:] = ( 1.6,  1.6, 0.0)
-        A.P[1,:] = (-1.500001,  1.499999, 0.0)
-        A.P[2,:] = (-1.500001, -1.500001, 0.0)
-        A.P[3,:] = ( 0.0,  0.0, 0.0)
-
-        A.Q[0,0] = -1.
-        A.Q[1,0] = 1.
-        A.Q[2,0] = -1.
-        A.Q[3,0] = 0.
-
-    elif N == 2:
-
-        A.P[0,:] = ( 1.51,  1.51, 0.0)
-        A.P[1,:] = (-1.49,  1.51, 0.0)
-
-        A.Q[0,0] = 1.
-        A.Q[1,0] = 1.
-
-
-
-    A.scatter_data_from(0)
-
-    t0 = time.time()
-    phi_py = fmm(A.P, A.Q, forces=A.F, async=ASYNC)
-    t1 = time.time()
-
-
-
-    direct_forces = np.zeros((N, 3))
-    
-    def _direct():
-        #print("WARNING 0-th PARTICLE ONLY")
-        _phi_direct = 0.0
-
-        # compute phi from image and surrounding 26 cells
-
-        for ix in range(N):
-
-            phi_part = 0.0
-            for jx in range(ix+1, N):
-                rij = np.linalg.norm(A.P[jx,:] - A.P[ix,:])
-                _phi_direct += A.Q[ix, 0] * A.Q[jx, 0] /rij
-
-        return _phi_direct
-    
-    phi_direct = _direct()
-
-
-    def print_diff():
-
-        local_err = abs(phi_py - phi_direct)
-        if local_err > eps: serr = red(local_err)
-        else: serr = green(local_err)
-
-        print("\n")
-        print("ENERGY DIRECT:\t{:.20f}".format(phi_direct))
-        print("ENERGY FMM:\t", phi_py)
-        print("ERR:\t\t", serr)
-
-    if MPIRANK == 0 and DEBUG:
-        print_diff()
-    
-    print(60 * '-')
-
-    
-    ui = [charge_indirect_energy(A, px, fmm) for px in range(N)]
-    print("ui", ui)
-    print(sum(ui) * 0.5)
-    
-    u1 = charge_indirect_energy(A, 0, fmm)
-    A.P[0,:] = ( 1.6,  1.7, 0.0)
-    
-    u2 = charge_indirect_energy(A, 0, fmm)
-    
-    phi_py = phi_py - u1 + u2 
-    
-    phi_direct = _direct()
-    print_diff()
-    
-    
-    phi_py = fmm(A.P, A.Q, forces=A.F, async=ASYNC)
-
-
-    print_diff()
-
-
-
-def test_kmc_fmm_1():
-    
     eps = 10.**-5
     L = 12
     R = 3
@@ -375,13 +251,16 @@ def test_kmc_fmm_1():
         assert abs(prop_energy[0][0] - phi_direct)/abs(phi_direct) < eps
 
 
-def test_kmc_fmm_2():
+def test_kmc_fmm_free_space_2():
+    """
+    Passes all proposed moves to kmc at once, then checks all outputs
+    """
     
     eps = 10.**-5
     L = 12
     R = 3
 
-    N = 50
+    N = 20
     E = 4.
     rc = E/4
 
@@ -432,15 +311,14 @@ def test_kmc_fmm_2():
                 _phi_direct += A.Q[ix, 0] * A.Q[jx, 0] /rij
         return _phi_direct
     
-    phi_direct = _direct()
 
 
+    # create a kmc instance
     kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
         domain=A.domain, r=R, l=L, boundary_condition='free_space')
-    
     kmc_fmm.initialise()
     
-    
+    # make  some random proposed moves
     order = rng.permutation(range(N))
     prop = []
     for px in range(N):
@@ -452,30 +330,26 @@ def test_kmc_fmm_2():
                 rng.uniform(low=-0.5*E, high=0.5*E, size=(propn, 3))
             )
         )
-
+    
+    # get the energy of the proposed moves
     prop_energy = kmc_fmm.test_propose(moves=prop)
     
-    print(prop_energy)
-    return
+    # test agains the direct calculation
+    for rxi, rx in enumerate(prop):
+        pid = rx[0]
+        for movi, mov in enumerate(rx[1]):
+            
+            A.PP[pid, :] = mov
 
-
-    for rx in range(2*N):
-        pid = rng.randint(0, N-1)
-        pos = rng.uniform(low=-0.5*E, high=0.5*E, size=3)
+            phi_direct = _direct()
+            
+            A.PP[pid, :] = A.P[pid, :]
         
-        A.PP[:] = A.P[:]
-        A.PP[pid, :] = pos
+            assert abs(phi_direct) > 0
+            
+            fmm_phi = prop_energy[rxi][movi]
 
-        phi_direct = _direct()
-
-        prop_energy = kmc_fmm.test_propose(
-            moves=((pid, pos),)
-        )
-        
-        assert abs(phi_direct) > 0
-
-        # print(prop_energy[0][0], phi_direct)
-        assert abs(prop_energy[0][0] - phi_direct)/abs(phi_direct) < eps
+            assert abs(fmm_phi - phi_direct)/abs(phi_direct) < eps
 
 
 
