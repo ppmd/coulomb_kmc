@@ -293,22 +293,22 @@ def test_method_1():
 
 def test_kmc_fmm_1():
     
-    L = 10
+    eps = 10.**-5
+    L = 12
     R = 3
 
-    N = 4
+    N = 50
     E = 4.
     rc = E/4
 
     A = state.State()
     A.domain = domain.BaseDomainHalo(extent=(E,E,E))
     A.domain.boundary_condition = domain.BoundaryTypePeriodic()
-
     A.npart = N
-
 
     A.P = data.PositionDat(ncomp=3)
     A.Q = data.ParticleDat(ncomp=1)
+    A.PP = data.ParticleDat(ncomp=3)
 
     A.crr = data.ScalarArray(ncomp=1)
 
@@ -327,23 +327,68 @@ def test_kmc_fmm_1():
         A.Q[1,0] = 1.
         A.Q[2,0] = -1.
         A.Q[3,0] = 0.
+    else:
+        A.P[:] = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
+        for px in range(N):
+            A.Q[px,0] = (-1.0)**(px+1)
+        bias = np.sum(A.Q[:N:, 0])/N
+        A.Q[:, 0] -= bias
 
     A.scatter_data_from(0)
+    
+    A.PP[:] = A.P[:]
+
+    def _direct():
+        _phi_direct = 0.0
+        # compute phi from image and surrounding 26 cells
+        for ix in range(N):
+            phi_part = 0.0
+            for jx in range(ix+1, N):
+                rij = np.linalg.norm(A.PP[jx,:] - A.PP[ix,:])
+                _phi_direct += A.Q[ix, 0] * A.Q[jx, 0] /rij
+        return _phi_direct
+    
+    phi_direct = _direct()
+
 
     kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
         domain=A.domain, r=R, l=L, boundary_condition='free_space')
     
     kmc_fmm.initialise()
-    
-    print(kmc_fmm.energy)
-    print(60 * '-')
 
-    prop_energy = kmc_fmm.test_propose(
-        moves=((0, np.array((1.6, 1.7, 0.0))),)
-    )
+    for rx in range(2*N):
+        pid = rng.randint(0, N-1)
+        pos = rng.uniform(low=-0.5*E, high=0.5*E, size=3)
+        
+        A.PP[:] = A.P[:]
+        A.PP[pid, :] = pos
 
-    print(60 * '-')
-    print(prop_energy)
+        phi_direct = _direct()
+
+        prop_energy = kmc_fmm.test_propose(
+            moves=((pid, pos),)
+        )
+        
+        assert abs(phi_direct) > 0
+
+        # print(prop_energy[0][0], phi_direct)
+        assert abs(prop_energy[0][0] - phi_direct)/abs(phi_direct) < eps
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
