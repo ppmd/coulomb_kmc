@@ -342,6 +342,9 @@ def test_kmc_fmm_1():
         moves=((0, np.array((1.6, 1.7, 0.0))),)
     )
 
+    print(60 * '-')
+    print(prop_energy)
+
 
 
 
