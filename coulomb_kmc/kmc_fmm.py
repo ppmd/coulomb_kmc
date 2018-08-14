@@ -1,8 +1,17 @@
+from __future__ import division, print_function, absolute_import
+__author__ = "W.R.Saunders"
 
-from ppmd.coulomb.fmm import *
+# python imports
 from enum import Enum
+from math import log, ceil, factorial, sqrt
 
+# pip package imports
+import numpy as np
+import scipy
+from scipy.special import lpmv
 
+# ppmd imports
+from ppmd.coulomb.fmm import PyFMM
 
 
 class KMCFMM(object):
@@ -343,8 +352,8 @@ class KMCFMM(object):
                 re_exp = np.cos(mx*disp_sph[2])
                 im_exp = np.sin(mx*disp_sph[2])
 
-                val = math.sqrt(math.factorial(
-                    lx - abs(mx))/math.factorial(lx + abs(mx)))
+                val = sqrt(factorial(
+                    lx - abs(mx))/factorial(lx + abs(mx)))
                 val *= scipy_p[mxi]
 
                 irad = disp_sph[0] ** (lx)
