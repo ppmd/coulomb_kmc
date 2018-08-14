@@ -9,11 +9,6 @@ import numpy as np
 
 np.set_printoptions(linewidth=200)
 
-import itertools
-def get_res_file_path(filename):
-    return os.path.join(os.path.join(os.path.dirname(__file__), '../../res'), filename)
-
-
 from ppmd import *
 from ppmd.coulomb.fmm import *
 from ppmd.coulomb.ewald_half import *

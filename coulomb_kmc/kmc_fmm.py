@@ -1,6 +1,6 @@
 
 from ppmd.coulomb.fmm import *
-
+from enum import Enum
 
 
 
@@ -39,6 +39,11 @@ class KMCFMM(object):
         (  1,  1,  1),
     )
 
+    class _BCType(Enum):
+        PBC = 'pbc'
+        FREE_SPACE = 'free_space'
+        NEAREST = '27'
+
     def __init__(self, positions, charges, domain, N=None, boundary_condition='pbc',
         r=None, shell_width=0.0, energy_unit=1.0,
         _debug=False, l=None):
@@ -47,20 +52,23 @@ class KMCFMM(object):
         # parameter format to what exists for PyFMM
         _bc = {
             'pbc': False,
-            'free_space': True
+            'free_space': True,
+            '27': '27'
         }[boundary_condition]
         
         self.fmm = PyFMM(domain, N=N, free_space=_bc, r=r,
             shell_width=shell_width, cuda=False, cuda_levels=1,
             force_unit=1.0, energy_unit=energy_unit,
             _debug=_debug, l=l, cuda_local=False)
-
+        
+        self.domain = domain
         self.positions = positions
         self.charges = charges
         self.energy = None
         self.group = positions.group
         self.energy_unit = energy_unit
         self._cell_map = None
+        self._bc = KMCFMM._BCType(boundary_condition)
 
     # these should be the names of the final propose and accept methods.
     def propose(self):
@@ -78,10 +86,12 @@ class KMCFMM(object):
                 self._cell_map[cell].append(pid)
             else:
                 self._cell_map[cell] = [pid]
-
     
-    def _compute_energy(self):
-        pass
+    def _assert_init(self):
+        if self._cell_map is None:
+            raise RuntimeError('Run initialise before this call')
+        if self.energy is None:
+            raise RuntimeError('Run initialise before this call')
     
     def test_propose(self, moves):
         """
@@ -91,6 +101,8 @@ class KMCFMM(object):
         should return (np.array((0.1, 0.2, 0.3)), )
         """
         
+        self._assert_init()
+
         prop_energy = []
 
         for movx in moves:
@@ -117,7 +129,15 @@ class KMCFMM(object):
                     # store difference
                     pid_prop_energy[mxi] = self.energy - u0_direct - u0_indirect + \
                         u1_direct + u1_indirect - u01_self
-            
+                    
+                    # print("\n---")
+                    # print("u0_d", u0_direct)
+                    # print("u0_i", u0_indirect)
+                    # print("u1_d", u1_direct)
+                    # print("u1_i", u1_indirect)
+                    # print("   s", u01_self)
+                    # print("---")
+
             prop_energy.append(pid_prop_energy)
 
         return tuple(prop_energy)
@@ -126,13 +146,27 @@ class KMCFMM(object):
     def _self_interaction(self, ix, prop_pos):
         old_pos = self.positions[ix, :]
         q = self.charges[ix, 0]
-        e_tmp = 0.0
+        ex = self.domain.extent
 
-        # put 26 self interaction code here
-        
-        e_tmp += q * q * self.energy_unit / np.linalg.norm(
+        # self interaction with primary image
+        if self._bc is KMCFMM._BCType.FREE_SPACE:
+            e_tmp = q * q * self.energy_unit / np.linalg.norm(
                 old_pos - prop_pos)
+        
+        # 26 nearest primary images
+        elif self._bc is KMCFMM._BCType.NEAREST:
+            coeff = q * q * self.energy_unit
+            e_tmp = 0.0
+            for ox in KMCFMM._offsets:
+                # image of old pos
+                dox = np.array((ex[0] * ox[0], ex[1] * ox[1], ex[2] * ox[2]))
+                iold_pos = old_pos + dox
+                e_tmp +=  coeff / np.linalg.norm(iold_pos - prop_pos)
 
+                # add back on the new self interaction ( this is a function of the domain extent
+                # and can be precomputed up to the charge part )
+                if ox != (0,0,0):
+                    e_tmp -= coeff / np.linalg.norm(dox)
 
         return e_tmp
 
@@ -140,14 +174,29 @@ class KMCFMM(object):
     def _direct_contrib_new(self, ix, prop_pos):
         icx, icy, icz = self._get_cell(prop_pos)
         e_tmp = 0.0
+        extent = self.domain.extent
 
         for ox in KMCFMM._offsets:
             jcell = (icx + ox[0], icy + ox[1], icz + ox[2])
+            image_mod = np.zeros(3)
+
+            # in pbc we need to wrap the direct part
+            if self._bc in (KMCFMM._BCType.PBC, KMCFMM._BCType.NEAREST):
+
+                sl = 2 ** (self.fmm.R - 1)
+
+                # position offset
+                # in python -5//7 = -1
+                image_mod = np.array([float(cx // sl)*ex for cx, ex in zip(jcell, extent)])
+
+                # find the correct cell
+                jcell = (jcell[0] % sl, jcell[1] % sl, jcell[2] % sl)
+
 
             if jcell in self._cell_map.keys():
                 for jx in self._cell_map[jcell]:
                     e_tmp += self.energy_unit * self.charges[ix, 0] * self.charges[jx, 0] / np.linalg.norm(
-                        prop_pos - self.positions[jx, :])
+                        prop_pos - self.positions[jx, :] - image_mod)
 
         return e_tmp
 
@@ -155,16 +204,28 @@ class KMCFMM(object):
     def _direct_contrib_old(self, ix):
         icx, icy, icz = self._get_fmm_cell(ix)
         e_tmp = 0.0
+        extent = self.domain.extent
 
         for ox in KMCFMM._offsets:
             jcell = (icx + ox[0], icy + ox[1], icz + ox[2])
+            image_mod = np.zeros(3)
+
+            # in pbc we need to wrap the direct part
+            if self._bc in (KMCFMM._BCType.PBC, KMCFMM._BCType.NEAREST):
+                sl = 2 ** (self.fmm.R - 1)
+                # position offset
+                # in python -5//7 = -1
+                image_mod = np.array([float(cx // sl)*ex for cx, ex in zip(jcell, extent)])
+
+                # find the correct cell
+                jcell = (jcell[0] % sl, jcell[1] % sl, jcell[2] % sl)
 
             if jcell in self._cell_map.keys():
                 for jx in self._cell_map[jcell]:
                     if jx == ix:
                         continue
                     e_tmp += self.energy_unit * self.charges[ix, 0] * self.charges[jx, 0] / np.linalg.norm(
-                        self.positions[ix, :] - self.positions[jx, :])
+                        self.positions[ix, :] - self.positions[jx, :] - image_mod)
 
         return e_tmp
 
