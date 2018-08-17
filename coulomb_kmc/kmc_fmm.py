@@ -3,7 +3,8 @@ __author__ = "W.R.Saunders"
 
 # python imports
 from enum import Enum
-from math import log, ceil, factorial, sqrt
+from math import log, ceil, factorial, sqrt, cos
+import ctypes
 
 # pip package imports
 import numpy as np
@@ -138,14 +139,6 @@ class KMCFMM(object):
                     # store difference
                     pid_prop_energy[mxi] = self.energy - u0_direct - u0_indirect + \
                         u1_direct + u1_indirect - u01_self
-                    
-                    # print("\n---")
-                    # print("u0_d", u0_direct)
-                    # print("u0_i", u0_indirect)
-                    # print("u1_d", u1_direct)
-                    # print("u1_i", u1_indirect)
-                    # print("   s", u01_self)
-                    # print("---")
 
             prop_energy.append(pid_prop_energy)
 
@@ -153,6 +146,10 @@ class KMCFMM(object):
     
     
     def _self_interaction(self, ix, prop_pos):
+        """
+        Compute the self interaction of the proposed move in the primary image with the old position
+        in all other images.
+        """
         old_pos = self.positions[ix, :]
         q = self.charges[ix, 0]
         ex = self.domain.extent
@@ -163,7 +160,7 @@ class KMCFMM(object):
                 old_pos - prop_pos)
         
         # 26 nearest primary images
-        elif self._bc is KMCFMM._BCType.NEAREST:
+        elif self._bc in (KMCFMM._BCType.NEAREST, KMCFMM._BCType.PBC):
             coeff = q * q * self.energy_unit
             e_tmp = 0.0
             for ox in KMCFMM._offsets:
@@ -176,6 +173,14 @@ class KMCFMM(object):
                 # and can be precomputed up to the charge part )
                 if ox != (0,0,0):
                     e_tmp -= coeff / np.linalg.norm(dox)
+            
+            # really long range part in the PBC case
+            if self._bc == KMCFMM._BCType.PBC:
+                lexp = self._really_long_range_diff(ix, prop_pos)
+                # the origin is the centre of the domain hence no offsets are needed
+                disp = KMCFMM.spherical(tuple(prop_pos))
+                rlr = self.charges[ix, 0] * KMCFMM.compute_phi_local(self.fmm.L, lexp, disp)[0]
+                e_tmp -= rlr
 
         return e_tmp
 
@@ -289,7 +294,11 @@ class KMCFMM(object):
         lc = [cx - lx for cx, lx in zip(cell, lor)]
         return self.fmm.tree_plain[self.fmm.R-1][lc[2], lc[1], lc[0], :]
 
+
     def _get_cell_disp(self, cell, position):
+        """
+        Returns spherical coordinate of particle with local cell centre as an origin
+        """
         R = self.fmm.R
         extent = self.group.domain.extent
         sl = 2 ** (R - 1)
@@ -311,6 +320,10 @@ class KMCFMM(object):
 
     @staticmethod
     def spherical(xyz):
+        """
+        Converts the cartesian coordinates in xyz to spherical coordinates
+        (radius, polar angle, longitude angle)
+        """
         if type(xyz) is tuple:
             sph = np.zeros(3)
             xy = xyz[0]**2 + xyz[1]**2
@@ -336,6 +349,10 @@ class KMCFMM(object):
     
     @staticmethod
     def compute_phi_local(llimit, moments, disp_sph):
+        """
+        Computes the field at the podint disp_sph given by the local expansion in
+        moments
+        """
         
         phi_sph_re = 0.
         phi_sph_im = 0.
@@ -349,8 +366,8 @@ class KMCFMM(object):
 
             for mxi, mx in enumerate(mrange2):
 
-                re_exp = np.cos(mx*disp_sph[2])
-                im_exp = np.sin(mx*disp_sph[2])
+                re_exp = np.cos(mx * disp_sph[2])
+                im_exp = np.sin(mx * disp_sph[2])
 
                 val = sqrt(factorial(
                     lx - abs(mx))/factorial(lx + abs(mx)))
@@ -368,6 +385,105 @@ class KMCFMM(object):
                 phi_sph_im += scipy_real*ppmd_mom_im + ppmd_mom_re*scipy_imag
 
         return phi_sph_re, phi_sph_im
+    
+
+    def _multipole_exp(self, sph, charge, arr):
+        """
+        For a charge at the point sph computes the multipole moments at the origin
+        and appends them onto arr.
+        """
+
+        llimit = self.fmm.L
+        def re_lm(l,m): return (l**2) + l + m
+        def im_lm(l,m): return (l**2) + l +  m + llimit**2
+        def Hfoo(nx, mx): return sqrt(float(factorial(nx - abs(mx)))/factorial(nx + abs(mx)))
+
+        for lx in range(self.fmm.L):
+            mrange = list(range(lx, -1, -1)) + list(range(1, lx+1))
+            mrange2 = list(range(-1*lx, 1)) + list(range(1, lx+1))
+            scipy_p = lpmv(mrange, lx, cos(sph[1]))
+            
+            radn = sph[0] ** lx
+
+            for mxi, mx in enumerate(mrange2):
+                re_exp = np.cos(-1.0 * mx * sph[2])
+                im_exp = np.sin(-1.0 * mx * sph[2])
+
+                coeff = charge * radn * Hfoo(lx, mx) * scipy_p[mxi] 
+
+                arr[re_lm(lx, mx)] += re_exp * coeff
+                arr[im_lm(lx, mx)] += im_exp * coeff
+
+
+    def _multipole_diff(self, old_pos, new_pos, charge, arr):
+        # output is in the numpy array arr
+        # plan is to do all "really long range" corrections
+        # as a matmul
+
+        # remove the old charge
+        disp = KMCFMM.spherical(tuple(old_pos))
+        self._multipole_exp(disp, -1.0 * charge, arr)
+        
+        # add the new charge
+        disp = KMCFMM.spherical(tuple(new_pos))
+        self._multipole_exp(disp, charge, arr)
+
+    @staticmethod
+    def _numpy_ptr(arr):
+        return arr.ctypes.data_as(ctypes.c_void_p)
+
+    def _really_long_range_diff(self, ix, prop_pos):
+        """
+        Compute the correction in potential field from the "very well separated"
+        images
+        """
+        
+        l2 = self.fmm.L * self.fmm.L * 2
+        arr = np.zeros(l2)
+        arr_out = np.zeros(l2)
+        
+        self._multipole_diff(
+            self.positions[ix, :],
+            prop_pos,
+            self.charges[ix, 0],
+            arr
+        )
+        
+        # use the really long range part of the fmm instance (extract this into a matrix)
+        self.fmm._translate_mtl_lib['mtl_test_wrapper'](
+            ctypes.c_int64(self.fmm.L),
+            ctypes.c_double(1.),
+            KMCFMM._numpy_ptr(arr),
+            KMCFMM._numpy_ptr(self.fmm._boundary_ident),
+            KMCFMM._numpy_ptr(self.fmm._boundary_terms),
+            KMCFMM._numpy_ptr(self.fmm._a),
+            KMCFMM._numpy_ptr(self.fmm._ar),
+            KMCFMM._numpy_ptr(self.fmm._ipower_mtl),
+            KMCFMM._numpy_ptr(arr_out)
+        )
+
+        return arr_out
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
