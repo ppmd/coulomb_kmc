@@ -58,7 +58,7 @@ def time_test_1(N=100, nprop=None, nsample=10):
     A.scatter_data_from(0)
     
     bcs = (False, 'pbc')
-    bcs = (False, 'free_space')
+    # bcs = (False, 'free_space')
  
     kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
         domain=A.domain, r=R, l=L, boundary_condition=bcs[1])
@@ -90,8 +90,9 @@ def time_test_1(N=100, nprop=None, nsample=10):
     return (t1-t0, nm, kmc_fmm.fmm.R)
 
 if __name__ == '__main__':
-    
-    for nx in np.logspace(3, log(1000001, 10), 30):
+    nset = np.logspace(3, log(1000001, 10), 30)
+    nset = (10000,)
+    for nx in nset:
         ti, ni, ri = time_test_1(N=int(nx), nprop=10)
 
         print('{: 8.2e} {: 8.4e} {: 8.4e} {: 4d}' .format(int(nx), ti, ti/ni, ri))

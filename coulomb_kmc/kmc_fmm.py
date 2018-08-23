@@ -374,10 +374,9 @@ class KMCFMM(object):
         def re_lm(l,m): return (l**2) + l + m
         def im_lm(l,m): return (l**2) + l +  m + llimit**2
 
-        mrange = list(range(-1*llimit, 1)) + list(range(1, llimit+1))
         cosv = np.zeros(3 * llimit)
         sinv = np.zeros(3 * llimit)
-        for mx in mrange:
+        for mx in range(-llimit, llimit+1):
             cosv[mx] = cos(mx * disp_sph[2])
             sinv[mx] = sin(mx * disp_sph[2])
 
@@ -410,10 +409,9 @@ class KMCFMM(object):
         def re_lm(l,m): return (l**2) + l + m
         def im_lm(l,m): return (l**2) + l +  m + llimit**2
         
-        mrange = list(range(-1*llimit, 1)) + list(range(1, llimit+1))
         cosv = np.zeros(3 * llimit)
         sinv = np.zeros(3 * llimit)
-        for mx in mrange:
+        for mx in range(-llimit, llimit+1):
             cosv[mx] = cos(-1.0 * mx * sph[2])
             sinv[mx] = sin(-1.0 * mx * sph[2])
 
