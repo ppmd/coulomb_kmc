@@ -91,14 +91,20 @@ def time_test_1(N=100, nprop=None, nsample=10):
 
 if __name__ == '__main__':
     nset = np.logspace(3, log(1000001, 10), 30)
-    nset = (10000,)
+    # nset = (1000000,)
+
+    print('{: ^10} {: ^12} {: ^4}' .format('N', 'Time', 'R'))
+    print('-' * 28)
+    times = []
     for nx in nset:
         ti, ni, ri = time_test_1(N=int(nx), nprop=10)
+        times.append((int(nx), ti/ni, ri))
 
-        print('{: 8.2e} {: 8.4e} {: 8.4e} {: 4d}' .format(int(nx), ti, ti/ni, ri))
+        print('{: 8.2e} {: 8.4e} {: 4d}' .format(int(nx), ti/ni, ri))
 
 
-
+    times = np.array(times)
+    np.save('timings.npy', times)
 
 
 

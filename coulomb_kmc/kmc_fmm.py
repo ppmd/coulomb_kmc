@@ -85,7 +85,14 @@ class KMCFMM(object):
         self.energy = None
         self.group = positions.group
         self.energy_unit = energy_unit
+
         self._cell_map = None
+        self._cell_occ = None
+
+        self._dsa = None
+        self._dsb = None
+        self._dsc = None
+
         self._bc = KMCFMM._BCType(boundary_condition)
         
         self._hmatrix_py = np.zeros((2*self.fmm.L, 2*self.fmm.L))
@@ -101,12 +108,19 @@ class KMCFMM(object):
         self.energy = self.fmm(positions=self.positions, charges=self.charges)
         
         self._cell_map = {}
+        cell_occ = 1
+
         for pid in range(self.positions.npart_local):
             cell = self._get_fmm_cell(pid)
             if cell in self._cell_map.keys():
                 self._cell_map[cell].append(pid)
+                cell_occ = max(cell_occ, len(self._cell_map[cell]))
             else:
                 self._cell_map[cell] = [pid]
+
+        self._dsa = np.zeros(27 * cell_occ)
+        self._dsb = np.zeros(27 * cell_occ)
+        self._dsc = np.zeros(27 * cell_occ)
 
         def Hfoo(nx, mx): return sqrt(float(factorial(nx - abs(mx)))/factorial(nx + abs(mx)))
         for nx in range(self.fmm.L):
@@ -141,7 +155,7 @@ class KMCFMM(object):
             pid_prop_energy = np.zeros(num_movs)
 
             for mxi, mx in enumerate(movs):
-                if np.linalg.norm(self.positions[pid, :] - mx) < 10.**-14:
+                if np.linalg.norm(self.positions.data[pid, :] - mx) < 10.**-14:
                     pid_prop_energy[mxi] = self.energy
                 else:
                     # compute old energy u0
@@ -166,8 +180,8 @@ class KMCFMM(object):
         Compute the self interaction of the proposed move in the primary image with the old position
         in all other images.
         """
-        old_pos = self.positions[ix, :]
-        q = self.charges[ix, 0]
+        old_pos = self.positions.data[ix, :]
+        q = self.charges.data[ix, 0]
         ex = self.domain.extent
 
         # self interaction with primary image
@@ -195,7 +209,7 @@ class KMCFMM(object):
                 lexp = self._really_long_range_diff(ix, prop_pos)
                 # the origin is the centre of the domain hence no offsets are needed
                 disp = KMCFMM.spherical(tuple(prop_pos))
-                rlr = self.charges[ix, 0] * self.compute_phi_local(self.fmm.L, lexp, disp)[0]
+                rlr = self.charges.data[ix, 0] * self.compute_phi_local(self.fmm.L, lexp, disp)[0]
                 e_tmp -= rlr
 
         return e_tmp
@@ -205,6 +219,13 @@ class KMCFMM(object):
         icx, icy, icz = self._get_cell(prop_pos)
         e_tmp = 0.0
         extent = self.domain.extent
+        
+        q = self.charges.data[ix, 0] * self.energy_unit
+        
+        ncount = 0
+        _tva = self._dsa
+        _tvb = self._dsb
+        _tvc = self._dsc
 
         for ox in KMCFMM._offsets:
             jcell = (icx + ox[0], icy + ox[1], icz + ox[2])
@@ -222,13 +243,20 @@ class KMCFMM(object):
                 # find the correct cell
                 jcell = (jcell[0] % sl, jcell[1] % sl, jcell[2] % sl)
 
-
             if jcell in self._cell_map.keys():
-                for jx in self._cell_map[jcell]:
-                    e_tmp += self.energy_unit * self.charges[ix, 0] * self.charges[jx, 0] / np.linalg.norm(
-                        prop_pos - self.positions[jx, :] - image_mod)
 
-        return e_tmp
+
+                for jxi, jx in enumerate(self._cell_map[jcell]):
+                    _diff = prop_pos - self.positions.data[jx, :] - image_mod
+                    _tva[ncount] = np.dot(_diff, _diff)
+                    _tvb[ncount] = self.charges.data[jx, 0]
+                    ncount += 1
+         
+        np.sqrt(_tva[:ncount:], out=_tvc[:ncount:])
+        np.reciprocal(_tvc[:ncount:], out=_tva[:ncount:])
+        e_tmp += np.dot(_tva[:ncount:], _tvb[:ncount:])
+
+        return e_tmp * q
 
 
     def _direct_contrib_old(self, ix):
@@ -236,6 +264,8 @@ class KMCFMM(object):
         e_tmp = 0.0
         extent = self.domain.extent
 
+        q = self.charges.data[ix, 0] * self.energy_unit
+        pos = self.positions.data[ix, :]
         for ox in KMCFMM._offsets:
             jcell = (icx + ox[0], icy + ox[1], icz + ox[2])
             image_mod = np.zeros(3)
@@ -251,13 +281,24 @@ class KMCFMM(object):
                 jcell = (jcell[0] % sl, jcell[1] % sl, jcell[2] % sl)
 
             if jcell in self._cell_map.keys():
-                for jx in self._cell_map[jcell]:
-                    if jx == ix:
-                        continue
-                    e_tmp += self.energy_unit * self.charges[ix, 0] * self.charges[jx, 0] / np.linalg.norm(
-                        self.positions[ix, :] - self.positions[jx, :] - image_mod)
+                _tva = np.zeros(len(self._cell_map[jcell]))
+                _tvb = np.zeros(len(self._cell_map[jcell]))
 
-        return e_tmp
+                for jxi, jx in enumerate(self._cell_map[jcell]):
+                    if jx == ix:
+                        _tvb[jxi] = 0.0
+                        _tva[jxi] = 1.0
+                        continue
+
+                    _diff = pos - self.positions.data[jx, :] - image_mod
+                    _tva[jxi] = np.dot(_diff, _diff)
+                    _tvb[jxi] = self.charges.data[jx, 0]                   
+
+                _tva = 1.0/np.sqrt(_tva)
+                e_tmp += np.dot(_tva, _tvb)
+
+
+        return e_tmp * q
 
 
     def _get_fmm_cell(self, ix):
@@ -290,16 +331,16 @@ class KMCFMM(object):
         lexp = self._get_local_expansion(cell)
         disp = self._get_cell_disp(cell, prop_pos)
 
-        return self.charges[ix, 0] * self.compute_phi_local(self.fmm.L, lexp, disp)[0]
+        return self.charges.data[ix, 0] * self.compute_phi_local(self.fmm.L, lexp, disp)[0]
 
 
     def _charge_indirect_energy_old(self, ix):
         s = self.group
         cell = self._get_fmm_cell(ix)
         lexp = self._get_local_expansion(cell)
-        disp = self._get_cell_disp(cell, self.positions[ix,:])
+        disp = self._get_cell_disp(cell, self.positions.data[ix,:])
 
-        return self.charges[ix, 0] * self.compute_phi_local(self.fmm.L, lexp, disp)[0]
+        return self.charges.data[ix, 0] * self.compute_phi_local(self.fmm.L, lexp, disp)[0]
 
 
     def _get_local_expansion(self, cell):
@@ -452,9 +493,9 @@ class KMCFMM(object):
         arr_out = np.zeros(l2)
         
         self._multipole_diff(
-            self.positions[ix, :],
+            self.positions.data[ix, :],
             prop_pos,
-            self.charges[ix, 0],
+            self.charges.data[ix, 0],
             arr
         )
         
