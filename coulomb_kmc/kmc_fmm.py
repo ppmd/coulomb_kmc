@@ -96,7 +96,10 @@ class KMCFMM(object):
         self._bc = KMCFMM._BCType(boundary_condition)
         
         self._hmatrix_py = np.zeros((2*self.fmm.L, 2*self.fmm.L))
-
+        def Hfoo(nx, mx): return sqrt(float(factorial(nx - abs(mx)))/factorial(nx + abs(mx)))
+        for nx in range(self.fmm.L):
+            for mx in range(-nx, nx+1):
+                self._hmatrix_py[nx, mx] = Hfoo(nx, mx)
 
     # these should be the names of the final propose and accept methods.
     def propose(self):
@@ -110,7 +113,7 @@ class KMCFMM(object):
         self._cell_map = {}
         cell_occ = 1
 
-        for pid in range(self.positions.npart_local):
+        for pid in range(self.positions.npart_total):
             cell = self._get_fmm_cell(pid)
             if cell in self._cell_map.keys():
                 self._cell_map[cell].append(pid)
@@ -122,10 +125,7 @@ class KMCFMM(object):
         self._dsb = np.zeros(27 * cell_occ)
         self._dsc = np.zeros(27 * cell_occ)
 
-        def Hfoo(nx, mx): return sqrt(float(factorial(nx - abs(mx)))/factorial(nx + abs(mx)))
-        for nx in range(self.fmm.L):
-            for mx in range(-nx, nx+1):
-                self._hmatrix_py[nx, mx] = Hfoo(nx, mx)
+
     
     def _assert_init(self):
         if self._cell_map is None:
