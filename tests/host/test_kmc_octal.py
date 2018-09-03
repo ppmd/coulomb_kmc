@@ -78,6 +78,7 @@ def test_kmc_octal_1():
     
     print("\n")
     kmco = kmc_octal.LocalCellExpansions(kmc_fmm.fmm, 1.0)
+    kmco.initialise()
 
 
 
