@@ -29,9 +29,9 @@ from coulomb_kmc import *
 
 def test_kmc_octal_1():
     eps = 10.**-5
-    L = 2
+    L = 12
     ncomp = L*L*2
-    R = 3
+    R = 4
 
     N = 20
     E = 4.
@@ -77,7 +77,6 @@ def test_kmc_octal_1():
         domain=A.domain, r=R, l=L, boundary_condition='free_space')
     # kmc_fmm.initialise()
     
-    print("\n", MPIRANK)
     
     # make some data
     ns = kmc_fmm.fmm.tree[-1].ncubes_side_global

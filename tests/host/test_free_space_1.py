@@ -158,7 +158,7 @@ def charge_indirect_energy(s, ix, fmm):
 
 
 
-
+@pytest.mark.skipif('MPISIZE > 1')
 def test_kmc_fmm_free_space_1():
     """
     Tests proposed moves one by one against direct calculation.
@@ -246,6 +246,7 @@ def test_kmc_fmm_free_space_1():
         assert abs(prop_energy[0][0] - phi_direct)/abs(phi_direct) < eps
 
 
+@pytest.mark.skipif('MPISIZE > 1')
 def test_kmc_fmm_free_space_2():
     """
     Passes all proposed moves to kmc at once, then checks all outputs

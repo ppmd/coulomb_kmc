@@ -14,6 +14,9 @@ from ppmd import mpi
 
 MPI = mpi.MPI
 
+REAL = ctypes.c_double
+INT64 = ctypes.c_int64
+
 class LocalCellExpansions(object):
     """
     Object to get, store and update local expansions from an fmm instance.
@@ -40,8 +43,11 @@ class LocalCellExpansions(object):
         # as offset indices
         pad_low = [list(range(-px, 0)) for px in pad]
         pad_high = [list(range(lsx, lsx + px)) for px, lsx in zip(pad, reversed(ls))]
-
         
+        # slowest to fastest to match octal tree indexing
+        global_to_local = [-lo[dx] + pad[dx] for dx in reversed(range(3))]
+        self.global_to_local = np.array(global_to_local, dtype=INT64)
+
         print("ls", ls, "lo", lo, "extent", self.domain.extent, "boundary", self.domain.boundary)
         
         # cell indices as offsets from owned octal cells
@@ -57,8 +63,9 @@ class LocalCellExpansions(object):
         self.local_store_dims = local_store_dims
         self.global_cell_size = csc
         self.cell_indices = cell_indices
-        self.local_expansions = np.zeros(local_store_dims + [2 * (fmm.L**2)], dtype=ctypes.c_double)
-        self.remote_inds = np.zeros(local_store_dims + [1], dtype=ctypes.c_int64)
+        self.local_expansions = np.zeros(local_store_dims + [2 * (fmm.L**2)], dtype=REAL)
+        self.remote_inds = np.zeros(local_store_dims + [1], dtype=INT64)
+        self.remote_inds[:] = -1
 
 
         self._wing = MPI.Win()

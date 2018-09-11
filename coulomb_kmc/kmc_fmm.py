@@ -15,10 +15,23 @@ from scipy.special import lpmv
 # ppmd imports
 from ppmd.coulomb.fmm import PyFMM
 
+# coulomb_kmc imports
+from coulomb_kmc import kmc_octal
+
+REAL = ctypes.c_double
+INT64 = ctypes.c_int64
+
 @lru_cache(maxsize=10000)
 def _cached_lpmv(*args, **kwargs):
     return lpmv(*args, **kwargs)
 
+
+class _ENERGY(Enum):
+    U0_DIRECT = 'u0_direct'
+    U0_INDIRECT = 'u0_indirect'
+    U1_DIRECT = 'u1_direct'
+    U1_INDIRECT = 'u1_indirect'
+    U01_SELF = 'u01_self'
 
 
 class KMCFMM(object):
@@ -64,7 +77,7 @@ class KMCFMM(object):
 
     def __init__(self, positions, charges, domain, N=None, boundary_condition='pbc',
         r=None, shell_width=0.0, energy_unit=1.0,
-        _debug=False, l=None):
+        _debug=False, l=None, max_move=None):
         
         # horrible workaround to convert sensible boundary condition
         # parameter format to what exists for PyFMM
@@ -100,6 +113,20 @@ class KMCFMM(object):
         for nx in range(self.fmm.L):
             for mx in range(-nx, nx+1):
                 self._hmatrix_py[nx, mx] = Hfoo(nx, mx)
+        
+        # TODO properly implement max_move
+        max_move = 1.0
+        self.max_move = max_move
+        self.kmco = kmc_octal.LocalCellExpansions(self.fmm, self.max_move)
+
+        self._tmp_energies = {
+            _ENERGY.U0_DIRECT   : np.zeros((1, 1), dtype=REAL),
+            _ENERGY.U0_INDIRECT : np.zeros((1, 1), dtype=REAL),
+            _ENERGY.U1_DIRECT   : np.zeros((1, 1), dtype=REAL),
+            _ENERGY.U1_INDIRECT : np.zeros((1, 1), dtype=REAL),
+            _ENERGY.U01_SELF    : np.zeros((1, 1), dtype=REAL)
+        }
+
 
     # these should be the names of the final propose and accept methods.
     def propose(self):
@@ -109,6 +136,7 @@ class KMCFMM(object):
 
     def initialise(self):
         self.energy = self.fmm(positions=self.positions, charges=self.charges)
+        self.kmco.initialise()
         
         self._cell_map = {}
         cell_occ = 1
@@ -124,7 +152,6 @@ class KMCFMM(object):
         self._dsa = np.zeros(27 * cell_occ)
         self._dsb = np.zeros(27 * cell_occ)
         self._dsc = np.zeros(27 * cell_occ)
-
 
     
     def _assert_init(self):
@@ -143,32 +170,67 @@ class KMCFMM(object):
         
         self._assert_init()
 
-        prop_energy = []
-
+        num_particles = len(moves)
+        max_num_moves = 0
         for movx in moves:
+            movs = np.atleast_2d(movx[1])
+            num_movs = movs.shape[0]
+            max_num_moves = max(max_num_moves, num_movs)
+        
+        # check tmp energy arrays are large enough
+        tmp_eng_stride = self._tmp_energy_check((num_particles, max_num_moves))
+
+        # direct differences
+        for movxi, movx in enumerate(moves):
+            # get particle local id
+            pid = movx[0]
+            # get passed moves, number of moves
+            movs = np.atleast_2d(movx[1])
+            
+            for mxi, mx in enumerate(movs):
+                self._tmp_energies[_ENERGY.U0_DIRECT][movxi, mxi] = self._direct_contrib_old(pid)
+                self._tmp_energies[_ENERGY.U1_DIRECT][movxi, mxi] = self._direct_contrib_new(pid, mx)
+    
+        # indirect differences
+        for movxi, movx in enumerate(moves):
             # get particle local id
             pid = movx[0]
             # get passed moves, number of moves
             movs = np.atleast_2d(movx[1])
             num_movs = movs.shape[0]
-            # space for output energy
+
+            for mxi, mx in enumerate(movs):
+                self._tmp_energies[_ENERGY.U0_INDIRECT][movxi, mxi] = self._charge_indirect_energy_old(pid)
+                self._tmp_energies[_ENERGY.U1_INDIRECT][movxi, mxi] = self._charge_indirect_energy_new(pid, mx)
+        
+        # compute self interactions
+        for movxi, movx in enumerate(moves):
+            pid = movx[0]
+            movs = np.atleast_2d(movx[1])
+            num_movs = movs.shape[0]
+
+            for mxi, mx in enumerate(movs):
+                self._tmp_energies[_ENERGY.U01_SELF][movxi, mxi] = self._self_interaction(pid, mx)
+        
+        # compute differences
+        self._tmp_energies[_ENERGY.U1_DIRECT] += self._tmp_energies[_ENERGY.U1_INDIRECT] \
+            - self._tmp_energies[_ENERGY.U0_DIRECT] \
+            - self._tmp_energies[_ENERGY.U0_INDIRECT] \
+            - self._tmp_energies[_ENERGY.U01_SELF]
+
+        prop_energy = []
+
+        for movxi, movx in enumerate(moves):
+            pid = movx[0]
+            movs = np.atleast_2d(movx[1])
+            num_movs = movs.shape[0]
             pid_prop_energy = np.zeros(num_movs)
 
             for mxi, mx in enumerate(movs):
                 if np.linalg.norm(self.positions.data[pid, :] - mx) < 10.**-14:
                     pid_prop_energy[mxi] = self.energy
                 else:
-                    # compute old energy u0
-                    u0_direct = self._direct_contrib_old(pid)
-                    u0_indirect = self._charge_indirect_energy_old(pid)
-                    # compute new energy u1
-                    u1_direct = self._direct_contrib_new(pid, mx)
-                    u1_indirect = self._charge_indirect_energy_new(pid, mx)
-                    # compute any self interactions
-                    u01_self = self._self_interaction(pid, mx)
-                    # store difference
-                    pid_prop_energy[mxi] = self.energy - u0_direct - u0_indirect + \
-                        u1_direct + u1_indirect - u01_self
+                    pid_prop_energy[mxi] = self.energy + self._tmp_energies[_ENERGY.U1_DIRECT][movxi, mxi]
 
             prop_energy.append(pid_prop_energy)
 
@@ -501,8 +563,8 @@ class KMCFMM(object):
         
         # use the really long range part of the fmm instance (extract this into a matrix)
         self.fmm._translate_mtl_lib['mtl_test_wrapper'](
-            ctypes.c_int64(self.fmm.L),
-            ctypes.c_double(1.),
+            INT64(self.fmm.L),
+            REAL(1.),
             KMCFMM._numpy_ptr(arr),
             KMCFMM._numpy_ptr(self.fmm._boundary_ident),
             KMCFMM._numpy_ptr(self.fmm._boundary_terms),
@@ -514,10 +576,17 @@ class KMCFMM(object):
 
         return arr_out
 
-
-
-
-
+    def _tmp_energy_check(self, new_size):
+        ts = self._tmp_energies[_ENERGY.U0_DIRECT].shape
+        if ts[0] < new_size[0] or ts[1] < new_size[1]:
+            self._tmp_energies = {
+                _ENERGY.U0_DIRECT   : np.zeros(new_size, dtype=REAL),
+                _ENERGY.U0_INDIRECT : np.zeros(new_size, dtype=REAL),
+                _ENERGY.U1_DIRECT   : np.zeros(new_size, dtype=REAL),
+                _ENERGY.U1_INDIRECT : np.zeros(new_size, dtype=REAL),
+                _ENERGY.U01_SELF    : np.zeros(new_size, dtype=REAL)
+            }
+        return self._tmp_energies[_ENERGY.U0_DIRECT].shape[1]
 
 
 

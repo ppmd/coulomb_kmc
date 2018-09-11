@@ -27,6 +27,7 @@ SHARED_MEMORY = 'omp'
 from coulomb_kmc import *
 
 
+@pytest.mark.skipif('MPISIZE > 1')
 def test_kmc_fmm_pbc_1():
     """
     Tests proposed moves one by one against direct calculation.
@@ -137,6 +138,7 @@ def test_kmc_fmm_pbc_1():
         assert err < eps
 
 
+@pytest.mark.skipif('MPISIZE > 1')
 def test_kmc_fmm_pbc_2():
     """
     Tests proposed moves one by one against direct calculation.
