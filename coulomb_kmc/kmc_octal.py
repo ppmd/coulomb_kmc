@@ -52,8 +52,6 @@ class LocalCellExpansions(object):
         # this is slowest to fastest not xyz
         local_store_dims = [len(dx) for dx in cell_indices]
 
-        print(cell_indices)
-        print(local_store_dims)
         
         # this is slowest to fastest not xyz
         self.local_store_dims = local_store_dims
@@ -65,12 +63,12 @@ class LocalCellExpansions(object):
 
         self._wing = MPI.Win()
 
-        data_nbytes = self.fmm.tree_plain[-1][0,0,0].nbytes * (self.fmm.L ** 2) * 2
+        data_nbytes = self.fmm.tree_plain[-1][0,0,0,:].nbytes
         self._win = self._wing.Create(self.fmm.tree_plain[-1], disp_unit=data_nbytes, comm=self.comm)
 
         gmap_nbytes = self.fmm.tree[-1].global_to_local[0,0,0].nbytes
         self._win_ind = self._wing.Create(self.fmm.tree[-1].global_to_local, disp_unit=gmap_nbytes, comm=self.comm)
-
+        
 
     def initialise(self):
         self._get_local_expansions()
@@ -94,6 +92,8 @@ class LocalCellExpansions(object):
             
             cellx = (lcl[0][local_cellx[0]], lcl[1][local_cellx[1]], lcl[2][local_cellx[2]])
             owning_rank = self.fmm.tree[-1].owners[cellx[0], cellx[1], cellx[2]]
+            assert owning_rank > -1
+            assert owning_rank < self.comm.size
 
             if rank == owning_rank:
                 # can do a direct copy as this rank owns the local expansions in the fmm instance
@@ -113,6 +113,7 @@ class LocalCellExpansions(object):
                 remote_cells.append((cellx, gcellx, owning_rank, local_cellx))
 
         self._win_ind.Fence(MPI.MODE_NOPUT)
+        
         self.comm.Barrier()           
         self._win.Fence(MPI.MODE_NOPUT)
         
@@ -120,18 +121,21 @@ class LocalCellExpansions(object):
         for cell_tup in remote_cells:
             
             cellx = cell_tup[0]
-            owning_rank = cell_tup[2]
             gcellx = cell_tup[1]
+            owning_rank = cell_tup[2]
             local_cellx = cell_tup[3]
             
             remote_ind = self.remote_inds[local_cellx[0], local_cellx[1], local_cellx[2], 0]
+            assert remote_ind > -1
+
             self._win.Get(
                     self.local_expansions[local_cellx[0], local_cellx[1], local_cellx[2], :],
                     owning_rank, target=remote_ind)
+        
 
         self._win.Fence(MPI.MODE_NOPUT)
         self.comm.Barrier()           
-
+        
     
     def _global_cell_xyz(self, tcx):
         """get global cell index from xyz tuple"""

@@ -17,7 +17,7 @@ from scipy.special import sph_harm, lpmv
 import time
 
 from math import *
-
+from itertools import product
 MPISIZE = MPI.COMM_WORLD.Get_size()
 MPIRANK = MPI.COMM_WORLD.Get_rank()
 MPIBARRIER = MPI.COMM_WORLD.Barrier
@@ -29,7 +29,8 @@ from coulomb_kmc import *
 
 def test_kmc_octal_1():
     eps = 10.**-5
-    L = 12
+    L = 2
+    ncomp = L*L*2
     R = 3
 
     N = 20
@@ -74,12 +75,41 @@ def test_kmc_octal_1():
     # create a kmc instance
     kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
         domain=A.domain, r=R, l=L, boundary_condition='free_space')
-    kmc_fmm.initialise()
+    # kmc_fmm.initialise()
     
-    print("\n")
+    print("\n", MPIRANK)
+    
+    # make some data
+    ns = kmc_fmm.fmm.tree[-1].ncubes_side_global
+    test_data = np.array(rng.uniform(size=(ns, ns, ns, ncomp)), dtype=ctypes.c_double)
+    
+    ls = kmc_fmm.fmm.tree[-1].local_grid_cube_size
+    lo = kmc_fmm.fmm.tree[-1].local_grid_offset
+
+    # populate local part of octal tree
+    kmc_fmm.fmm.tree_plain[-1][:,:,:,:] = test_data[
+        lo[0]:lo[0]+ls[0]:,
+        lo[1]:lo[1]+ls[1]:,
+        lo[2]:lo[2]+ls[2]:,
+        :
+    ]
+
     kmco = kmc_octal.LocalCellExpansions(kmc_fmm.fmm, 1.0)
     kmco.initialise()
+    lcl = kmco.cell_indices
+    local_dims = kmco.local_store_dims
+    for cellx in product(range(local_dims[0]), 
+            range(local_dims[1]),
+            range(local_dims[2])):
 
+        orig_cell = (kmco.cell_indices[0][cellx[0]],
+                kmco.cell_indices[1][cellx[1]],
+                kmco.cell_indices[2][cellx[2]])
+
+        np.testing.assert_array_equal(
+            kmco.local_expansions[cellx[0], cellx[1], cellx[2], :],
+            test_data[orig_cell[0], orig_cell[1], orig_cell[2], :]
+        )
 
 
 
