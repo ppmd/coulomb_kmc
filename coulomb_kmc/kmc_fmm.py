@@ -14,6 +14,7 @@ from scipy.special import lpmv
 
 # ppmd imports
 from ppmd.coulomb.fmm import PyFMM
+from ppmd.pairloop import StateHandler
 
 # coulomb_kmc imports
 from coulomb_kmc import kmc_octal
@@ -98,6 +99,7 @@ class KMCFMM(object):
         self.energy = None
         self.group = positions.group
         self.energy_unit = energy_unit
+        self.comm = self.fmm.comm
 
         self._cell_map = None
         self._cell_occ = None
@@ -117,6 +119,8 @@ class KMCFMM(object):
         # TODO properly implement max_move
         max_move = 1.0
         self.max_move = max_move
+        
+        # class to collect required local expansions
         self.kmco = kmc_octal.LocalCellExpansions(self.fmm, self.max_move)
 
         self._tmp_energies = {
@@ -126,6 +130,9 @@ class KMCFMM(object):
             _ENERGY.U1_INDIRECT : np.zeros((1, 1), dtype=REAL),
             _ENERGY.U01_SELF    : np.zeros((1, 1), dtype=REAL)
         }
+        
+        
+
 
 
     # these should be the names of the final propose and accept methods.
@@ -396,7 +403,6 @@ class KMCFMM(object):
 
 
     def _charge_indirect_energy_old(self, ix):
-        s = self.group
         cell = self._get_fmm_cell(ix)
         lexp = self._get_local_expansion(cell)
         disp = self._get_cell_disp(cell, self.positions.data[ix,:])
