@@ -388,7 +388,6 @@ class KMCFMM(object):
 
 
     def _charge_indirect_energy_new(self, ix, prop_pos):
-        s = self.group
         cell = self._get_cell(prop_pos)
         lexp = self._get_local_expansion(cell)
         disp = self._get_cell_disp(cell, prop_pos)
