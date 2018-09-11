@@ -406,12 +406,25 @@ class KMCFMM(object):
 
 
     def _get_local_expansion(self, cell):
-        ls = self.fmm.tree[self.fmm.R-1].local_grid_cube_size
-        lo = self.fmm.tree[self.fmm.R-1].local_grid_offset
-        lor = list(lo)
-        lor.reverse()
-        lc = [cx - lx for cx, lx in zip(cell, lor)]
-        return self.fmm.tree_plain[self.fmm.R-1][lc[2], lc[1], lc[0], :]
+
+        nor = list(self.kmco.global_to_local)
+        lcn = [cx + lx for cx, lx in zip(reversed(cell), nor)]
+        new_exp = self.kmco.local_expansions[lcn[0], lcn[1], lcn[2], :]
+        
+        # uses the local expansions directly in the fmm instance as opposed
+        # to the new approach that gathers them directly
+        test_old = False
+        if test_old:
+            ls = self.fmm.tree[self.fmm.R-1].local_grid_cube_size
+            lo = self.fmm.tree[self.fmm.R-1].local_grid_offset
+            lor = list(lo)
+            lor.reverse()
+            lc = [cx - lx for cx, lx in zip(cell, lor)]
+
+            old_exp = self.fmm.tree_plain[self.fmm.R-1][lc[2], lc[1], lc[0], :]
+            np.testing.assert_array_equal(old_exp, new_exp)
+
+        return new_exp
 
 
     def _get_cell_disp(self, cell, position):
