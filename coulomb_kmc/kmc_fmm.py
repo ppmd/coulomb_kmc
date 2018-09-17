@@ -99,7 +99,7 @@ class KMCFMM(object):
         self.energy = None
         self.group = positions.group
         self.energy_unit = energy_unit
-        self.comm = self.fmm.comm
+        self.comm = self.fmm.tree.cart_comm
 
         self._cell_map = None
         self._cell_occ = None
