@@ -51,7 +51,7 @@ class LocalParticleData(object):
         
         self._max_cell_occ = -1
         self._owner_store = None
-        self._local_particle_store = None
+        self.local_particle_store = None
 
         # compute the cells required for direct interactions
 
@@ -90,7 +90,10 @@ class LocalParticleData(object):
         self.remote_inds_particles = np.zeros((local_store_dims[0], local_store_dims[1], 
             local_store_dims[2], 1), dtype=INT64)
 
-        # force creation of self._owner_store and self._local_particle_store
+        self.local_cell_occupancy = np.zeros((local_store_dims[0], local_store_dims[1], 
+            local_store_dims[2], 1), dtype=INT64)
+
+        # force creation of self._owner_store and self.local_particle_store
         self._check_owner_store(max_cell_occ=1)
     
     def _check_owner_store(self, max_cell_occ):
@@ -113,7 +116,7 @@ class LocalParticleData(object):
             self._max_cell_occ = max_cell_occ
             
             lsd = self.local_store_dims
-            self._local_particle_store = np.zeros(
+            self.local_particle_store = np.zeros(
                 (lsd[0], lsd[1], lsd[2], max_cell_occ, 5), 
                 dtype=REAL
             )
@@ -159,8 +162,9 @@ class LocalParticleData(object):
                 range(self.local_store_dims[2])
             ):
             gcellx = [self.cell_indices[dxi][dx] for dxi, dx in enumerate(lcellx)]
-            
             owning_rank = self.fmm.tree[-1].owners[gcellx[0], gcellx[1], gcellx[2]]
+            gcellx = self._global_cell_xyz((gcellx[2], gcellx[1], gcellx[0]))
+
 
             if owning_rank != self.comm.rank:
                 self._win_ind.Get(self.remote_inds_particles[lcellx[0], lcellx[1], lcellx[2], :],
@@ -229,6 +233,8 @@ class LocalParticleData(object):
                 offset += self.entry_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], 0]
 
                 self._win_global_store.Put(tmp[-1], owning_rank, offset)
+                
+
             else:
                 # case for copying data directly
 
@@ -251,6 +257,7 @@ class LocalParticleData(object):
         # loop over required cells and copy particle data
 
 
+        self._occ_win.Fence(MPI.MODE_NOPUT)
         self._win_global_store.Fence(MPI.MODE_NOPUT)
 
 
@@ -261,25 +268,54 @@ class LocalParticleData(object):
             ):
             gcellx = [self.cell_indices[dxi][dx] for dxi, dx in enumerate(lcellx)]
             
+            
             owning_rank = self.fmm.tree[-1].owners[gcellx[0], gcellx[1], gcellx[2]]
             if owning_rank == self.comm.rank:
                 # do direct copy
                 llcellx = [cx - ox for cx, ox in zip(gcellx, lo)]
-                self._local_particle_store[lcellx[0], lcellx[1], lcellx[2], : , : ] = \
+                self.local_particle_store[lcellx[0], lcellx[1], lcellx[2], : , : ] = \
                         self._owner_store[llcellx[0], llcellx[1], llcellx[2], :, : ]
+
+                self.local_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], :] = \
+                    self.cell_occupancy[llcellx[0], llcellx[1], llcellx[2], 0]
 
             else:
                 # case to issue MPI_Get
-                pass
-                
+                remote_index = self.remote_inds_particles[lcellx[0], lcellx[1], lcellx[2], 0]
+                assert remote_index > -1
 
+                self._occ_win.Get(self.local_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], :],
+                    owning_rank,
+                    target=remote_index)
 
-
+                remote_index *= self._max_cell_occ
+                self._win_global_store.Get(
+                    self.local_particle_store[lcellx[0], lcellx[1], lcellx[2], : , : ],
+                    owning_rank,
+                    target=remote_index
+                )
 
         self._win_global_store.Fence(MPI.MODE_NOPUT)
+        self._occ_win.Fence(MPI.MODE_NOPUT)
         self.comm.Barrier()
+    
+        for lcellx in product(
+                range(self.local_store_dims[0]),
+                range(self.local_store_dims[1]),
+                range(self.local_store_dims[2])
+            ):
+            gcellx = [self.cell_indices[dxi][dx] for dxi, dx in enumerate(lcellx)]
+            
+            owning_rank = self.fmm.tree[-1].owners[gcellx[0], gcellx[1], gcellx[2]]
 
-
+            if self.local_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], 0] > 0:
+                print(lcellx, gcellx)
+                if owning_rank == self.comm.rank:
+                    print(self.local_particle_store[lcellx[0], lcellx[1], lcellx[2], : , : ])
+                    pass
+                else:
+                    print(self.local_particle_store[lcellx[0], lcellx[1], lcellx[2], : , : ])
+                    pass
 
 
     def _get_fmm_cell(self, ix, cell_map, slow_to_fast=False):
