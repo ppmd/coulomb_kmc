@@ -15,8 +15,7 @@ REAL = ctypes.c_double
 INT64 = ctypes.c_int64
 
 class LocalParticleData(object):
-    def __init__(self, group, fmm, max_move):
-        self.group = group
+    def __init__(self, fmm, max_move):
         self.fmm = fmm
         self.domain = fmm.domain
         self.comm = fmm.tree.cart_comm
@@ -330,7 +329,7 @@ class LocalParticleData(object):
         
         els = self.entry_local_size
         elo = self.entry_local_offset
-        
+
         assert cz >= elo[0] and cz < elo[0] + els[0]
         assert cy >= elo[1] and cy < elo[1] + els[1]
         assert cx >= elo[2] and cx < elo[2] + els[2]

@@ -15,9 +15,11 @@ from scipy.special import lpmv
 # ppmd imports
 from ppmd.coulomb.fmm import PyFMM
 from ppmd.pairloop import StateHandler
+from ppmd.mpi import MPI
+from ppmd.data import ParticleDat
 
 # coulomb_kmc imports
-from coulomb_kmc import kmc_octal
+from coulomb_kmc import kmc_octal, kmc_local
 
 REAL = ctypes.c_double
 INT64 = ctypes.c_int64
@@ -122,6 +124,9 @@ class KMCFMM(object):
         
         # class to collect required local expansions
         self.kmco = kmc_octal.LocalCellExpansions(self.fmm, self.max_move)
+        
+        # class to collect and redistribute particle data
+        self.kmcl = kmc_local.LocalParticleData(self.fmm, self.max_move)
 
         self._tmp_energies = {
             _ENERGY.U0_DIRECT   : np.zeros((1, 1), dtype=REAL),
@@ -130,9 +135,14 @@ class KMCFMM(object):
             _ENERGY.U1_INDIRECT : np.zeros((1, 1), dtype=REAL),
             _ENERGY.U01_SELF    : np.zeros((1, 1), dtype=REAL)
         }
-        
-        
 
+
+        self._wing = MPI.Win()
+        self._ordering_buf = np.zeros(1, dtype=INT64)
+        self._ordering_win = self._wing.Create(self._ordering_buf,
+            disp_unit=self._ordering_buf[0].nbytes,
+            comm=self.comm
+        )
 
 
     # these should be the names of the final propose and accept methods.
@@ -140,11 +150,43 @@ class KMCFMM(object):
         pass
     def accept(self):
         pass
+    
+    
+    def _check_ordering_dats(self):
+        # self._ordering_win
+        if (not hasattr(self.group, '_kmc_fmm_order')) or \
+                (self.group._kmc_fmm_order.dtype is not INT64) or \
+                (self.group._kmc_fmm_order.ncomp != 1):
+            self.group._kmc_fmm_order = ParticleDat(ncomp=1, dtype=INT64)
+        
+        nlocal = self.positions.npart_local
+        
+        sbuf = np.zeros_like(self._ordering_buf)
+        sbuf[0] = nlocal
+        rbuf = np.zeros_like(self._ordering_buf)
+
+        self.comm.Barrier()
+        self._ordering_win.Fence()
+        self._ordering_win.Fetch_and_op(sbuf, rbuf, 0, 0)
+        self._ordering_win.Fence()
+        self.group._kmc_fmm_order[:nlocal:, 0] = np.arange(rbuf[0], rbuf[0] + nlocal)        
 
     def initialise(self):
+        
+        # get the current energy, also bins particles into cells
         self.energy = self.fmm(positions=self.positions, charges=self.charges)
+        
+        # get the local expansions into the correct places
         self.kmco.initialise()
         
+        self._check_ordering_dats()
+        self.kmcl.initialise(
+            positions=self.positions,
+            charges=self.charges,
+            fmm_cells=self.group._fmm_cell,
+            ids=self.group._kmc_fmm_order
+        )
+
         self._cell_map = {}
         cell_occ = 1
 
