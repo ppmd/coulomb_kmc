@@ -132,6 +132,8 @@ class LocalParticleData(object):
 
         for pid in range(positions.npart_local):
             cell = self._get_fmm_cell(pid, fmm_cells, slow_to_fast=True)
+            
+            
             if cell in self._cell_map.keys():
                 self._cell_map[cell].append(pid)
                 cell_occ = max(cell_occ, len(self._cell_map[cell]))
@@ -183,7 +185,6 @@ class LocalParticleData(object):
             particle_list = self._cell_map[cellx]
             
             num_particles = len(particle_list)
-            print(num_particles)
 
             owning_rank = self.fmm.tree[-1].owners[cellx[0], cellx[1], cellx[2]]
             owning_offset = self.remote_inds[lcellx[0], lcellx[1], lcellx[2], 0]
@@ -309,12 +310,12 @@ class LocalParticleData(object):
             owning_rank = self.fmm.tree[-1].owners[gcellx[0], gcellx[1], gcellx[2]]
 
             if self.local_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], 0] > 0:
-                print(lcellx, gcellx)
+                #print(lcellx, gcellx)
                 if owning_rank == self.comm.rank:
-                    print(self.local_particle_store[lcellx[0], lcellx[1], lcellx[2], : , : ])
+                    # print(self.local_particle_store[lcellx[0], lcellx[1], lcellx[2], : , : ])
                     pass
                 else:
-                    print(self.local_particle_store[lcellx[0], lcellx[1], lcellx[2], : , : ])
+                    # print(self.local_particle_store[lcellx[0], lcellx[1], lcellx[2], : , : ])
                     pass
 
 
@@ -326,6 +327,14 @@ class LocalParticleData(object):
         cycz = (cc - cx) // sl
         cy = cycz % sl
         cz = (cycz - cy) // sl
+        
+        els = self.entry_local_size
+        elo = self.entry_local_offset
+        
+        assert cz >= elo[0] and cz < elo[0] + els[0]
+        assert cy >= elo[1] and cy < elo[1] + els[1]
+        assert cx >= elo[2] and cx < elo[2] + els[2]
+
         if not slow_to_fast:
             return cx, cy, cz
         else:

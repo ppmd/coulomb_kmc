@@ -48,7 +48,7 @@ class LocalCellExpansions(object):
         global_to_local = [-lo[dx] + pad[dx] for dx in reversed(range(3))]
         self.global_to_local = np.array(global_to_local, dtype=INT64)
 
-        print("ls", ls, "lo", lo, "extent", self.domain.extent, "boundary", self.domain.boundary)
+        # print("ls", ls, "lo", lo, "extent", self.domain.extent, "boundary", self.domain.boundary)
         
         # cell indices as offsets from owned octal cells
         cell_indices = [ lpx + list(range(lsx)) + hpx for lpx, lsx, hpx in zip(pad_low, reversed(ls), pad_high) ]
