@@ -14,8 +14,18 @@ MPI = mpi.MPI
 REAL = ctypes.c_double
 INT64 = ctypes.c_int64
 
+# cuda imports if possible
+import ppmd.cuda
+if ppmd.cuda.CUDA_IMPORT:
+    cudadrv = ppmd.cuda.cuda_runtime.cudadrv
+    # the device should be initialised already by ppmd
+    from pycuda.compiler import SourceModule
+    import pycuda.gpuarray as gpuarray
+
+
 class LocalParticleData(object):
     def __init__(self, fmm, max_move):
+        self.cuda_enabled = ppmd.cuda.CUDA_IMPORT
         self.fmm = fmm
         self.domain = fmm.domain
         self.comm = fmm.tree.cart_comm
@@ -75,6 +85,9 @@ class LocalParticleData(object):
         # cell indices as offsets from owned octal cells
         cell_indices = [ lpx + list(range(lsx)) + hpx for lpx, lsx, hpx in zip(pad_low, reversed(ls), pad_high) ]
         cell_indices = [[ (cx + osx) % cscx for cx in dx ] for dx, cscx, osx in zip(cell_indices, csc, reversed(lo))]
+        
+        # compute the offset to apply (addition) to fmm cells to map into the local store
+        cell_data_offset = [px - ox for px, ox in zip(pad_low, lo)]
 
         # this is now slowest to fastest not xyz
         cell_indices = list(reversed(cell_indices))
@@ -94,7 +107,126 @@ class LocalParticleData(object):
 
         # force creation of self._owner_store and self.local_particle_store
         self._check_owner_store(max_cell_occ=1)
-    
+
+        self.positions = None
+        self.charges = None
+        self.fmm_cells = None
+        self.ids = None
+        self.group = None
+
+        if self.cuda_enabled:
+            # host copy of particle data for moves
+            self._cuda_h = {}
+            self._cuda_h['new_positions'] = np.zeros((1, 3), dtype=REAL)
+            self._cuda_h['new_fmm_cells'] = np.zeros((1, 3), dtype=INT64)
+            self._cuda_h['old_positions'] = np.zeros((1, 3), dtype=REAL)
+            self._cuda_h['old_fmm_cells'] = np.zeros((1, 3), dtype=INT64)
+            self._cuda_h['charges']       = np.zeros((1, 1), dtype=REAL)
+            self._cuda_h['new_energy']    = np.zeros((1, 1), dtype=REAL)
+            self._cuda_h['old_energy']    = np.zeros((1, 1), dtype=REAL)
+            self._cuda_h['ids']           = np.zeros((1, 1), dtype=INT64)
+            # device copy of particle data for moves
+            self._cuda_d = {}
+            self._cuda_d['new_positions'] = None
+            self._cuda_d['new_fmm_cells'] = None
+            self._cuda_d['old_positions'] = None
+            self._cuda_d['old_fmm_cells'] = None
+            self._cuda_d['charges']       = None
+            self._cuda_d['ids']           = None
+            self._cuda_d['new_energy']    = None
+            self._cuda_d['old_energy']    = None
+            # device data for other particles
+            # cell to particle map
+            self._cuda_d_occupancy = None
+            # particle data, is collected as [px, py, pz, chr, id] [REAL, REAL, REAL, REAL, INT64]
+            self._cuda_d_pdata = None
+            
+            # offset for fmm cells
+            self._cuda_d_cell_data_offset = gpuarray.to_gpu(
+                np.array(cell_data_offset, dtype=INT64)
+            )
+            
+            # pycuda funcs with kernels
+            self._cuda_direct_new = None
+            self._cuda_direct_old = None
+
+    def propose(self, moves):
+        total_movs = 0
+        for movx in moves:
+            movs = np.atleast_2d(movx[1])
+            num_movs = movs.shape[0]
+            total_movs += num_movs
+        
+        if self.cuda_enabled:
+            self._resize_cuda_arrays(total_movs)
+        
+            tmp_index = 0
+            for movx in moves:
+                movs = np.atleast_2d(movx[1])
+                num_movs = movs.shape[0]
+                pid = movx[0]
+                
+                ts = tmp_index
+                te = ts + num_movs
+
+                self._cuda_h['new_positions'][ts:te:, :] = movs
+                self._cuda_h['old_positions'][ts:te:, :] = self.positions[pid, :]
+                self._cuda_h['charges'][ts:te:, :]       = self.charges[pid, 0]
+                self._cuda_h['old_fmm_cells'][ts:te:, :] = self._get_fmm_cell(
+                    self.fmm_cells[pid, 0], self.fmm_cells)
+                self._cuda_h['ids'][ts:te:, 0]              = self.ids[pid, 0]
+                for ti, tix in enumerate(range(tmp_index, tmp_index + num_movs)):
+                    self._cuda_h['new_fmm_cells'][tix, :] = self._get_cell(movs[ti])
+                tmp_index += num_movs
+            self._copy_to_device()
+
+            # test call to the direct_new func
+            """
+                        const INT64 d_num_movs,
+                        const REAL  * d_positions,
+                        const REAL  * d_charges,
+                        const INT64 * d_ids,
+                        const INT64 * d_fmm_cells,
+                        const REAL  * d_pdata,
+                        const INT64 * d_cell_offset,
+                        const INT64 * d_cell_occ,
+                        const INT64 d_cell_stride,
+                        REAL * d_energy
+            """
+            block_size = (256, 1, 1)
+            grid_size = (int(ceil(total_movs/block_size[0])), 1)
+            print(total_movs, block_size, grid_size)
+            self._cuda_direct_new(
+                np.int64(total_movs),
+                self._cuda_d['new_positions'],
+                self._cuda_d['charges'],
+                self._cuda_d['ids'],
+                self._cuda_d['new_fmm_cells'],
+                self._cuda_d_pdata,
+                self._cuda_d_cell_data_offset,
+                self._cuda_d_occupancy,
+                np.int64(self.local_particle_store.shape[1]),
+                self._cuda_d['new_energy'],
+                block=block_size,
+                grid=grid_size
+            )
+
+    def _copy_to_device(self):
+        assert self.cuda_enabled is True
+        # copy the particle data to the device
+        for keyx in self._cuda_h.keys():
+            self._cuda_d[keyx] = gpuarray.to_gpu(self._cuda_h[keyx])
+
+
+    def _resize_cuda_arrays(self, total_movs):
+        assert self.cuda_enabled is True
+        if self._cuda_h['ids'].shape[0] < total_movs:
+            for keyx in self._cuda_h.keys():
+                ncomp = self._cuda_h[keyx].shape[1]
+                dtype = self._cuda_h[keyx].dtype
+                self._cuda_h[keyx] = np.zeros((total_movs, ncomp), dtype=dtype)
+
+
     def _check_owner_store(self, max_cell_occ):
 
         if self._owner_store is None or \
@@ -125,6 +257,11 @@ class LocalParticleData(object):
 
     
     def initialise(self, positions, charges, fmm_cells, ids):
+        self.positions = positions
+        self.charges = charges
+        self.fmm_cells = fmm_cells
+        self.ids = ids
+        self.group = self.positions.group
 
         self._cell_map = {}
         cell_occ = 1
@@ -298,7 +435,47 @@ class LocalParticleData(object):
         self._win_global_store.Fence(MPI.MODE_NOPUT)
         self._occ_win.Fence(MPI.MODE_NOPUT)
         self.comm.Barrier()
-    
+        
+        # copy the particle data and the map to the device if applicable
+        if self.cuda_enabled:
+            self._cuda_d_occupancy = gpuarray.to_gpu(self.local_cell_occupancy)
+            self._cuda_d_pdata = gpuarray.to_gpu(self.local_particle_store)
+            assert REAL is ctypes.c_double # can be removed if the parameters are templated correctly
+            #make the cuda kernel
+            
+            src = r"""
+                #include <stdint.h>
+                #include <stdio.h>
+
+                #define REAL {REAL}
+                #define INT64 {INT64}
+                __global__ void direct_new(
+                    const INT64 d_num_movs,
+                    const REAL  * d_positions,
+                    const REAL  * d_charges,
+                    const INT64 * d_ids,
+                    const INT64 * d_fmm_cells,
+                    const REAL  * d_pdata,
+                    const INT64 * d_cell_offset,
+                    const INT64 * d_cell_occ,
+                    const INT64 d_cell_stride,
+                    REAL * d_energy
+                ) {{
+                    const INT64 idx = threadIdx.x + blockIdx.x * blockDim.x;
+                    if (idx < d_num_movs){{
+                        printf("%d | %f %f %f\n", idx, d_positions[3*idx], d_positions[3*idx+1],d_positions[3*idx+2]);
+                    }}
+                }}
+                """.format(
+                    REAL='double',
+                    INT64='int64_t'
+                )
+            print(src)
+            mod = SourceModule(src)
+            self._cuda_direct_new = mod.get_function("direct_new")
+
+
+        # some debug code
         for lcellx in product(
                 range(self.local_store_dims[0]),
                 range(self.local_store_dims[1]),
@@ -345,7 +522,17 @@ class LocalParticleData(object):
         gcs = [csc, csc, csc]
         return tcx[0] + gcs[0] * ( tcx[1] + gcs[1] * tcx[2] )
 
+    def _get_cell(self, position):
 
+        extent = self.group.domain.extent
+        cell_widths = [ex / (2**(self.fmm.R - 1)) for ex in extent]
+        spos = [0.5*ex + po for po, ex in zip(position, extent)]
+        # if a charge is slightly out of the negative end of an axis this will
+        # truncate to zero
+        cell = [int(pcx / cwx) for pcx, cwx in zip(spos, cell_widths)]
+        # truncate down if too high on axis, if way too high this should probably
+        # throw an error
+        return tuple([min(cx, 2**(self.fmm.R -1)) for cx in cell ])
 
 
 

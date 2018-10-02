@@ -218,6 +218,10 @@ class KMCFMM(object):
         """
         
         self._assert_init()
+        
+        # tmp testing...
+        self.kmcl.propose(moves)
+
 
         num_particles = len(moves)
         max_num_moves = 0
