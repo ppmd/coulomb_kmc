@@ -22,6 +22,38 @@ if ppmd.cuda.CUDA_IMPORT:
     from pycuda.compiler import SourceModule
     import pycuda.gpuarray as gpuarray
 
+_offsets = (
+    ( -1, -1, -1),
+    (  0, -1, -1),
+    (  1, -1, -1),
+    ( -1,  0, -1),
+    (  0,  0, -1),
+    (  1,  0, -1),
+    ( -1,  1, -1),
+    (  0,  1, -1),
+    (  1,  1, -1),
+
+    ( -1, -1,  0),
+    (  0, -1,  0),
+    (  1, -1,  0),
+    ( -1,  0,  0),
+    (  0,  0,  0),
+    (  1,  0,  0),
+    ( -1,  1,  0),
+    (  0,  1,  0),
+    (  1,  1,  0),
+
+    ( -1, -1,  1),
+    (  0, -1,  1),
+    (  1, -1,  1),
+    ( -1,  0,  1),
+    (  0,  0,  1),
+    (  1,  0,  1),
+    ( -1,  1,  1),
+    (  0,  1,  1),
+    (  1,  1,  1),
+)
+
 
 class LocalParticleData(object):
     def __init__(self, fmm, max_move):
@@ -87,8 +119,7 @@ class LocalParticleData(object):
         cell_indices = [[ (cx + osx) % cscx for cx in dx ] for dx, cscx, osx in zip(cell_indices, csc, reversed(lo))]
         
         # compute the offset to apply (addition) to fmm cells to map into the local store
-        cell_data_offset = [px - ox for px, ox in zip(pad_low, lo)]
-
+        cell_data_offset = [len(px) - ox for px, ox in zip(pad_low, lo)]
         # this is now slowest to fastest not xyz
         cell_indices = list(reversed(cell_indices))
 
@@ -141,10 +172,7 @@ class LocalParticleData(object):
             # particle data, is collected as [px, py, pz, chr, id] [REAL, REAL, REAL, REAL, INT64]
             self._cuda_d_pdata = None
             
-            # offset for fmm cells
-            self._cuda_d_cell_data_offset = gpuarray.to_gpu(
-                np.array(cell_data_offset, dtype=INT64)
-            )
+            self.cell_data_offset = cell_data_offset
             
             # pycuda funcs with kernels
             self._cuda_direct_new = None
@@ -188,7 +216,6 @@ class LocalParticleData(object):
                         const INT64 * d_ids,
                         const INT64 * d_fmm_cells,
                         const REAL  * d_pdata,
-                        const INT64 * d_cell_offset,
                         const INT64 * d_cell_occ,
                         const INT64 d_cell_stride,
                         REAL * d_energy
@@ -203,7 +230,6 @@ class LocalParticleData(object):
                 self._cuda_d['ids'],
                 self._cuda_d['new_fmm_cells'],
                 self._cuda_d_pdata,
-                self._cuda_d_cell_data_offset,
                 self._cuda_d_occupancy,
                 np.int64(self.local_particle_store.shape[1]),
                 self._cuda_d['new_energy'],
@@ -443,12 +469,45 @@ class LocalParticleData(object):
             assert REAL is ctypes.c_double # can be removed if the parameters are templated correctly
             #make the cuda kernel
             
+            # precompute the cell offsets for the generated kernel
+            # local_store_dims is slowest to fastest
+            lsd = self.local_store_dims
+            offsets = [str(ox[0] + lsd[2] * (ox[1] + lsd[0]*ox[2])) for ox in _offsets]
+            offsets = '__device__ const INT32 OFFSETS[27] = {' + ','.join(offsets) + '};'
+            
+            offset_x = '__device__ const INT32 CELL_OFFSET_X = ' + str(self.cell_data_offset[2]) + ';'
+            offset_y = '__device__ const INT32 CELL_OFFSET_Y = ' + str(self.cell_data_offset[1]) + ';'
+            offset_z = '__device__ const INT32 CELL_OFFSET_Z = ' + str(self.cell_data_offset[0]) + ';'
+            lsd_x = '__device__ const INT32 LSD_X = ' + str(self.local_store_dims[2]) + ';'
+            lsd_y = '__device__ const INT32 LSD_Y = ' + str(self.local_store_dims[1]) + ';'
+            lsd_z = '__device__ const INT32 LSD_Z = ' + str(self.local_store_dims[0]) + ';'
+
             src = r"""
                 #include <stdint.h>
                 #include <stdio.h>
+                #include <math.h>
 
                 #define REAL {REAL}
-                #define INT64 {INT64}
+                #define INT64 int64_t
+                #define INT32 int32_t
+
+                {OFFSETS}
+                {CELL_OFFSET_X}
+                {CELL_OFFSET_Y}
+                {CELL_OFFSET_Z}
+                {LSD_X}
+                {LSD_Y}
+                {LSD_Z}
+                
+                // only needed for the id which we don't
+                // need to inspect for the new position
+                /*
+                union {{
+                    REAL get_real;
+                    INT64 get_int;
+                }} REAL_INT64_t;
+                */ 
+
                 __global__ void direct_new(
                     const INT64 d_num_movs,
                     const REAL  * d_positions,
@@ -456,20 +515,63 @@ class LocalParticleData(object):
                     const INT64 * d_ids,
                     const INT64 * d_fmm_cells,
                     const REAL  * d_pdata,
-                    const INT64 * d_cell_offset,
                     const INT64 * d_cell_occ,
                     const INT64 d_cell_stride,
                     REAL * d_energy
                 ) {{
                     const INT64 idx = threadIdx.x + blockIdx.x * blockDim.x;
                     if (idx < d_num_movs){{
-                        printf("%d | %f %f %f\n", idx, d_positions[3*idx], d_positions[3*idx+1],d_positions[3*idx+2]);
+                        // this performs a cast but saves a register per value
+                        // should never overflow as more than 2**3a1 cells per side is unlikely
+                        // the offsets are slowest to fastest (numpy)
+                        const INT32 icx = d_fmm_cells[idx*3]   + CELL_OFFSET_X;
+                        const INT32 icy = d_fmm_cells[idx*3+1] + CELL_OFFSET_Y;
+                        const INT32 icz = d_fmm_cells[idx*3+2] + CELL_OFFSET_Z;
+                        
+                        const INT32 ic = icx + LSD_X * (icy + LSD_Y*icz);
+                        const REAL ipx = d_positions[idx*3];
+                        const REAL ipy = d_positions[idx*3+1];
+                        const REAL ipz = d_positions[idx*3+2];
+                        const REAL ich = d_charges[idx];
+
+                        // loop over the jcells
+                        for(INT32 jcx=0 ; jcx<27 ; jcx++){{
+                            const INT32 jc = ic + OFFSETS[jcx];
+
+                            // loop over the particles in the j cell
+                            for(INT32 jx=0 ; jx<d_cell_occ[jc] ; jx++){{
+                                const REAL jpx = d_pdata[jx*5+0];
+                                const REAL jpy = d_pdata[jx*5+1];
+                                const REAL jpz = d_pdata[jx*5+2];
+                                const REAL jch = d_pdata[jx*5+3];
+                                const REAL rx = ipx - jpx;
+                                const REAL ry = ipy - jpy;
+                                const REAL rz = ipz - jpz;
+                                const REAL r2 = rx * rx + ry * ry + rz * rz;
+                                const REAL r = 1.0/sqrt(r2);
+                                
+                                printf("%d | %f\n", idx, r2);
+                            }}
+
+                        }}
+
+                        
+
+
                     }}
                 }}
                 """.format(
                     REAL='double',
-                    INT64='int64_t'
+                    INT64='int64_t',
+                    OFFSETS=offsets,
+                    CELL_OFFSET_X=offset_x,
+                    CELL_OFFSET_Y=offset_y,
+                    CELL_OFFSET_Z=offset_z,
+                    LSD_X=lsd_x,
+                    LSD_Y=lsd_y,
+                    LSD_Z=lsd_z
                 )
+
             print(src)
             mod = SourceModule(src)
             self._cuda_direct_new = mod.get_function("direct_new")
