@@ -20,6 +20,7 @@ from ppmd.data import ParticleDat
 
 # coulomb_kmc imports
 from coulomb_kmc import kmc_octal, kmc_local
+from coulomb_kmc.common import BCType
 
 REAL = ctypes.c_double
 INT64 = ctypes.c_int64
@@ -30,6 +31,7 @@ def _cached_lpmv(*args, **kwargs):
 
 
 class _ENERGY(Enum):
+    U_DIFF = 'u_diff'
     U0_DIRECT = 'u0_direct'
     U0_INDIRECT = 'u0_indirect'
     U1_DIRECT = 'u1_direct'
@@ -73,10 +75,6 @@ class KMCFMM(object):
         (  1,  1,  1),
     )
 
-    class _BCType(Enum):
-        PBC = 'pbc'
-        FREE_SPACE = 'free_space'
-        NEAREST = '27'
 
     def __init__(self, positions, charges, domain, N=None, boundary_condition='pbc',
         r=None, shell_width=0.0, energy_unit=1.0,
@@ -110,7 +108,7 @@ class KMCFMM(object):
         self._dsb = None
         self._dsc = None
 
-        self._bc = KMCFMM._BCType(boundary_condition)
+        self._bc = BCType(boundary_condition)
         
         self._hmatrix_py = np.zeros((2*self.fmm.L, 2*self.fmm.L))
         def Hfoo(nx, mx): return sqrt(float(factorial(nx - abs(mx)))/factorial(nx + abs(mx)))
@@ -126,9 +124,11 @@ class KMCFMM(object):
         self.kmco = kmc_octal.LocalCellExpansions(self.fmm, self.max_move)
         
         # class to collect and redistribute particle data
-        self.kmcl = kmc_local.LocalParticleData(self.fmm, self.max_move)
+        self.kmcl = kmc_local.LocalParticleData(self.fmm, self.max_move,
+            boundary_condition=self._bc)
 
         self._tmp_energies = {
+            _ENERGY.U_DIFF      : np.zeros((1, 1), dtype=REAL),
             _ENERGY.U0_DIRECT   : np.zeros((1, 1), dtype=REAL),
             _ENERGY.U0_INDIRECT : np.zeros((1, 1), dtype=REAL),
             _ENERGY.U1_DIRECT   : np.zeros((1, 1), dtype=REAL),
@@ -266,7 +266,9 @@ class KMCFMM(object):
                 self._tmp_energies[_ENERGY.U01_SELF][movxi, mxi] = self._self_interaction(pid, mx)
         
         # compute differences
-        self._tmp_energies[_ENERGY.U1_DIRECT] += self._tmp_energies[_ENERGY.U1_INDIRECT] \
+        self._tmp_energies[_ENERGY.U_DIFF] = \
+              self._tmp_energies[_ENERGY.U1_DIRECT] \
+            + self._tmp_energies[_ENERGY.U1_INDIRECT] \
             - self._tmp_energies[_ENERGY.U0_DIRECT] \
             - self._tmp_energies[_ENERGY.U0_INDIRECT] \
             - self._tmp_energies[_ENERGY.U01_SELF]
@@ -300,12 +302,12 @@ class KMCFMM(object):
         ex = self.domain.extent
 
         # self interaction with primary image
-        if self._bc is KMCFMM._BCType.FREE_SPACE:
+        if self._bc is BCType.FREE_SPACE:
             e_tmp = q * q * self.energy_unit / np.linalg.norm(
                 old_pos - prop_pos)
         
         # 26 nearest primary images
-        elif self._bc in (KMCFMM._BCType.NEAREST, KMCFMM._BCType.PBC):
+        elif self._bc in (BCType.NEAREST, BCType.PBC):
             coeff = q * q * self.energy_unit
             e_tmp = 0.0
             for ox in KMCFMM._offsets:
@@ -320,7 +322,7 @@ class KMCFMM(object):
                     e_tmp -= coeff / np.linalg.norm(dox)
             
             # really long range part in the PBC case
-            if self._bc == KMCFMM._BCType.PBC:
+            if self._bc == BCType.PBC:
                 lexp = self._really_long_range_diff(ix, prop_pos)
                 # the origin is the centre of the domain hence no offsets are needed
                 disp = KMCFMM.spherical(tuple(prop_pos))
@@ -334,20 +336,21 @@ class KMCFMM(object):
         icx, icy, icz = self._get_cell(prop_pos)
         e_tmp = 0.0
         extent = self.domain.extent
-        
+        print("HST: prop", prop_pos)
         q = self.charges.data[ix, 0] * self.energy_unit
         
         ncount = 0
         _tva = self._dsa
         _tvb = self._dsb
         _tvc = self._dsc
+        
 
         for ox in KMCFMM._offsets:
             jcell = (icx + ox[0], icy + ox[1], icz + ox[2])
             image_mod = np.zeros(3)
-
+            # print("\tHST: jcell", jcell)
             # in pbc we need to wrap the direct part
-            if self._bc in (KMCFMM._BCType.PBC, KMCFMM._BCType.NEAREST):
+            if self._bc in (BCType.PBC, BCType.NEAREST):
 
                 sl = 2 ** (self.fmm.R - 1)
 
@@ -363,6 +366,7 @@ class KMCFMM(object):
 
                 for jxi, jx in enumerate(self._cell_map[jcell]):
                     _diff = prop_pos - self.positions.data[jx, :] - image_mod
+                    print("\tHST: jpos", self.positions.data[jx, :], jcell)
                     _tva[ncount] = np.dot(_diff, _diff)
                     _tvb[ncount] = self.charges.data[jx, 0]
                     ncount += 1
@@ -371,6 +375,7 @@ class KMCFMM(object):
         np.reciprocal(_tvc[:ncount:], out=_tva[:ncount:])
         e_tmp += np.dot(_tva[:ncount:], _tvb[:ncount:])
 
+        print("\t\tHST: tmps", e_tmp, q)
         return e_tmp * q
 
 
@@ -386,7 +391,7 @@ class KMCFMM(object):
             image_mod = np.zeros(3)
 
             # in pbc we need to wrap the direct part
-            if self._bc in (KMCFMM._BCType.PBC, KMCFMM._BCType.NEAREST):
+            if self._bc in (BCType.PBC, BCType.NEAREST):
                 sl = 2 ** (self.fmm.R - 1)
                 # position offset
                 # in python -5//7 = -1
@@ -644,6 +649,7 @@ class KMCFMM(object):
         ts = self._tmp_energies[_ENERGY.U0_DIRECT].shape
         if ts[0] < new_size[0] or ts[1] < new_size[1]:
             self._tmp_energies = {
+                _ENERGY.U_DIFF      : np.zeros(new_size, dtype=REAL),
                 _ENERGY.U0_DIRECT   : np.zeros(new_size, dtype=REAL),
                 _ENERGY.U0_INDIRECT : np.zeros(new_size, dtype=REAL),
                 _ENERGY.U1_DIRECT   : np.zeros(new_size, dtype=REAL),

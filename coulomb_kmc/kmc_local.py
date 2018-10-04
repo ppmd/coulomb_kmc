@@ -22,6 +22,12 @@ if ppmd.cuda.CUDA_IMPORT:
     from pycuda.compiler import SourceModule
     import pycuda.gpuarray as gpuarray
 
+
+# coulomb_kmc imports
+from coulomb_kmc.common import BCType
+
+
+
 _offsets = (
     ( -1, -1, -1),
     (  0, -1, -1),
@@ -56,7 +62,7 @@ _offsets = (
 
 
 class LocalParticleData(object):
-    def __init__(self, fmm, max_move):
+    def __init__(self, fmm, max_move, boundary_condition=BCType.PBC):
         self.cuda_enabled = ppmd.cuda.CUDA_IMPORT
         self.fmm = fmm
         self.domain = fmm.domain
@@ -66,7 +72,9 @@ class LocalParticleData(object):
         
         self.entry_local_size = fmm.tree.entry_map.local_size
         self.entry_local_offset = fmm.tree.entry_map.local_offset
-
+        
+        assert boundary_condition in (BCType.PBC, BCType.FREE_SPACE, BCType.NEAREST)
+        self._bc = boundary_condition
 
         ls = self.local_size
         lo = self.local_offset
@@ -116,6 +124,7 @@ class LocalParticleData(object):
 
         # cell indices as offsets from owned octal cells
         cell_indices = [ lpx + list(range(lsx)) + hpx for lpx, lsx, hpx in zip(pad_low, reversed(ls), pad_high) ]
+        self.periodic_factors = [[ cellx//csc[di] for cellx in dimx ] for di,dimx in enumerate(cell_indices)]
         cell_indices = [[ (cx + osx) % cscx for cx in dx ] for dx, cscx, osx in zip(cell_indices, csc, reversed(lo))]
         
         # compute the offset to apply (addition) to fmm cells to map into the local store
@@ -237,11 +246,16 @@ class LocalParticleData(object):
                 grid=grid_size
             )
 
+            # print(self._cuda_d['new_energy'].get())
+
     def _copy_to_device(self):
         assert self.cuda_enabled is True
         # copy the particle data to the device
         for keyx in self._cuda_h.keys():
             self._cuda_d[keyx] = gpuarray.to_gpu(self._cuda_h[keyx])
+        # print(60*'-')
+        # print(self._cuda_d_pdata.get())
+        # print(60*'-')
 
 
     def _resize_cuda_arrays(self, total_movs):
@@ -462,9 +476,26 @@ class LocalParticleData(object):
         self._occ_win.Fence(MPI.MODE_NOPUT)
         self.comm.Barrier()
         
+
+        # apply periodic boundary conditions
+        for lcellx in product(
+                range(self.local_store_dims[0]),
+                range(self.local_store_dims[1]),
+                range(self.local_store_dims[2])
+            ):
+            
+            for dimx in range(3):
+                dimx_xyz = 2 - dimx
+                self.local_particle_store[lcellx[0], lcellx[1], lcellx[2], : , dimx_xyz:dimx_xyz+1: ] += \
+                    self.periodic_factors[dimx][lcellx[dimx]] * self.domain.extent[dimx_xyz]
+
+                if self._bc is BCType.FREE_SPACE and self.periodic_factors[dimx][lcellx[dimx]] != 0:
+                    self.local_cell_occupancy[lcellx[0], lcellx[1], lcellx[2]] = 0
+
         # copy the particle data and the map to the device if applicable
         if self.cuda_enabled:
             self._cuda_d_occupancy = gpuarray.to_gpu(self.local_cell_occupancy)
+            
             self._cuda_d_pdata = gpuarray.to_gpu(self.local_particle_store)
             assert REAL is ctypes.c_double # can be removed if the parameters are templated correctly
             #make the cuda kernel
@@ -497,7 +528,7 @@ class LocalParticleData(object):
                 {CELL_OFFSET_Z}
                 {LSD_X}
                 {LSD_Y}
-                {LSD_Z}
+                //{LSD_Z}
                 
                 // only needed for the id which we don't
                 // need to inspect for the new position
@@ -534,29 +565,38 @@ class LocalParticleData(object):
                         const REAL ipz = d_positions[idx*3+2];
                         const REAL ich = d_charges[idx];
 
+                        REAL energy_red = 0.0;
+                        printf("GPU: prop %f, %f, %f\n", ipx, ipy, ipz);
+
                         // loop over the jcells
                         for(INT32 jcx=0 ; jcx<27 ; jcx++){{
                             const INT32 jc = ic + OFFSETS[jcx];
 
+                            //printf("\tGPU: jcell %d\n", jc);
+                            // compute the offset into the cell data
+                            const INT32 offset = jc * ((INT32) d_cell_stride);
+
                             // loop over the particles in the j cell
                             for(INT32 jx=0 ; jx<d_cell_occ[jc] ; jx++){{
-                                const REAL jpx = d_pdata[jx*5+0];
-                                const REAL jpy = d_pdata[jx*5+1];
-                                const REAL jpz = d_pdata[jx*5+2];
-                                const REAL jch = d_pdata[jx*5+3];
+                                const REAL jpx = d_pdata[offset + jx*5+0];
+                                const REAL jpy = d_pdata[offset + jx*5+1];
+                                const REAL jpz = d_pdata[offset + jx*5+2];
+                                const REAL jch = d_pdata[offset + jx*5+3];
                                 const REAL rx = ipx - jpx;
                                 const REAL ry = ipy - jpy;
                                 const REAL rz = ipz - jpz;
                                 const REAL r2 = rx * rx + ry * ry + rz * rz;
-                                const REAL r = 1.0/sqrt(r2);
-                                
-                                printf("%d | %f\n", idx, r2);
+                                energy_red += jch/sqrt(r2);
+
+                                printf("\tGPU: jpos %f %f %f : %d \n", jpx, jpy, jpz, jc);
                             }}
 
                         }}
 
+                        printf("\t\tGPU: tmps %f %f\n", energy_red, ich);
                         
-
+                        energy_red *= ich;
+                        d_energy[idx] = energy_red;
 
                     }}
                 }}
