@@ -256,7 +256,7 @@ def test_kmc_fmm_free_space_2():
     L = 12
     R = 3
 
-    N = 20
+    N = 50
     E = 4.
     rc = E/4
 

@@ -6,6 +6,7 @@ from enum import Enum
 from math import log, ceil, factorial, sqrt, cos, sin
 import ctypes
 from functools import lru_cache
+import time
 
 # pip package imports
 import numpy as np
@@ -220,9 +221,10 @@ class KMCFMM(object):
         self._assert_init()
         
         # tmp testing...
+        cudat0 = time.time()
         self.kmcl.propose(moves)
-
-
+        cudat1 = time.time()
+        
         num_particles = len(moves)
         max_num_moves = 0
         for movx in moves:
@@ -232,7 +234,8 @@ class KMCFMM(object):
         
         # check tmp energy arrays are large enough
         tmp_eng_stride = self._tmp_energy_check((num_particles, max_num_moves))
-
+        
+        hostt0 = time.time()
         # direct differences
         for movxi, movx in enumerate(moves):
             # get particle local id
@@ -243,7 +246,11 @@ class KMCFMM(object):
             for mxi, mx in enumerate(movs):
                 self._tmp_energies[_ENERGY.U0_DIRECT][movxi, mxi] = old_direct_energy
                 self._tmp_energies[_ENERGY.U1_DIRECT][movxi, mxi] = self._direct_contrib_new(pid, mx)
-    
+        hostt1 = time.time()
+
+        # print(hostt1 - hostt0, cudat1 - cudat0)
+
+
         # indirect differences
         for movxi, movx in enumerate(moves):
             # get particle local id
@@ -336,7 +343,7 @@ class KMCFMM(object):
         icx, icy, icz = self._get_cell(prop_pos)
         e_tmp = 0.0
         extent = self.domain.extent
-        print("HST: prop", prop_pos)
+        # print("HST: prop", prop_pos)
         q = self.charges.data[ix, 0] * self.energy_unit
         
         ncount = 0
@@ -405,7 +412,7 @@ class KMCFMM(object):
 
                 for jxi, jx in enumerate(self._cell_map[jcell]):
 
-                    print("\t\tHST: jpos", self.positions.data[jx, :] + image_mod, jx)
+                    # print("\t\tHST: jpos", self.positions.data[jx, :] + image_mod, jx)
 
                     if jx == ix:
                         _tvb[jxi] = 0.0
@@ -419,7 +426,7 @@ class KMCFMM(object):
                 _tva = 1.0/np.sqrt(_tva)
                 e_tmp += np.dot(_tva, _tvb)
 
-        print("\tHST: tmps", e_tmp, q)
+        # print("\tHST: tmps", e_tmp, q)
 
 
         return e_tmp * q

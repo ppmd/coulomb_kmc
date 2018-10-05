@@ -157,24 +157,28 @@ class LocalParticleData(object):
         if self.cuda_enabled:
             # host copy of particle data for moves
             self._cuda_h = {}
-            self._cuda_h['new_positions'] = np.zeros((1, 3), dtype=REAL)
-            self._cuda_h['new_fmm_cells'] = np.zeros((1, 3), dtype=INT64)
-            self._cuda_h['old_positions'] = np.zeros((1, 3), dtype=REAL)
-            self._cuda_h['old_fmm_cells'] = np.zeros((1, 3), dtype=INT64)
-            self._cuda_h['charges']       = np.zeros((1, 1), dtype=REAL)
-            self._cuda_h['new_energy']    = np.zeros((1, 1), dtype=REAL)
-            self._cuda_h['old_energy']    = np.zeros((1, 1), dtype=REAL)
-            self._cuda_h['ids']           = np.zeros((1, 1), dtype=INT64)
+            self._cuda_h['new_ids']           = np.zeros((1, 1), dtype=INT64)
+            self._cuda_h['new_positions']     = np.zeros((1, 3), dtype=REAL)
+            self._cuda_h['new_fmm_cells']     = np.zeros((1, 3), dtype=INT64)
+            self._cuda_h['new_charges']       = np.zeros((1, 1), dtype=REAL)
+            self._cuda_h['new_energy']        = np.zeros((1, 1), dtype=REAL)           
+            self._cuda_h['old_positions']     = np.zeros((1, 3), dtype=REAL)
+            self._cuda_h['old_fmm_cells']     = np.zeros((1, 3), dtype=INT64)
+            self._cuda_h['old_charges']       = np.zeros((1, 1), dtype=REAL)
+            self._cuda_h['old_energy']        = np.zeros((1, 1), dtype=REAL)
+            self._cuda_h['old_ids']           = np.zeros((1, 1), dtype=INT64)
             # device copy of particle data for moves
             self._cuda_d = {}
+            self._cuda_d['new_ids']       = None
             self._cuda_d['new_positions'] = None
             self._cuda_d['new_fmm_cells'] = None
+            self._cuda_d['new_charges']   = None
+            self._cuda_d['new_energy']    = None
             self._cuda_d['old_positions'] = None
             self._cuda_d['old_fmm_cells'] = None
-            self._cuda_d['charges']       = None
-            self._cuda_d['ids']           = None
-            self._cuda_d['new_energy']    = None
+            self._cuda_d['old_charges']   = None
             self._cuda_d['old_energy']    = None
+            self._cuda_d['old_ids']       = None
             # device data for other particles
             # cell to particle map
             self._cuda_d_occupancy = None
@@ -194,12 +198,15 @@ class LocalParticleData(object):
             num_movs = movs.shape[0]
             total_movs += num_movs
         
+        num_particles = len(moves)
+        
+        u0 = None
+        u1 = None
+
         if self.cuda_enabled:
             self._resize_cuda_arrays(total_movs)
         
             tmp_index = 0
-
-
 
             for movi, movx in enumerate(moves):
                 movs = np.atleast_2d(movx[1])
@@ -210,10 +217,14 @@ class LocalParticleData(object):
                 te = ts + num_movs
 
                 self._cuda_h['new_positions'][ts:te:, :] = movs
-                self._cuda_h['old_positions'][ts:te:, :] = self.positions[pid, :]
-                self._cuda_h['charges'][ts:te:, :]       = self.charges[pid, 0]
-                self._cuda_h['old_fmm_cells'][ts:te:, :] = self._get_fmm_cell(pid, self.fmm_cells)
-                self._cuda_h['ids'][ts:te:, 0]              = self.ids[pid, 0]
+                self._cuda_h['new_ids'][ts:te:, 0]       = self.ids[pid, 0]
+                self._cuda_h['new_charges'][ts:te:, :]   = self.charges[pid, 0]
+
+                self._cuda_h['old_positions'][movi, :] = self.positions[pid, :]
+                self._cuda_h['old_charges'][movi, :]   = self.charges[pid, 0]
+                self._cuda_h['old_fmm_cells'][movi, :] = self._get_fmm_cell(pid, self.fmm_cells)
+                self._cuda_h['old_ids'][movi, 0]       = self.ids[pid, 0]
+
                 for ti, tix in enumerate(range(tmp_index, tmp_index + num_movs)):
                     self._cuda_h['new_fmm_cells'][tix, :] = self._get_cell(movs[ti])
                 tmp_index += num_movs
@@ -234,34 +245,41 @@ class LocalParticleData(object):
             """
             block_size = (256, 1, 1)
             grid_size = (int(ceil(total_movs/block_size[0])), 1)
-            print(total_movs, block_size, grid_size)
+
+            stride = self.local_particle_store.shape[3] * self.local_particle_store.shape[4]
             self._cuda_direct_new(
                 np.int64(total_movs),
                 self._cuda_d['new_positions'],
-                self._cuda_d['charges'],
-                self._cuda_d['ids'],
+                self._cuda_d['new_charges'],
+                self._cuda_d['new_ids'],
                 self._cuda_d['new_fmm_cells'],
                 self._cuda_d_pdata,
                 self._cuda_d_occupancy,
-                np.int64(self.local_particle_store.shape[1]),
+                np.int64(stride),
                 self._cuda_d['new_energy'],
                 block=block_size,
                 grid=grid_size
             )
+            block_size = (256, 1, 1)
+            grid_size = (int(ceil(num_particles/block_size[0])), 1)
             self._cuda_direct_old(
                 np.int64(total_movs),
                 self._cuda_d['old_positions'],
-                self._cuda_d['charges'],
-                self._cuda_d['ids'],
+                self._cuda_d['old_charges'],
+                self._cuda_d['old_ids'],
                 self._cuda_d['old_fmm_cells'],
                 self._cuda_d_pdata,
                 self._cuda_d_occupancy,
-                np.int64(self.local_particle_store.shape[1]),
+                np.int64(stride),
                 self._cuda_d['old_energy'],
                 block=block_size,
                 grid=grid_size
             )
-            # print(self._cuda_d['new_energy'].get())
+
+            u1 = self._cuda_d['new_energy'].get()[:total_movs:, :]
+            u0 = self._cuda_d['old_energy'].get()[:num_particles:, :]
+        
+        return u0, u1
 
     def _copy_to_device(self):
         assert self.cuda_enabled is True
@@ -275,7 +293,7 @@ class LocalParticleData(object):
 
     def _resize_cuda_arrays(self, total_movs):
         assert self.cuda_enabled is True
-        if self._cuda_h['ids'].shape[0] < total_movs:
+        if self._cuda_h['new_ids'].shape[0] < total_movs:
             for keyx in self._cuda_h.keys():
                 ncomp = self._cuda_h[keyx].shape[1]
                 dtype = self._cuda_h[keyx].dtype
@@ -452,6 +470,8 @@ class LocalParticleData(object):
         self._occ_win.Fence(MPI.MODE_NOPUT)
         self._win_global_store.Fence(MPI.MODE_NOPUT)
 
+        self.local_particle_store[:] = -888
+
 
         for lcellx in product(
                 range(self.local_store_dims[0]),
@@ -506,6 +526,12 @@ class LocalParticleData(object):
 
                 if self._bc is BCType.FREE_SPACE and self.periodic_factors[dimx][lcellx[dimx]] != 0:
                     self.local_cell_occupancy[lcellx[0], lcellx[1], lcellx[2]] = 0
+                    self.local_particle_store[lcellx[0], lcellx[1], lcellx[2], : , :] = np.nan
+
+
+                elif self._bc is BCType.NEAREST and abs(self.periodic_factors[dimx][lcellx[dimx]]) > 1:
+                    self.local_cell_occupancy[lcellx[0], lcellx[1], lcellx[2]] = 0
+                    self.local_particle_store[lcellx[0], lcellx[1], lcellx[2], : , :] = np.nan
 
         # copy the particle data and the map to the device if applicable
         if self.cuda_enabled:
@@ -518,7 +544,7 @@ class LocalParticleData(object):
             # precompute the cell offsets for the generated kernel
             # local_store_dims is slowest to fastest
             lsd = self.local_store_dims
-            offsets = [str(ox[0] + lsd[2] * (ox[1] + lsd[0]*ox[2])) for ox in _offsets]
+            offsets = [str(ox[0] + lsd[2] * (ox[1] + lsd[1]*ox[2])) for ox in _offsets]
             offsets = '__device__ const INT32 OFFSETS[27] = {' + ','.join(offsets) + '};'
             
             offset_x = '__device__ const INT32 CELL_OFFSET_X = ' + str(self.cell_data_offset[2]) + ';'
@@ -569,7 +595,7 @@ class LocalParticleData(object):
                             }}
 
                         }}
-                        printf("GPU: tmps %f, %f\n", energy_red, ich);
+                        //printf("GPU: tmps %f, %f\n", energy_red, ich);
                         energy_red *= ich;
                         d_energy[idx] = energy_red;
 
@@ -630,7 +656,7 @@ class LocalParticleData(object):
                                 const long long ll_jid =  __double_as_longlong(d_pdata[offset + jx*5+4]);
                                 const int64_t jid = (int64_t) ll_jid;
 
-                                //printf("\t\tGPU: jpos %f %f %f : jid %ld\n", jpx, jpy, jpz, jid);
+                                // printf("\t\tGPU: jpos %f %f %f : jid %ld\n", jpx, jpy, jpz, jid);
 
                                 if (jid != d_ids[idx]){{
                                     energy_red += jch/sqrt(r2);
@@ -652,8 +678,6 @@ class LocalParticleData(object):
                     COMMON_1=common_1,
                     COMMON_2=common_2
                 )
-
-            print(src)
             mod = SourceModule(src)
             self._cuda_direct_new = mod.get_function("direct_new")
             self._cuda_direct_old = mod.get_function("direct_old")
