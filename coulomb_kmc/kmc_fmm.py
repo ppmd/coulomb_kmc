@@ -239,9 +239,9 @@ class KMCFMM(object):
             pid = movx[0]
             # get passed moves, number of moves
             movs = np.atleast_2d(movx[1])
-            
+            old_direct_energy = self._direct_contrib_old(pid)
             for mxi, mx in enumerate(movs):
-                self._tmp_energies[_ENERGY.U0_DIRECT][movxi, mxi] = self._direct_contrib_old(pid)
+                self._tmp_energies[_ENERGY.U0_DIRECT][movxi, mxi] = old_direct_energy
                 self._tmp_energies[_ENERGY.U1_DIRECT][movxi, mxi] = self._direct_contrib_new(pid, mx)
     
         # indirect differences
@@ -251,9 +251,9 @@ class KMCFMM(object):
             # get passed moves, number of moves
             movs = np.atleast_2d(movx[1])
             num_movs = movs.shape[0]
-
+            old_indirect_energy = self._charge_indirect_energy_old(pid)
             for mxi, mx in enumerate(movs):
-                self._tmp_energies[_ENERGY.U0_INDIRECT][movxi, mxi] = self._charge_indirect_energy_old(pid)
+                self._tmp_energies[_ENERGY.U0_INDIRECT][movxi, mxi] = old_indirect_energy
                 self._tmp_energies[_ENERGY.U1_INDIRECT][movxi, mxi] = self._charge_indirect_energy_new(pid, mx)
         
         # compute self interactions
@@ -285,7 +285,7 @@ class KMCFMM(object):
                 if np.linalg.norm(self.positions.data[pid, :] - mx) < 10.**-14:
                     pid_prop_energy[mxi] = self.energy
                 else:
-                    pid_prop_energy[mxi] = self.energy + self._tmp_energies[_ENERGY.U1_DIRECT][movxi, mxi]
+                    pid_prop_energy[mxi] = self.energy + self._tmp_energies[_ENERGY.U_DIFF][movxi, mxi]
 
             prop_energy.append(pid_prop_energy)
 
@@ -366,7 +366,7 @@ class KMCFMM(object):
 
                 for jxi, jx in enumerate(self._cell_map[jcell]):
                     _diff = prop_pos - self.positions.data[jx, :] - image_mod
-                    print("\tHST: jpos", self.positions.data[jx, :], jcell)
+                    # print("\tHST: jpos", self.positions.data[jx, :], jcell)
                     _tva[ncount] = np.dot(_diff, _diff)
                     _tvb[ncount] = self.charges.data[jx, 0]
                     ncount += 1
@@ -375,7 +375,6 @@ class KMCFMM(object):
         np.reciprocal(_tvc[:ncount:], out=_tva[:ncount:])
         e_tmp += np.dot(_tva[:ncount:], _tvb[:ncount:])
 
-        print("\t\tHST: tmps", e_tmp, q)
         return e_tmp * q
 
 
@@ -405,6 +404,9 @@ class KMCFMM(object):
                 _tvb = np.zeros(len(self._cell_map[jcell]))
 
                 for jxi, jx in enumerate(self._cell_map[jcell]):
+
+                    print("\t\tHST: jpos", self.positions.data[jx, :] + image_mod, jx)
+
                     if jx == ix:
                         _tvb[jxi] = 0.0
                         _tva[jxi] = 1.0
@@ -416,6 +418,8 @@ class KMCFMM(object):
 
                 _tva = 1.0/np.sqrt(_tva)
                 e_tmp += np.dot(_tva, _tvb)
+
+        print("\tHST: tmps", e_tmp, q)
 
 
         return e_tmp * q
