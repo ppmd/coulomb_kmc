@@ -227,10 +227,12 @@ class KMCFMM(object):
         
         num_particles = len(moves)
         max_num_moves = 0
+        num_proposed = 0
         for movx in moves:
             movs = np.atleast_2d(movx[1])
             num_movs = movs.shape[0]
             max_num_moves = max(max_num_moves, num_movs)
+            num_proposed += num_movs
         
         # check tmp energy arrays are large enough
         tmp_eng_stride = self._tmp_energy_check((num_particles, max_num_moves))
@@ -248,7 +250,7 @@ class KMCFMM(object):
                 self._tmp_energies[_ENERGY.U1_DIRECT][movxi, mxi] = self._direct_contrib_new(pid, mx)
         hostt1 = time.time()
 
-        # print(hostt1 - hostt0, cudat1 - cudat0)
+        print(num_proposed, hostt1 - hostt0, cudat1 - cudat0)
 
 
         # indirect differences

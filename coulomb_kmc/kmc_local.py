@@ -6,8 +6,9 @@ import numpy as np
 from math import ceil
 import ctypes
 from itertools import product
+import os
 
-from ppmd import mpi
+from ppmd import mpi, runtime
 
 MPI = mpi.MPI
 
@@ -26,7 +27,7 @@ if ppmd.cuda.CUDA_IMPORT:
 # coulomb_kmc imports
 from coulomb_kmc.common import BCType
 
-
+_BUILD_DIR = ppmd.runtime.BUILD_DIR
 
 _offsets = (
     ( -1, -1, -1),
@@ -568,7 +569,6 @@ class LocalParticleData(object):
                         const REAL ipx = d_positions[idx*3];
                         const REAL ipy = d_positions[idx*3+1];
                         const REAL ipz = d_positions[idx*3+2];
-                        const REAL ich = d_charges[idx];
 
                         REAL energy_red = 0.0;
 
@@ -585,10 +585,6 @@ class LocalParticleData(object):
                                 const REAL jpy = d_pdata[offset + jx*5+1];
                                 const REAL jpz = d_pdata[offset + jx*5+2];
                                 const REAL jch = d_pdata[offset + jx*5+3];
-                                const REAL rx = ipx - jpx;
-                                const REAL ry = ipy - jpy;
-                                const REAL rz = ipz - jpz;
-                                const REAL r2 = rx * rx + ry * ry + rz * rz;
             """.format()
 
             common_2 = r"""
@@ -596,7 +592,8 @@ class LocalParticleData(object):
 
                         }}
                         //printf("GPU: tmps %f, %f\n", energy_red, ich);
-                        energy_red *= ich;
+
+                        energy_red *= d_charges[idx];
                         d_energy[idx] = energy_red;
 
                     }}
@@ -636,7 +633,7 @@ class LocalParticleData(object):
                     REAL * d_energy
                 ) {{
                     {COMMON_1}
-                                energy_red += jch/sqrt(r2);
+                                energy_red += jch * rnorm3d(ipx - jpx, ipy - jpy, ipz - jpz);
                     {COMMON_2}
                 }}
 
@@ -659,7 +656,7 @@ class LocalParticleData(object):
                                 // printf("\t\tGPU: jpos %f %f %f : jid %ld\n", jpx, jpy, jpz, jid);
 
                                 if (jid != d_ids[idx]){{
-                                    energy_red += jch/sqrt(r2);
+                                    energy_red += jch * rnorm3d(ipx - jpx, ipy - jpy, ipz - jpz);
                                 }}
                     {COMMON_2}
                 }}
@@ -678,10 +675,10 @@ class LocalParticleData(object):
                     COMMON_1=common_1,
                     COMMON_2=common_2
                 )
-            mod = SourceModule(src)
+            mod = SourceModule(src, cache_dir=_BUILD_DIR, keep=True, options=['-O3', '--use_fast_math'])
             self._cuda_direct_new = mod.get_function("direct_new")
             self._cuda_direct_old = mod.get_function("direct_old")
-
+            print("Num registers: new:", self._cuda_direct_new.num_regs, "old:", self._cuda_direct_old.num_regs)
 
         # some debug code
         for lcellx in product(
