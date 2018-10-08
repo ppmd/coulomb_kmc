@@ -349,10 +349,9 @@ def test_kmc_fmm_free_space_2():
         for nx in range(nprop):
 
             assert abs(kmc_fmm._tmp_energies[test_kmc_fmm_enum.U0_DIRECT][pi, nx] - \
-                    gpu_energy_old[pi]) < 10.**-13, "{} {}".format(pi, nx)           
+                    gpu_energy_old[pi]) < 10.**-12, "{} {}".format(pi, nx)           
             assert abs(kmc_fmm._tmp_energies[test_kmc_fmm_enum.U1_DIRECT][pi, nx] - \
-                    gpu_energy_new[tmp_index + nx]) < 10.**-13, "{} {}".format(pi, nx)
-
+                    gpu_energy_new[tmp_index + nx]) < 10.**-12, "{} {}".format(pi, nx)
         
         tmp_index += nprop
 
