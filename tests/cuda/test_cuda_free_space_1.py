@@ -394,7 +394,7 @@ def test_kmc_fmm_free_space_1():
 
 
 @pytest.mark.skipif('MPISIZE > 1')
-def test_kmc_fmm_free_space_2():
+def test_cuda_kmc_fmm_free_space_2():
     """
     Passes all proposed moves to kmc at once, then checks all outputs
     """
@@ -404,7 +404,7 @@ def test_kmc_fmm_free_space_2():
     L = 12
     R = 3
 
-    N = 2000
+    N = 200
     E = 4.
     rc = E/4
 
@@ -459,9 +459,14 @@ def test_kmc_fmm_free_space_2():
     # create a kmc instance
     kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
         domain=A.domain, r=R, l=L, boundary_condition='free_space')
-
     kmc_fmm.initialise()
-    
+ 
+    # create a cuda kmc instance
+    kmc_fmm_cuda = KMCFMM(positions=A.P, charges=A.Q, 
+        domain=A.domain, r=R, l=L, boundary_condition='free_space', cuda_direct=True)
+    kmc_fmm_cuda.initialise()
+
+
     # make  some random proposed moves
     order = rng.permutation(range(N))
     prop = []
@@ -479,7 +484,13 @@ def test_kmc_fmm_free_space_2():
     
     # get the energy of the proposed moves
     prop_energy = kmc_fmm.test_propose(moves=prop)
+    prop_energy_cuda = kmc_fmm_cuda.test_propose(moves=prop)
     
+    for px, pcx in zip(prop_energy, prop_energy_cuda):
+        for engi, engx in enumerate(px):
+            assert abs(engx - pcx[engi]) < 10.**-13
+
+    return
     gpu_energy_new = kmc_fmm.kmcl._cuda_d['new_energy'].get()
     gpu_energy_old = kmc_fmm.kmcl._cuda_d['old_energy'].get()
 
@@ -500,20 +511,6 @@ def test_kmc_fmm_free_space_2():
                     gpu_energy_new[tmp_index + nx]) < 10.**-12, "{} {}".format(pi, nx)
         
         tmp_index += nprop
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

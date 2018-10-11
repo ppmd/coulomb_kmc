@@ -25,6 +25,8 @@ DEBUG = True
 SHARED_MEMORY = 'omp'
 
 from coulomb_kmc import *
+from coulomb_kmc.common import BCType
+
 
 INT64 = ctypes.c_int64
 REAL = ctypes.c_double
@@ -227,7 +229,7 @@ def test_kmc_local_collection_2():
        domain=A.domain, r=R, l=L, boundary_condition='free_space')
     # kmc_fmm.initialise()
 
-    kmcl = kmc_local.LocalParticleData(kmc_fmm.fmm, 1.0)
+    kmcl = kmc_local.LocalParticleData(kmc_fmm.fmm, 1.0, boundary_condition=BCType.FREE_SPACE)
     
     
     nlocal = A.P.npart_local
@@ -253,9 +255,24 @@ def test_kmc_local_collection_2():
         kmcl_data = kmcl_cell_data[:, :4]
         kmcl_ids = kmcl_cell_data[:, 4].view(dtype=INT64)
 
+
+        # get the offset for periodic boundaries
+        bskip = False
+        offset = np.array((0., 0., 0.))
+        for dimx in range(3):
+            dimx_xyz = 2 - dimx
+            offset += kmcl.periodic_factors[dimx][lcellx[dimx]] * kmcl.domain.extent[dimx_xyz]
+            if abs(kmcl.periodic_factors[dimx][lcellx[dimx]]) > 0:
+                bskip = True
+        
+        # this cell is over a boundary and exists for the periodic case
+        if bskip:
+            assert kmcl.local_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], 0] == 0
+            continue
+
         # check occupancy is correct
         assert kmcl.local_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], 0] == ncell
-    
+               
         required = set(corr_ids)
         if ncell < 1:
             continue
@@ -267,10 +284,275 @@ def test_kmc_local_collection_2():
                 assert corr_data[orig_id, compx] == kmcl_data[pxi, compx]
 
 
-            
+def test_kmc_local_collection_3():
+    # tests the redistribution of particle data post collection
+    eps = 10.**-5
+    L = 12
+    ncomp = L*L*2
+    R = 4
+    E = 4.
+
+    rng = np.random.RandomState(seed=8657)
+    num_fmm_cells = 8**(R-1)
+    ncells_per_side = 2**(R-1)
+    
+    def _cell_tup_to_lin(cx): return cx[2] + ncells_per_side * (cx[1] + ncells_per_side * cx[0])
+    def _cell_to_extents(cx):
+        l = -0.5 * E
+        w = E/ncells_per_side
+        keys = ('l0', 'l1', 'l2', 'h0', 'h1', 'h2')
+        vals = [l + cxi*w for cxi in cx] + [l + (cxi+1)*w for cxi in cx]
+        return dict(zip(keys, vals))
+
+    # random occupancy
+    
+    cell_counts = np.zeros(num_fmm_cells, dtype=INT64)
+    N = 0
+    pos_store = {}
+    for cellx in product(
+            range(ncells_per_side), range(ncells_per_side), range(ncells_per_side)
+        ):
+        lin_cell = _cell_tup_to_lin(cellx)
+        ncell = rng.randint(low=0, high=8)
+        cell_counts[lin_cell] = ncell
+        pos_store[cellx] = np.zeros((ncell, 5), dtype=REAL)
+        cell_extents = _cell_to_extents(cellx)
+        pos_store[cellx][:, 2] = rng.uniform(low=cell_extents['l0'], high=cell_extents['h0'], size=ncell)
+        pos_store[cellx][:, 1] = rng.uniform(low=cell_extents['l1'], high=cell_extents['h1'], size=ncell)
+        pos_store[cellx][:, 0] = rng.uniform(low=cell_extents['l2'], high=cell_extents['h2'], size=ncell)
+        pos_store[cellx][:, 3] = rng.uniform(low=-2, high=2, size=ncell)
+        pos_store[cellx][:, 4].view(dtype=INT64)[:] = np.arange(N, N+ncell)
+        N += ncell
+
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    A.npart = N
+
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+    A.ID = data.ParticleDat(ncomp=1, dtype=INT64)
+    A.test_fmm_cell = data.ParticleDat(ncomp=1, dtype=INT64)
+    A.PP = data.ParticleDat(ncomp=3)
+
+    A.crr = data.ScalarArray(ncomp=1)
+    
+    
+    ids = np.zeros((N,1), dtype=INT64)
+    pos = np.zeros((N,3), dtype=REAL)
+    chs = np.zeros((N,1), dtype=REAL)
+    
+    tmp = 0
+    for cellx in product(
+            range(ncells_per_side), range(ncells_per_side), range(ncells_per_side)
+        ):
+        lin_cell = _cell_tup_to_lin(cellx)
+        ncell = cell_counts[lin_cell]
+        pos[tmp:tmp+ncell:, :] = pos_store[cellx][:,:3]
+        chs[tmp:tmp+ncell:, 0] = pos_store[cellx][:,3]
+        ids[tmp:tmp+ncell:, 0] = pos_store[cellx][:,4].view(dtype=INT64)
+        A.test_fmm_cell[tmp:tmp+ncell:, 0] = lin_cell
+        tmp += ncell
+
+
+    A.P[:] = pos
+    A.ID[:] = ids
+    A.Q[:] = chs
+    
+    A.scatter_data_from(0)
+    
+    # create a kmc instance
+    kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
+       domain=A.domain, r=R, l=L, boundary_condition='27')
+    # kmc_fmm.initialise()
+
+    kmcl = kmc_local.LocalParticleData(kmc_fmm.fmm, 1.0, boundary_condition=BCType.NEAREST)
+    
+    
+    nlocal = A.P.npart_local
+
+    kmcl.initialise(A.P, A.Q, A.test_fmm_cell, A.ID)
+    
+    # loop over required cells and check the correct particle data exists
+    
+    for lcellx in product(
+            range(kmcl.local_store_dims[0]),
+            range(kmcl.local_store_dims[1]),
+            range(kmcl.local_store_dims[2])
+        ):
+        gcellx = tuple([kmcl.cell_indices[dxi][dx] for dxi, dx in enumerate(lcellx)])
+        lin_cell = _cell_tup_to_lin(gcellx)
+        ncell = cell_counts[lin_cell]
+
+        corr_data = pos_store[gcellx][:, :4]
+        corr_ids = pos_store[gcellx][:, 4].view(dtype=INT64)
+        
+        kmcl_cell_data = kmcl.local_particle_store[lcellx[0], lcellx[1], lcellx[2], : ,:]
+
+        kmcl_data = kmcl_cell_data[:, :4]
+        kmcl_ids = kmcl_cell_data[:, 4].view(dtype=INT64)
+
+
+        # get the offset for periodic boundaries
+        bskip = False
+        offset = np.array((0., 0., 0.))
+        for dimx in range(3):
+            dimx_xyz = 2 - dimx
+            offset[dimx_xyz] += kmcl.periodic_factors[dimx][lcellx[dimx]] * kmcl.domain.extent[dimx_xyz]
+            if abs(kmcl.periodic_factors[dimx][lcellx[dimx]]) > 1:
+                bskip = True
+        
+        # this cell is over a boundary and exists for the periodic case
+        if bskip:
+            assert kmcl.local_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], 0] == 0
+            continue
+
+        # check occupancy is correct
+        assert kmcl.local_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], 0] == ncell
+               
+        required = set(corr_ids)
+        if ncell < 1:
+            continue
+        id_offset = corr_ids[0]
+        for pxi in range(ncell):
+            orig_id = kmcl_ids[pxi]-id_offset
+            assert corr_ids[orig_id] == kmcl_ids[pxi]
+            for compx in range(3):
+                assert abs(corr_data[orig_id, compx] - kmcl_data[pxi, compx] + offset[compx]) < 10.**-14
+            assert corr_data[orig_id, 3] == kmcl_data[pxi, 3]
+
+
+ 
 
 
 
 
+def test_kmc_local_collection_4():
+    # tests the redistribution of particle data post collection
+    eps = 10.**-5
+    L = 12
+    ncomp = L*L*2
+    R = 4
+    E = 4.
+
+    rng = np.random.RandomState(seed=8657)
+    num_fmm_cells = 8**(R-1)
+    ncells_per_side = 2**(R-1)
+    
+    def _cell_tup_to_lin(cx): return cx[2] + ncells_per_side * (cx[1] + ncells_per_side * cx[0])
+    def _cell_to_extents(cx):
+        l = -0.5 * E
+        w = E/ncells_per_side
+        keys = ('l0', 'l1', 'l2', 'h0', 'h1', 'h2')
+        vals = [l + cxi*w for cxi in cx] + [l + (cxi+1)*w for cxi in cx]
+        return dict(zip(keys, vals))
+
+    # random occupancy
+    
+    cell_counts = np.zeros(num_fmm_cells, dtype=INT64)
+    N = 0
+    pos_store = {}
+    for cellx in product(
+            range(ncells_per_side), range(ncells_per_side), range(ncells_per_side)
+        ):
+        lin_cell = _cell_tup_to_lin(cellx)
+        ncell = rng.randint(low=0, high=8)
+        cell_counts[lin_cell] = ncell
+        pos_store[cellx] = np.zeros((ncell, 5), dtype=REAL)
+        cell_extents = _cell_to_extents(cellx)
+        pos_store[cellx][:, 2] = rng.uniform(low=cell_extents['l0'], high=cell_extents['h0'], size=ncell)
+        pos_store[cellx][:, 1] = rng.uniform(low=cell_extents['l1'], high=cell_extents['h1'], size=ncell)
+        pos_store[cellx][:, 0] = rng.uniform(low=cell_extents['l2'], high=cell_extents['h2'], size=ncell)
+        pos_store[cellx][:, 3] = rng.uniform(low=-2, high=2, size=ncell)
+        pos_store[cellx][:, 4].view(dtype=INT64)[:] = np.arange(N, N+ncell)
+        N += ncell
+
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    A.npart = N
+
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+    A.ID = data.ParticleDat(ncomp=1, dtype=INT64)
+    A.test_fmm_cell = data.ParticleDat(ncomp=1, dtype=INT64)
+    A.PP = data.ParticleDat(ncomp=3)
+
+    A.crr = data.ScalarArray(ncomp=1)
+    
+    
+    ids = np.zeros((N,1), dtype=INT64)
+    pos = np.zeros((N,3), dtype=REAL)
+    chs = np.zeros((N,1), dtype=REAL)
+    
+    tmp = 0
+    for cellx in product(
+            range(ncells_per_side), range(ncells_per_side), range(ncells_per_side)
+        ):
+        lin_cell = _cell_tup_to_lin(cellx)
+        ncell = cell_counts[lin_cell]
+        pos[tmp:tmp+ncell:, :] = pos_store[cellx][:,:3]
+        chs[tmp:tmp+ncell:, 0] = pos_store[cellx][:,3]
+        ids[tmp:tmp+ncell:, 0] = pos_store[cellx][:,4].view(dtype=INT64)
+        A.test_fmm_cell[tmp:tmp+ncell:, 0] = lin_cell
+        tmp += ncell
+
+
+    A.P[:] = pos
+    A.ID[:] = ids
+    A.Q[:] = chs
+    
+    A.scatter_data_from(0)
+    
+    # create a kmc instance
+    kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
+       domain=A.domain, r=R, l=L, boundary_condition='pbc')
+    # kmc_fmm.initialise()
+
+    kmcl = kmc_local.LocalParticleData(kmc_fmm.fmm, 1.0, boundary_condition=BCType.PBC)
+    
+    
+    nlocal = A.P.npart_local
+
+    kmcl.initialise(A.P, A.Q, A.test_fmm_cell, A.ID)
+    
+    # loop over required cells and check the correct particle data exists
+    
+    for lcellx in product(
+            range(kmcl.local_store_dims[0]),
+            range(kmcl.local_store_dims[1]),
+            range(kmcl.local_store_dims[2])
+        ):
+        gcellx = tuple([kmcl.cell_indices[dxi][dx] for dxi, dx in enumerate(lcellx)])
+        lin_cell = _cell_tup_to_lin(gcellx)
+        ncell = cell_counts[lin_cell]
+
+        corr_data = pos_store[gcellx][:, :4]
+        corr_ids = pos_store[gcellx][:, 4].view(dtype=INT64)
+        
+        kmcl_cell_data = kmcl.local_particle_store[lcellx[0], lcellx[1], lcellx[2], : ,:]
+
+        kmcl_data = kmcl_cell_data[:, :4]
+        kmcl_ids = kmcl_cell_data[:, 4].view(dtype=INT64)
+
+        # get the offset for periodic boundaries
+        offset = np.array((0., 0., 0.))
+        for dimx in range(3):
+            dimx_xyz = 2 - dimx
+            offset[dimx_xyz] += kmcl.periodic_factors[dimx][lcellx[dimx]] * kmcl.domain.extent[dimx_xyz]
+
+        # check occupancy is correct
+        assert kmcl.local_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], 0] == ncell
+               
+        required = set(corr_ids)
+        if ncell < 1:
+            continue
+        id_offset = corr_ids[0]
+        for pxi in range(ncell):
+            orig_id = kmcl_ids[pxi]-id_offset
+            assert corr_ids[orig_id] == kmcl_ids[pxi]
+            for compx in range(3):
+                assert abs(corr_data[orig_id, compx] - kmcl_data[pxi, compx] + offset[compx]) < 10.**-14
+            assert corr_data[orig_id, 3] == kmcl_data[pxi, 3]
 
 

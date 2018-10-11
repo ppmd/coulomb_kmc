@@ -27,8 +27,6 @@ SHARED_MEMORY = 'omp'
 from coulomb_kmc import *
 
 
-
-
 @pytest.mark.skipif('MPISIZE > 1')
 def test_kmc_fmm_nearest_27_1():
     """

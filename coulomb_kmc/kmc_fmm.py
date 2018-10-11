@@ -79,10 +79,8 @@ class KMCFMM(object):
 
     def __init__(self, positions, charges, domain, N=None, boundary_condition='pbc',
         r=None, shell_width=0.0, energy_unit=1.0,
-        _debug=False, l=None, max_move=None):
+        _debug=False, l=None, max_move=None, cuda_direct=False):
 
-
-        
         # horrible workaround to convert sensible boundary condition
         # parameter format to what exists for PyFMM
         _bc = {
@@ -92,13 +90,12 @@ class KMCFMM(object):
         }[boundary_condition]
 
 
-
-
         self.fmm = PyFMM(domain, N=N, free_space=_bc, r=r,
             shell_width=shell_width, cuda=False, cuda_levels=1,
             force_unit=1.0, energy_unit=energy_unit,
             _debug=_debug, l=l, cuda_local=False)
-
+        
+        self.cuda_direct = cuda_direct
 
         self.domain = domain
         self.positions = positions
@@ -132,8 +129,8 @@ class KMCFMM(object):
 
         # class to collect and redistribute particle data
         self.kmcl = kmc_local.LocalParticleData(self.fmm, self.max_move,
-            boundary_condition=self._bc)
-
+            boundary_condition=self._bc, cuda=self.cuda_direct)
+        
         self._tmp_energies = {
             _ENERGY.U_DIFF      : np.zeros((1, 1), dtype=REAL),
             _ENERGY.U0_DIRECT   : np.zeros((1, 1), dtype=REAL),
@@ -227,8 +224,10 @@ class KMCFMM(object):
         self._assert_init()
         
         # tmp testing...
+        # the kmc_local has no non cuda code path yet
         cudat0 = time.time()
-        self.kmcl.propose(moves)
+        if self.cuda_direct:
+            du0, du1 = self.kmcl.propose(moves)
         cudat1 = time.time()
         
         num_particles = len(moves)
@@ -244,20 +243,33 @@ class KMCFMM(object):
         tmp_eng_stride = self._tmp_energy_check((num_particles, max_num_moves))
         
         hostt0 = time.time()
+        tmp_index = 0
         # direct differences
         for movxi, movx in enumerate(moves):
             # get particle local id
             pid = movx[0]
             # get passed moves, number of moves
             movs = np.atleast_2d(movx[1])
-            old_direct_energy = self._direct_contrib_old(pid)
+            if self.cuda_direct:
+                old_direct_energy = du0[movxi]
+            else:
+                old_direct_energy = self._direct_contrib_old(pid)
+
             for mxi, mx in enumerate(movs):
                 self._tmp_energies[_ENERGY.U0_DIRECT][movxi, mxi] = old_direct_energy
-                self._tmp_energies[_ENERGY.U1_DIRECT][movxi, mxi] = self._direct_contrib_new(pid, mx)
+
+                if self.cuda_direct:
+                    new_direct_energy = du1[tmp_index]
+                else:
+                    new_direct_energy = self._direct_contrib_new(pid, mx)
+                tmp_index += 1
+
+                self._tmp_energies[_ENERGY.U1_DIRECT][movxi, mxi] = new_direct_energy
+
+
         hostt1 = time.time()
 
-        print(num_proposed, hostt1 - hostt0, cudat1 - cudat0)
-
+        # print(num_proposed, hostt1 - hostt0, cudat1 - cudat0)
 
         # indirect differences
         for movxi, movx in enumerate(moves):

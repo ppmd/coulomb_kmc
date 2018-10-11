@@ -66,8 +66,13 @@ _offsets = (
 )
 
 class LocalParticleData(object):
-    def __init__(self, fmm, max_move, boundary_condition=BCType.PBC, cuda=True):
+    def __init__(self, fmm, max_move, boundary_condition=BCType.PBC, cuda=False):
         self.cuda_enabled = cuda
+        
+        if cuda and not ppmd.cuda.CUDA_IMPORT:
+            print(ppmd.cuda.CUDA_IMPORT_ERROR)
+            raise RuntimeError('CUDA was requested but failed to be initialised')
+
         self.fmm = fmm
         self.domain = fmm.domain
         self.comm = fmm.tree.cart_comm
@@ -158,8 +163,6 @@ class LocalParticleData(object):
         self.ids = None
         self.group = None
 
-        self._init_cuda_kernels()
-
         if self.cuda_enabled:
             # host copy of particle data for moves
             self._cuda_h = {}
@@ -191,11 +194,10 @@ class LocalParticleData(object):
             # particle data, is collected as [px, py, pz, chr, id] [REAL, REAL, REAL, REAL, INT64]
             self._cuda_d_pdata = None
             
-            
             # pycuda funcs with kernels
             self._cuda_direct_new = None
             self._cuda_direct_old = None
-
+            
             self._init_cuda_kernels()
 
 
