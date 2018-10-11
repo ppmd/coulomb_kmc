@@ -26,6 +26,153 @@ SHARED_MEMORY = 'omp'
 from coulomb_kmc import *
 
 
+_src = r"""
+            #include <stdint.h>
+            #include <stdio.h>
+            #include <math.h>
+
+            #define REAL double
+            #define INT64 int64_t
+            #define INT32 int32_t
+
+            __device__ const INT32 OFFSETS[27] = {-111,-110,-109,-101,-100,-99,-91,-90,-89,-11,-10,-9,-1,0,1,9,10,11,89,90,91,99,100,101,109,110,111};
+            __device__ const INT32 CELL_OFFSET_X = 3;
+            __device__ const INT32 CELL_OFFSET_Y = 3;
+            __device__ const INT32 CELL_OFFSET_Z = 3;
+            __device__ const INT32 LSD_X = 10;
+            __device__ const INT32 LSD_Y = 10;
+            //__device__ const INT32 LSD_Z = 10;
+            
+            // only needed for the id which we don't
+            // need to inspect for the new position
+
+
+            __global__ void direct_new(
+                
+                const INT64 d_num_movs,
+                const REAL  * d_positions,
+                const REAL  * d_charges,
+                const INT64 * d_ids,
+                const INT64 * d_fmm_cells,
+                const REAL  * d_pdata,
+                const INT64 * d_cell_occ,
+                const INT64 d_cell_stride,
+                REAL * d_energy
+        
+            ) {
+                
+                const INT64 idx = threadIdx.x + blockIdx.x * blockDim.x;
+                if (idx < d_num_movs){
+                    // this performs a cast but saves a register per value
+                    // should never overflow as more than 2**3a1 cells per side is unlikely
+                    // the offsets are slowest to fastest (numpy)
+                    const INT32 icx = d_fmm_cells[idx*3]   + CELL_OFFSET_X;
+                    const INT32 icy = d_fmm_cells[idx*3+1] + CELL_OFFSET_Y;
+                    const INT32 icz = d_fmm_cells[idx*3+2] + CELL_OFFSET_Z;
+                    
+                    const INT32 ic = icx + LSD_X * (icy + LSD_Y*icz);
+                    const REAL ipx = d_positions[idx*3];
+                    const REAL ipy = d_positions[idx*3+1];
+                    const REAL ipz = d_positions[idx*3+2];
+
+                    REAL energy_red = 0.0;
+
+                    // loop over the jcells
+                    for(INT32 jcx=0 ; jcx<27 ; jcx++){
+                        const INT32 jc = ic + OFFSETS[jcx];
+
+                        // compute the offset into the cell data
+                        const INT32 offset = jc * ((INT32) d_cell_stride);
+
+                        // loop over the particles in the j cell
+                        for(INT32 jx=0 ; jx<d_cell_occ[jc] ; jx++){            
+                            const REAL jpx = d_pdata[offset + jx*5+0];
+                            const REAL jpy = d_pdata[offset + jx*5+1];
+                            const REAL jpz = d_pdata[offset + jx*5+2];
+                            const REAL jch = d_pdata[offset + jx*5+3];
+        
+                            energy_red += jch * rnorm3d(ipx - jpx, ipy - jpy, ipz - jpz);
+                
+                        }
+
+                    }
+                    //printf("GPU: tmps %f, %f\n", energy_red, ich);
+
+                    energy_red *= d_charges[idx];
+                    d_energy[idx] = energy_red;
+
+                }
+        
+            }
+
+            __global__ void direct_old(
+                
+                const INT64 d_num_movs,
+                const REAL  * d_positions,
+                const REAL  * d_charges,
+                const INT64 * d_ids,
+                const INT64 * d_fmm_cells,
+                const REAL  * d_pdata,
+                const INT64 * d_cell_occ,
+                const INT64 d_cell_stride,
+                REAL * d_energy
+        
+            ) {
+                
+                const INT64 idx = threadIdx.x + blockIdx.x * blockDim.x;
+                if (idx < d_num_movs){
+                    // this performs a cast but saves a register per value
+                    // should never overflow as more than 2**3a1 cells per side is unlikely
+                    // the offsets are slowest to fastest (numpy)
+                    const INT32 icx = d_fmm_cells[idx*3]   + CELL_OFFSET_X;
+                    const INT32 icy = d_fmm_cells[idx*3+1] + CELL_OFFSET_Y;
+                    const INT32 icz = d_fmm_cells[idx*3+2] + CELL_OFFSET_Z;
+                    
+                    const INT32 ic = icx + LSD_X * (icy + LSD_Y*icz);
+                    const REAL ipx = d_positions[idx*3];
+                    const REAL ipy = d_positions[idx*3+1];
+                    const REAL ipz = d_positions[idx*3+2];
+
+                    REAL energy_red = 0.0;
+
+                    // loop over the jcells
+                    for(INT32 jcx=0 ; jcx<27 ; jcx++){
+                        const INT32 jc = ic + OFFSETS[jcx];
+
+                        // compute the offset into the cell data
+                        const INT32 offset = jc * ((INT32) d_cell_stride);
+
+                        // loop over the particles in the j cell
+                        for(INT32 jx=0 ; jx<d_cell_occ[jc] ; jx++){            
+                            const REAL jpx = d_pdata[offset + jx*5+0];
+                            const REAL jpy = d_pdata[offset + jx*5+1];
+                            const REAL jpz = d_pdata[offset + jx*5+2];
+                            const REAL jch = d_pdata[offset + jx*5+3];
+        
+                            
+                            const long long ll_jid =  __double_as_longlong(d_pdata[offset + jx*5+4]);
+                            const int64_t jid = (int64_t) ll_jid;
+
+                            // printf("\t\tGPU: jpos %f %f %f : jid %ld\n", jpx, jpy, jpz, jid);
+
+                            if (jid != d_ids[idx]){
+                                energy_red += jch * rnorm3d(ipx - jpx, ipy - jpy, ipz - jpz);
+                            }
+                
+                        }
+
+                    }
+                    //printf("GPU: tmps %f, %f\n", energy_red, ich);
+
+                    energy_red *= d_charges[idx];
+                    d_energy[idx] = energy_red;
+
+                }
+        
+            }
+
+"""
+
 
 def red(*input):
     try:
@@ -251,12 +398,13 @@ def test_kmc_fmm_free_space_2():
     """
     Passes all proposed moves to kmc at once, then checks all outputs
     """
-    
+
+
     eps = 10.**-5
     L = 12
     R = 3
 
-    N = 500
+    N = 2000
     E = 4.
     rc = E/4
 
@@ -307,11 +455,11 @@ def test_kmc_fmm_free_space_2():
                 _phi_direct += A.Q[ix, 0] * A.Q[jx, 0] /rij
         return _phi_direct
     
-
-
+    
     # create a kmc instance
     kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
         domain=A.domain, r=R, l=L, boundary_condition='free_space')
+
     kmc_fmm.initialise()
     
     # make  some random proposed moves
@@ -340,8 +488,6 @@ def test_kmc_fmm_free_space_2():
     A.PP[prop[0][0], :] = prop[0][1][0,:]
     #de = _direct()
     #print(de, prop_energy[0])
-
-
 
     tmp_index = 0
     for pi, px in enumerate(prop):

@@ -17,11 +17,14 @@ MPI = mpi.MPI
 REAL = ctypes.c_double
 INT64 = ctypes.c_int64
 
+from . import kmc_local
+
 class LocalCellExpansions(object):
     """
     Object to get, store and update local expansions from an fmm instance.
     """
     def __init__(self, fmm, max_move):
+
         self.fmm = fmm
         self.max_move = max_move
         self.domain = fmm.domain
@@ -66,16 +69,13 @@ class LocalCellExpansions(object):
         self.local_expansions = np.zeros(local_store_dims + [2 * (fmm.L**2)], dtype=REAL)
         self.remote_inds = np.zeros(local_store_dims + [1], dtype=INT64)
         self.remote_inds[:] = -1
-
-
+        
         self._wing = MPI.Win()
-
         data_nbytes = self.fmm.tree_plain[-1][0,0,0,:].nbytes
         self._win = self._wing.Create(self.fmm.tree_plain[-1], disp_unit=data_nbytes, comm=self.comm)
 
         gmap_nbytes = self.fmm.tree[-1].global_to_local[0,0,0].nbytes
         self._win_ind = self._wing.Create(self.fmm.tree[-1].global_to_local, disp_unit=gmap_nbytes, comm=self.comm)
-        
 
     def initialise(self):
         self._get_local_expansions()
