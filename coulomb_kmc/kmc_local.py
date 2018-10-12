@@ -25,8 +25,6 @@ if ppmd.cuda.CUDA_IMPORT:
     # the device should be initialised already by ppmd
     from pycuda.compiler import SourceModule
     import pycuda.gpuarray as gpuarray
-else:
-    print(ppmd.cuda.CUDA_IMPORT_ERROR)
 
 # coulomb_kmc imports
 from coulomb_kmc.common import BCType
@@ -115,31 +113,41 @@ class LocalParticleData(object):
 
         csc = fmm.tree.entry_map.cube_side_count
         # in future domains may not be square
+
+        # xyz tuple of domain dims
         csc = [csc, csc, csc]
+
+        #slowest to fastest
+        cscr = list(reversed(csc))
+
         csw = [self.domain.extent[0] / csc[0],
                self.domain.extent[1] / csc[1],
                self.domain.extent[2] / csc[2]]
         
-        # this is pad per dimension
-        pad = [2 + int(ceil(max_move/cx)) for cx in csw]
+        # this is pad per dimension slow to fast
+        pad = [2 + int(ceil(max_move/cx)) for cx in reversed(csw)]
  
-        # as offset indices
+        # as offset indices slow to fast
         pad_low = [list(range(-px, 0)) for px in pad]
-        pad_high = [list(range(lsx, lsx + px)) for px, lsx in zip(pad, reversed(ls))]
+        pad_high = [list(range(lsx, lsx + px)) for px, lsx in zip(pad, ls)]
         
         # slowest to fastest to match octal tree indexing
-        global_to_local = [-lo[dx] + pad[dx] for dx in reversed(range(3))]
-        self.global_to_local = np.array(global_to_local, dtype=INT64)
+        #global_to_local = [-lo[dx] + pad[dx] for dx in range(3)]
+        #self.global_to_local = np.array(global_to_local, dtype=INT64)
 
         # cell indices as offsets from owned octal cells
-        cell_indices = [ lpx + list(range(lsx)) + hpx for lpx, lsx, hpx in zip(pad_low, reversed(ls), pad_high) ]
-        self.periodic_factors = [[ cellx//csc[di] for cellx in dimx ] for di,dimx in enumerate(cell_indices)]
-        cell_indices = [[ (cx + osx) % cscx for cx in dx ] for dx, cscx, osx in zip(cell_indices, csc, reversed(lo))]
+        cell_indices = [ lpx + list(range(lsx)) + hpx for lpx, lsx, hpx in zip(pad_low, ls, pad_high) ]
+        
+        # periodic factors: slow to fast
+        self.periodic_factors = [[ (lo[di] + cellx)//cscr[di] for cellx in dimx ] for di,dimx in enumerate(cell_indices)]
+        
+        # turn relative offsets into absolute cell indices
+        cell_indices = [[ (cx + osx) % cscx for cx in dx ] for dx, cscx, osx in zip(cell_indices, cscr, lo)]
         
         # compute the offset to apply (addition) to fmm cells to map into the local store
         self.cell_data_offset = [len(px) - ox for px, ox in zip(pad_low, lo)]
         # this is now slowest to fastest not xyz
-        cell_indices = list(reversed(cell_indices))
+        # cell_indices = list(reversed(cell_indices))
 
         # this is slowest to fastest not xyz
         local_store_dims = [len(dx) for dx in cell_indices]
@@ -153,7 +161,7 @@ class LocalParticleData(object):
 
         self.local_cell_occupancy = np.zeros((local_store_dims[0], local_store_dims[1], 
             local_store_dims[2], 1), dtype=INT64)
-
+        
         # force creation of self._owner_store and self.local_particle_store
         self._check_owner_store(max_cell_occ=1)
 

@@ -24,12 +24,13 @@ MPIBARRIER = MPI.COMM_WORLD.Barrier
 DEBUG = True
 SHARED_MEMORY = 'omp'
 
+
 from coulomb_kmc import *
 from coulomb_kmc.common import BCType
 
-
 INT64 = ctypes.c_int64
 REAL = ctypes.c_double
+
 
 def test_fetch_op():
     
