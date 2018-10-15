@@ -96,6 +96,8 @@ def test_cuda_kmc_fmm_nearest_27_1():
         domain=A.domain, r=R, l=L, boundary_condition='27', cuda_direct=True)
     kmc_fmm_cuda.initialise()
 
+    assert kmc_fmm_cuda.kmcl.cuda_enabled is True
+
 
     # make  some random proposed moves
     order = rng.permutation(range(N))

@@ -213,7 +213,7 @@ class KMCFMM(object):
         if self.energy is None:
             raise RuntimeError('Run initialise before this call')
     
-    def test_propose(self, moves):
+    def test_propose(self, moves, use_python=True):
         """
         Propose moves by providing the local index of the particle and proposed new sites.
         Returns system energy of proposed moves.
@@ -225,10 +225,8 @@ class KMCFMM(object):
         
         # tmp testing...
         # the kmc_local has no non cuda code path yet
-        cudat0 = time.time()
-        if self.cuda_direct:
+        if not use_python:
             du0, du1 = self.kmcl.propose(moves)
-        cudat1 = time.time()
         
         num_particles = len(moves)
         max_num_moves = 0
@@ -250,7 +248,8 @@ class KMCFMM(object):
             pid = movx[0]
             # get passed moves, number of moves
             movs = np.atleast_2d(movx[1])
-            if self.cuda_direct:
+
+            if not use_python:
                 old_direct_energy = du0[movxi]
             else:
                 old_direct_energy = self._direct_contrib_old(pid)
@@ -258,18 +257,17 @@ class KMCFMM(object):
             for mxi, mx in enumerate(movs):
                 self._tmp_energies[_ENERGY.U0_DIRECT][movxi, mxi] = old_direct_energy
 
-                if self.cuda_direct:
+                if not use_python:
                     new_direct_energy = du1[tmp_index]
                 else:
                     new_direct_energy = self._direct_contrib_new(pid, mx)
                 tmp_index += 1
-
                 self._tmp_energies[_ENERGY.U1_DIRECT][movxi, mxi] = new_direct_energy
-
-
+        
+        #print("------")
+        #print(self._tmp_energies[_ENERGY.U0_DIRECT])
+        #print(self._tmp_energies[_ENERGY.U1_DIRECT])
         hostt1 = time.time()
-
-        # print(num_proposed, hostt1 - hostt0, cudat1 - cudat0)
 
         # indirect differences
         for movxi, movx in enumerate(moves):
