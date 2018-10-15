@@ -21,7 +21,7 @@ from ppmd.data import ParticleDat
 
 # coulomb_kmc imports
 from coulomb_kmc import kmc_octal, kmc_local
-from coulomb_kmc.common import BCType
+from coulomb_kmc.common import BCType, PROFILE
 
 REAL = ctypes.c_double
 INT64 = ctypes.c_int64
@@ -150,11 +150,17 @@ class KMCFMM(object):
 
 
     # these should be the names of the final propose and accept methods.
-    def propose(self):
-        pass
+    def propose(self, moves):
+        """
+        Propose moves by providing the local index of the particle and proposed new sites.
+        Returns system energy of proposed moves.
+        e.g. moves = ((0, np.array(((1, 0, 0), (0, 1, 0), (0, 0, 1)))), )
+        should return (np.array((0.1, 0.2, 0.3)), )
+        """
+        return self.test_propose(moves, use_python=False)
+
     def accept(self):
         pass
-    
     
     def _check_ordering_dats(self):
         # self._ordering_win
@@ -214,12 +220,7 @@ class KMCFMM(object):
             raise RuntimeError('Run initialise before this call')
     
     def test_propose(self, moves, use_python=True):
-        """
-        Propose moves by providing the local index of the particle and proposed new sites.
-        Returns system energy of proposed moves.
-        e.g. moves = ((0, np.array(((1, 0, 0), (0, 1, 0), (0, 0, 1)))), )
-        should return (np.array((0.1, 0.2, 0.3)), )
-        """
+
         
         self._assert_init()
         
@@ -358,6 +359,8 @@ class KMCFMM(object):
 
 
     def _direct_contrib_new(self, ix, prop_pos):
+        t0 = time.time()
+
         icx, icy, icz = self._get_cell(prop_pos)
         e_tmp = 0.0
         extent = self.domain.extent
@@ -399,11 +402,14 @@ class KMCFMM(object):
         np.sqrt(_tva[:ncount:], out=_tvc[:ncount:])
         np.reciprocal(_tvc[:ncount:], out=_tva[:ncount:])
         e_tmp += np.dot(_tva[:ncount:], _tvb[:ncount:])
+        
+        self._profile_inc('py_direct_new', time.time() - t0)
 
         return e_tmp * q
 
 
     def _direct_contrib_old(self, ix):
+        t0 = time.time()
         icx, icy, icz = self._get_fmm_cell(ix)
         e_tmp = 0.0
         extent = self.domain.extent
@@ -444,8 +450,7 @@ class KMCFMM(object):
                 _tva = 1.0/np.sqrt(_tva)
                 e_tmp += np.dot(_tva, _tvb)
 
-        # print("\tHST: tmps", e_tmp, q)
-
+        self._profile_inc('py_direct_old', time.time() - t0)
 
         return e_tmp * q
 
@@ -687,7 +692,12 @@ class KMCFMM(object):
             }
         return self._tmp_energies[_ENERGY.U0_DIRECT].shape[1]
 
-
+    def _profile_inc(self, key, inc):
+        key = self.__class__.__name__ + ':' + key
+        if key not in PROFILE.keys():
+            PROFILE[key] = inc
+        else:
+            PROFILE[key] += inc
 
 
 

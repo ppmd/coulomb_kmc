@@ -1,12 +1,12 @@
 from __future__ import division, print_function, absolute_import
 __author__ = "W.R.Saunders"
 
-from functools import reduce
 import numpy as np
 from math import ceil
 import ctypes
 from itertools import product
 import os
+import time
 
 from cgen import *
 from cgen.cuda import *
@@ -30,7 +30,7 @@ if ppmd.cuda.CUDA_IMPORT:
     import pycuda.gpuarray as gpuarray
 
 # coulomb_kmc imports
-from coulomb_kmc.common import BCType
+from coulomb_kmc.common import BCType, PROFILE
 
 _BUILD_DIR = runtime.BUILD_DIR
 
@@ -225,6 +225,7 @@ class LocalParticleData(object):
             self._init_host_kernels()
 
     def propose(self, moves):
+        tm1 = time.time()
         total_movs = 0
         for movx in moves:
             movs = np.atleast_2d(movx[1])
@@ -260,15 +261,15 @@ class LocalParticleData(object):
             for ti, tix in enumerate(range(tmp_index, tmp_index + num_movs)):
                 self._cuda_h['new_fmm_cells'][tix, :] = self._get_cell(movs[ti])
             tmp_index += num_movs
+        self._profile_inc('c_direct_setup', time.time() - tm1)
 
-
+        t0 = time.time()
         if self.cuda_enabled:
             self._copy_to_device()
 
             block_size = (256, 1, 1)
             grid_size = (int(ceil(total_movs/block_size[0])), 1)
-
-            stride = reduce(lambda x,y: x*y, self.local_particle_store.shape[0,0,0,:,:])
+            stride = self.local_particle_store.shape[3] * self.local_particle_store.shape[4]
             self._cuda_direct_new(
                 np.int64(total_movs),
                 self._cuda_d['new_positions'],
@@ -300,23 +301,9 @@ class LocalParticleData(object):
 
             u1 = self._cuda_d['new_energy'].get()[:total_movs:, :]
             u0 = self._cuda_d['old_energy'].get()[:num_particles:, :]
-
+            self._profile_inc('cuda_direct', time.time() - t0)
         else:
-            """
-            const INT64 num_movs,
-            const INT64 * RESTRICT cell_offset,
-            const INT64 * RESTRICT lsd,
-            const INT64 * RESTRICT offsets,
-            const REAL  * RESTRICT d_positions,
-            const REAL  * RESTRICT d_charges,
-            const INT64 * RESTRICT d_ids,
-            const INT64 * RESTRICT d_fmm_cells,
-            const REAL  * RESTRICT d_pdata,
-            const INT64 * RESTRICT d_pdata_ids,
-            const INT64 * RESTRICT d_cell_occ,
-            const INT64 d_cell_stride,
-            REAL * RESTRICT d_energy
-            """
+
             self._host_direct_new(
                 INT64(total_movs),
                 self.cell_data_offset_arr.ctypes.get_as_parameter(),
@@ -332,6 +319,8 @@ class LocalParticleData(object):
                 INT64(self.local_particle_store[0, 0, 0, :, 0].shape[0]),
                 self._cuda_h['new_energy'].ctypes.get_as_parameter()
             )
+            self._profile_inc('c_direct_new', time.time() - t0)
+            t1 = time.time()
             self._host_direct_old(
                 INT64(num_particles),
                 self.cell_data_offset_arr.ctypes.get_as_parameter(),
@@ -347,9 +336,13 @@ class LocalParticleData(object):
                 INT64(self.local_particle_store[0, 0, 0, :, 0].shape[0]),
                 self._cuda_h['old_energy'].ctypes.get_as_parameter()
             )
+            self._profile_inc('c_direct_old', time.time() - t1)
 
             u1 = self._cuda_h['new_energy'][:total_movs:, :]
             u0 = self._cuda_h['old_energy'][:num_particles:, :]
+        
+        assert u1 is not None
+        assert u0 is not None
 
         return u0, u1
 
@@ -680,7 +673,7 @@ class LocalParticleData(object):
             )
         ))
 
-        kernel_parameters = """
+        KERNEL_PARAMETERS = """
                 const INT64 d_num_movs,
                 const REAL  * d_positions,
                 const REAL  * d_charges,
@@ -798,7 +791,7 @@ class LocalParticleData(object):
                 REAL * RESTRICT d_energy"""
             
         common_1 = r"""
-                #pragma omp parallel for schedule(dynamic)
+                #pragma omp parallel for schedule(static, 16)
                 for( INT64 idx=0 ; idx< num_movs ; idx++ ) {{
 
                     // this performs a cast but saves a register per value
@@ -874,6 +867,15 @@ class LocalParticleData(object):
         self._host_lib = build.simple_lib_creator(header_code=' ', src_code=src, name='kmc_fmm_direct_host')
         self._host_direct_new = self._host_lib["direct_new"]
         self._host_direct_old = self._host_lib["direct_old"]
+
+
+    def _profile_inc(self, key, inc):
+        key = self.__class__.__name__ + ':' + key
+        if key not in PROFILE.keys():
+            PROFILE[key] = inc
+        else:
+            PROFILE[key] += inc
+
 
 
 

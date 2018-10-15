@@ -25,6 +25,7 @@ SHARED_MEMORY = 'omp'
 
 from coulomb_kmc import *
 
+_PROFILE = common.PROFILE
 
 
 def red(*input):
@@ -358,7 +359,7 @@ def test_kmc_fmm_free_space_3():
     L = 12
     R = 3
 
-    N = 50
+    N = 1000
     E = 4.
     rc = E/4
 
@@ -419,7 +420,8 @@ def test_kmc_fmm_free_space_3():
     # get the energy of the proposed moves
     prop_energy_py = kmc_fmm.test_propose(moves=prop, use_python=True)
     prop_energy_c  = kmc_fmm.test_propose(moves=prop, use_python=False)
-    
+
+
     # test agains the direct calculation
     for rxi, rx in enumerate(prop):
         pid = rx[0]
@@ -430,7 +432,9 @@ def test_kmc_fmm_free_space_3():
 
             assert abs(fmm_phi_py - fmm_phi_c)/abs(fmm_phi_py) < eps
 
-
+    #from coulomb_kmc.common import print_profile
+    #print("\n")
+    #print_profile()
 
 
 

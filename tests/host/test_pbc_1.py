@@ -252,6 +252,91 @@ def test_kmc_fmm_pbc_2():
             assert abs(fmm_phi - phi_direct)/abs(phi_direct) < eps
 
 
+@pytest.mark.skipif('MPISIZE > 1')
+def test_kmc_fmm_pbc_3():
+    """
+    Passes all proposed moves to kmc at once, then checks all outputs
+    """
+    
+    eps = 10.**-5
+    L = 12
+    R = 3
+
+    N = 50
+    E = 4.
+    rc = E/4
+
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    A.npart = N
+
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+    A.PP = data.ParticleDat(ncomp=3)
+
+    A.crr = data.ScalarArray(ncomp=1)
+
+    rng = np.random.RandomState(seed=8657)
+
+    if N == 4:
+        ra = 0.25 * E
+        nra = -0.25 * E
+
+        A.P[0,:] = ( 1.6,  1.6, 0.0)
+        A.P[1,:] = (-1.500001,  1.499999, 0.0)
+        A.P[2,:] = (-1.500001, -1.500001, 0.0)
+        A.P[3,:] = ( 0.0,  0.0, 0.0)
+
+        A.Q[0,0] = -1.
+        A.Q[1,0] = 1.
+        A.Q[2,0] = -1.
+        A.Q[3,0] = 0.
+    else:
+        A.P[:] = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
+        for px in range(N):
+            A.Q[px,0] = (-1.0)**(px+1)
+        bias = np.sum(A.Q[:N:, 0])/N
+        A.Q[:, 0] -= bias
+
+    A.scatter_data_from(0)
+
+    # create a kmc instance
+    kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
+        domain=A.domain, r=R, l=L, boundary_condition='pbc')
+    kmc_fmm.initialise()
+    
+    # make  some random proposed moves
+    order = rng.permutation(range(N))
+    prop = []
+
+    for px in range(N):
+
+        propn = rng.randint(1, 8)
+        prop.append(
+            (
+                order[px],
+                rng.uniform(low=-0.5*E, high=0.5*E, size=(propn, 3))
+            )
+        )
+    
+    # get the energy of the proposed moves
+    prop_energy_py = kmc_fmm.test_propose(moves=prop, use_python=True)
+    prop_energy_c  = kmc_fmm.test_propose(moves=prop, use_python=False)
+    
+    # test agains the direct calculation
+    for rxi, rx in enumerate(prop):
+        pid = rx[0]
+        for movi, mov in enumerate(rx[1]):
+            
+            fmm_phi_py = prop_energy_py[rxi][movi]
+            fmm_phi_c = prop_energy_c[rxi][movi]
+
+            assert abs(fmm_phi_py - fmm_phi_c)/abs(fmm_phi_py) < eps
+
+
+
+
 
 def test_kmc_fmm_pbc_parallel_1():
 
@@ -365,91 +450,6 @@ def test_kmc_fmm_pbc_parallel_1():
             fmm_phi = prop_energy[rxi][movi]
 
             assert abs(fmm_phi - phi_direct)/abs(phi_direct) < eps
-
-
-
-@pytest.mark.skipif('MPISIZE > 1')
-def test_kmc_fmm_pbc_3():
-    """
-    Passes all proposed moves to kmc at once, then checks all outputs
-    """
-    
-    eps = 10.**-5
-    L = 12
-    R = 3
-
-    N = 50
-    E = 4.
-    rc = E/4
-
-    A = state.State()
-    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
-    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
-    A.npart = N
-
-    A.P = data.PositionDat(ncomp=3)
-    A.Q = data.ParticleDat(ncomp=1)
-    A.PP = data.ParticleDat(ncomp=3)
-
-    A.crr = data.ScalarArray(ncomp=1)
-
-    rng = np.random.RandomState(seed=8657)
-
-    if N == 4:
-        ra = 0.25 * E
-        nra = -0.25 * E
-
-        A.P[0,:] = ( 1.6,  1.6, 0.0)
-        A.P[1,:] = (-1.500001,  1.499999, 0.0)
-        A.P[2,:] = (-1.500001, -1.500001, 0.0)
-        A.P[3,:] = ( 0.0,  0.0, 0.0)
-
-        A.Q[0,0] = -1.
-        A.Q[1,0] = 1.
-        A.Q[2,0] = -1.
-        A.Q[3,0] = 0.
-    else:
-        A.P[:] = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
-        for px in range(N):
-            A.Q[px,0] = (-1.0)**(px+1)
-        bias = np.sum(A.Q[:N:, 0])/N
-        A.Q[:, 0] -= bias
-
-    A.scatter_data_from(0)
-
-    # create a kmc instance
-    kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
-        domain=A.domain, r=R, l=L, boundary_condition='pbc')
-    kmc_fmm.initialise()
-    
-    # make  some random proposed moves
-    order = rng.permutation(range(N))
-    prop = []
-
-    for px in range(N):
-
-        propn = rng.randint(1, 8)
-        prop.append(
-            (
-                order[px],
-                rng.uniform(low=-0.5*E, high=0.5*E, size=(propn, 3))
-            )
-        )
-    
-    # get the energy of the proposed moves
-    prop_energy_py = kmc_fmm.test_propose(moves=prop, use_python=True)
-    prop_energy_c  = kmc_fmm.test_propose(moves=prop, use_python=False)
-    
-    # test agains the direct calculation
-    for rxi, rx in enumerate(prop):
-        pid = rx[0]
-        for movi, mov in enumerate(rx[1]):
-            
-            fmm_phi_py = prop_energy_py[rxi][movi]
-            fmm_phi_c = prop_energy_c[rxi][movi]
-
-            assert abs(fmm_phi_py - fmm_phi_c)/abs(fmm_phi_py) < eps
-
 
 
 

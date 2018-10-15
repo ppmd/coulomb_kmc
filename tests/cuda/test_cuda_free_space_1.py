@@ -309,8 +309,6 @@ def test_cuda_kmc_fmm_free_space_1():
     """
     Passes all proposed moves to kmc at once, then checks all outputs
     """
-
-
     eps = 10.**-5
     L = 12
     R = 3
@@ -396,34 +394,16 @@ def test_cuda_kmc_fmm_free_space_1():
     
     # get the energy of the proposed moves
     prop_energy = kmc_fmm.test_propose(moves=prop)
-    prop_energy_cuda = kmc_fmm_cuda.test_propose(moves=prop)
-    
-    for px, pcx in zip(prop_energy, prop_energy_cuda):
+    prop_energy_cuda = kmc_fmm_cuda.propose(moves=prop)
+    prop_energy_c = kmc_fmm.propose(moves=prop)
+
+
+    for px, pcx, pcc in zip(prop_energy, prop_energy_cuda, prop_energy_c):
         for engi, engx in enumerate(px):
-            assert abs(engx - pcx[engi]) < 10.**-13
+            assert abs(engx - pcx[engi])/abs(engx) < 10.**-14
+            assert abs(engx - pcc[engi])/abs(engx) < 10.**-14
 
-    return
-    gpu_energy_new = kmc_fmm.kmcl._cuda_d['new_energy'].get()
-    gpu_energy_old = kmc_fmm.kmcl._cuda_d['old_energy'].get()
-
-    nprint = prop[0][1].shape[0]
-    
-    A.PP[prop[0][0], :] = prop[0][1][0,:]
-    #de = _direct()
-    #print(de, prop_energy[0])
-
-    tmp_index = 0
-    for pi, px in enumerate(prop):
-        nprop = np.atleast_2d(px[1]).shape[0]
-        for nx in range(nprop):
-
-            assert abs(kmc_fmm._tmp_energies[test_kmc_fmm_enum.U0_DIRECT][pi, nx] - \
-                    gpu_energy_old[pi]) < 10.**-12, "{} {}".format(pi, nx)           
-            assert abs(kmc_fmm._tmp_energies[test_kmc_fmm_enum.U1_DIRECT][pi, nx] - \
-                    gpu_energy_new[tmp_index + nx]) < 10.**-12, "{} {}".format(pi, nx)
-        
-        tmp_index += nprop
-
-
+    from coulomb_kmc.common import print_profile
+    print_profile()
 
 
