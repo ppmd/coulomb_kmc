@@ -12,18 +12,18 @@ from itertools import product
 
 from ppmd import mpi
 
+from coulomb_kmc.common import BCType, PROFILE
+
 MPI = mpi.MPI
 
 REAL = ctypes.c_double
 INT64 = ctypes.c_int64
 
-from . import kmc_local
-
 class LocalCellExpansions(object):
     """
     Object to get, store and update local expansions from an fmm instance.
     """
-    def __init__(self, fmm, max_move):
+    def __init__(self, fmm, max_move, boundary_condition=BCType.PBC):
 
         self.fmm = fmm
         self.max_move = max_move
@@ -31,13 +31,15 @@ class LocalCellExpansions(object):
         self.comm = fmm.tree.cart_comm
 
         csc = fmm.tree.entry_map.cube_side_count
-        # in future domains may not be square
+        # in future domains may not be square, s2f
         csc = [csc, csc, csc]
-        csw = [self.domain.extent[0] / csc[0],
+
+        # s2f
+        csw = [self.domain.extent[2] / csc[0],
                self.domain.extent[1] / csc[1],
-               self.domain.extent[2] / csc[2]]
+               self.domain.extent[0] / csc[2]]
         
-        # this is pad per dimension
+        # this is pad per dimension s2f
         pad = [1 + int(ceil(max_move/cx)) for cx in csw]
  
         ls = fmm.tree.entry_map.local_size
@@ -45,22 +47,18 @@ class LocalCellExpansions(object):
 
         # as offset indices
         pad_low = [list(range(-px, 0)) for px in pad]
-        pad_high = [list(range(lsx, lsx + px)) for px, lsx in zip(pad, reversed(ls))]
+        pad_high = [list(range(lsx, lsx + px)) for px, lsx in zip(pad, ls)]
         
         # slowest to fastest to match octal tree indexing
-        global_to_local = [-lo[dx] + pad[dx] for dx in reversed(range(3))]
+        global_to_local = [-lo[dx] + pad[dx] for dx in range(3)]
         self.global_to_local = np.array(global_to_local, dtype=INT64)
-
-        # print("ls", ls, "lo", lo, "extent", self.domain.extent, "boundary", self.domain.boundary)
         
         # cell indices as offsets from owned octal cells
-        cell_indices = [ lpx + list(range(lsx)) + hpx for lpx, lsx, hpx in zip(pad_low, reversed(ls), pad_high) ]
-        cell_indices = [[ (cx + osx) % cscx for cx in dx ] for dx, cscx, osx in zip(cell_indices, csc, reversed(lo))]
-        cell_indices = list(reversed(cell_indices))
+        cell_indices = [ lpx + list(range(lsx)) + hpx for lpx, lsx, hpx in zip(pad_low, ls, pad_high) ]
+        cell_indices = [[ (cx + osx) % cscx for cx in dx ] for dx, cscx, osx in zip(cell_indices, csc, lo)]
 
-        # this is slowest to fastest not xyz
+        # this is slowest to fastest (s2f) not xyz
         local_store_dims = [len(dx) for dx in cell_indices]
-
         
         # this is slowest to fastest not xyz
         self.local_store_dims = local_store_dims
