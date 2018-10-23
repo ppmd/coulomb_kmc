@@ -22,6 +22,7 @@ from ppmd.data import ParticleDat
 # coulomb_kmc imports
 from coulomb_kmc import kmc_octal, kmc_local
 from coulomb_kmc.common import BCType, PROFILE
+from coulomb_kmc.kmc_fmm_common import *
 
 REAL = ctypes.c_double
 INT64 = ctypes.c_int64
@@ -114,22 +115,19 @@ class KMCFMM(object):
 
         self._bc = BCType(boundary_condition)
         
-        self._hmatrix_py = np.zeros((2*self.fmm.L, 2*self.fmm.L))
-        def Hfoo(nx, mx): return sqrt(float(factorial(nx - abs(mx)))/factorial(nx + abs(mx)))
-        for nx in range(self.fmm.L):
-            for mx in range(-nx, nx+1):
-                self._hmatrix_py[nx, mx] = Hfoo(nx, mx)
-        
-        # TODO properly implement max_move
-        max_move = 1.0
-        self.max_move = max_move
+        self._lee = LocalExpEval(self.fmm.L)
+
+        if max_move is not None:
+            self.max_move = float(max_move)
+        else:
+            self.max_move = max(self.domain.extent[:])
 
         # class to collect required local expansions
         self.kmco = kmc_octal.LocalCellExpansions(self.fmm, self.max_move)
-
         # class to collect and redistribute particle data
         self.kmcl = kmc_local.LocalParticleData(self.fmm, self.max_move,
             boundary_condition=self._bc, cuda=self.cuda_direct)
+
         
         self._tmp_energies = {
             _ENERGY.U_DIFF      : np.zeros((1, 1), dtype=REAL),
@@ -221,11 +219,8 @@ class KMCFMM(object):
     
     def test_propose(self, moves, use_python=True):
 
-        
         self._assert_init()
         
-        # tmp testing...
-        # the kmc_local has no non cuda code path yet
         if not use_python:
             du0, du1 = self.kmcl.propose(moves)
         
@@ -352,7 +347,7 @@ class KMCFMM(object):
                 lexp = self._really_long_range_diff(ix, prop_pos)
                 # the origin is the centre of the domain hence no offsets are needed
                 disp = KMCFMM.spherical(tuple(prop_pos))
-                rlr = self.charges.data[ix, 0] * self.compute_phi_local(self.fmm.L, lexp, disp)[0]
+                rlr = self.charges.data[ix, 0] * self._lee.compute_phi_local(lexp, disp)[0]
                 e_tmp -= rlr
 
         return e_tmp
@@ -484,7 +479,7 @@ class KMCFMM(object):
         lexp = self._get_local_expansion(cell)
         disp = self._get_cell_disp(cell, prop_pos)
 
-        return self.charges.data[ix, 0] * self.compute_phi_local(self.fmm.L, lexp, disp)[0]
+        return self.charges.data[ix, 0] * self._lee.compute_phi_local(lexp, disp)[0]
 
 
     def _charge_indirect_energy_old(self, ix):
@@ -492,7 +487,7 @@ class KMCFMM(object):
         lexp = self._get_local_expansion(cell)
         disp = self._get_cell_disp(cell, self.positions.data[ix,:])
 
-        return self.charges.data[ix, 0] * self.compute_phi_local(self.fmm.L, lexp, disp)[0]
+        return self.charges.data[ix, 0] * self._lee.compute_phi_local(lexp, disp)[0]
 
 
     def _get_local_expansion(self, cell):
@@ -539,7 +534,6 @@ class KMCFMM(object):
         
         return sph
 
-
     @staticmethod
     def spherical(xyz):
         """
@@ -568,68 +562,6 @@ class KMCFMM(object):
 
         return sph
 
-    
-    def compute_phi_local(self, llimit, moments, disp_sph):
-        """
-        Computes the field at the podint disp_sph given by the local expansion in
-        moments
-        """
-        
-        phi_sph_re = 0.
-        phi_sph_im = 0.
-        def re_lm(l,m): return (l**2) + l + m
-        def im_lm(l,m): return (l**2) + l +  m + llimit**2
-
-        cosv = np.zeros(3 * llimit)
-        sinv = np.zeros(3 * llimit)
-        for mx in range(-llimit, llimit+1):
-            cosv[mx] = cos(mx * disp_sph[2])
-            sinv[mx] = sin(mx * disp_sph[2])
-
-        for lx in range(llimit):
-            scipy_p = lpmv(range(lx+1), lx, np.cos(disp_sph[1]))
-            irad = disp_sph[0] ** (lx)
-            for mx in range(-lx, lx+1):
-
-                val = self._hmatrix_py[lx, mx] * scipy_p[abs(mx)]
-
-                scipy_real = cosv[mx] * val * irad
-                scipy_imag = sinv[mx] * val * irad
-
-                ppmd_mom_re = moments[re_lm(lx, mx)]
-                ppmd_mom_im = moments[im_lm(lx, mx)]
-
-                phi_sph_re += scipy_real*ppmd_mom_re - scipy_imag*ppmd_mom_im
-                phi_sph_im += scipy_real*ppmd_mom_im + ppmd_mom_re*scipy_imag
-
-        return phi_sph_re, phi_sph_im
-    
-
-    def _multipole_exp(self, sph, charge, arr):
-        """
-        For a charge at the point sph computes the multipole moments at the origin
-        and appends them onto arr.
-        """
-
-        llimit = self.fmm.L
-        def re_lm(l,m): return (l**2) + l + m
-        def im_lm(l,m): return (l**2) + l +  m + llimit**2
-        
-        cosv = np.zeros(3 * llimit)
-        sinv = np.zeros(3 * llimit)
-        for mx in range(-llimit, llimit+1):
-            cosv[mx] = cos(-1.0 * mx * sph[2])
-            sinv[mx] = sin(-1.0 * mx * sph[2])
-
-        for lx in range(self.fmm.L):
-            scipy_p = lpmv(range(lx+1), lx, cos(sph[1]))
-            radn = sph[0] ** lx
-            for mx in range(-lx, lx+1):
-                coeff = charge * radn * self._hmatrix_py[lx, mx] * scipy_p[abs(mx)] 
-                arr[re_lm(lx, mx)] += cosv[mx] * coeff
-                arr[im_lm(lx, mx)] += sinv[mx] * coeff
-
-
     def _multipole_diff(self, old_pos, new_pos, charge, arr):
         # output is in the numpy array arr
         # plan is to do all "really long range" corrections
@@ -637,11 +569,11 @@ class KMCFMM(object):
 
         # remove the old charge
         disp = KMCFMM.spherical(tuple(old_pos))
-        self._multipole_exp(disp, -1.0 * charge, arr)
+        self._lee.multipole_exp(disp, -1.0 * charge, arr)
         
         # add the new charge
         disp = KMCFMM.spherical(tuple(new_pos))
-        self._multipole_exp(disp, charge, arr)
+        self._lee.multipole_exp(disp, charge, arr)
 
     @staticmethod
     def _numpy_ptr(arr):

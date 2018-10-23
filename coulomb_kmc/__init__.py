@@ -1,5 +1,5 @@
 
-from coulomb_kmc import kmc_fmm, kmc_octal, kmc_local, common
+from coulomb_kmc import kmc_fmm, kmc_octal, kmc_local, common, kmc_fmm_common
 
 KMCFMM = kmc_fmm.KMCFMM
 
