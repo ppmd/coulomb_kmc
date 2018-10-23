@@ -34,6 +34,9 @@ class LocalCellExpansions(FMMMPIDecomp):
         self.max_move = max_move
         self.domain = fmm.domain
         self.comm = fmm.tree.cart_comm
+        self.entry_local_size = fmm.tree.entry_map.local_size
+        self.entry_local_offset = fmm.tree.entry_map.local_offset
+        self._bc = boundary_condition
 
         csc = fmm.tree.entry_map.cube_side_count
         # in future domains may not be square, s2f
@@ -84,16 +87,22 @@ class LocalCellExpansions(FMMMPIDecomp):
         self.local_store_dims = local_store_dims
         self.global_cell_size = csc
         self.cell_indices = cell_indices
-        self.local_expansions = np.zeros(local_store_dims + [2 * (fmm.L**2)], dtype=REAL)
+        self.local_expansions = np.zeros(
+            local_store_dims + [2 * (fmm.L**2)], dtype=REAL)
         self.remote_inds = np.zeros(local_store_dims + [1], dtype=INT64)
         self.remote_inds[:] = -1
         
         self._wing = MPI.Win()
         data_nbytes = self.fmm.tree_plain[-1][0,0,0,:].nbytes
-        self._win = self._wing.Create(self.fmm.tree_plain[-1], disp_unit=data_nbytes, comm=self.comm)
+        self._win = self._wing.Create(
+            self.fmm.tree_plain[-1], disp_unit=data_nbytes, comm=self.comm)
 
         gmap_nbytes = self.fmm.tree[-1].global_to_local[0,0,0].nbytes
-        self._win_ind = self._wing.Create(self.fmm.tree[-1].global_to_local, disp_unit=gmap_nbytes, comm=self.comm)
+        self._win_ind = self._wing.Create(
+            self.fmm.tree[-1].global_to_local,
+            disp_unit=gmap_nbytes,
+            comm=self.comm
+        )
         
         self._ncomp = (self.fmm.L**2)*2
 
@@ -103,46 +112,74 @@ class LocalCellExpansions(FMMMPIDecomp):
 
         # host copy of particle data for moves
         self._cuda_h = {}
-        self._cuda_h['new_positions']     = np.zeros((1, 3), dtype=REAL)
-        self._cuda_h['new_fmm_cells']     = np.zeros((1, 1), dtype=INT64)
-        self._cuda_h['new_charges']       = np.zeros((1, 1), dtype=REAL)
-        self._cuda_h['new_energy']        = np.zeros((1, 1), dtype=REAL)           
-        self._cuda_h['old_positions']     = np.zeros((1, 3), dtype=REAL)
-        self._cuda_h['old_fmm_cells']     = np.zeros((1, 1), dtype=INT64)
-        self._cuda_h['old_charges']       = np.zeros((1, 1), dtype=REAL)
-        self._cuda_h['old_energy']        = np.zeros((1, 1), dtype=REAL)
+        self._cuda_h['new_positions'] = np.zeros((1, 3), dtype=REAL)
+        self._cuda_h['new_fmm_cells'] = np.zeros((1, 1), dtype=INT64)
+        self._cuda_h['new_charges']   = np.zeros((1, 1), dtype=REAL)
+        self._cuda_h['new_energy']    = np.zeros((1, 1), dtype=REAL)           
+        self._cuda_h['old_positions'] = np.zeros((1, 3), dtype=REAL)
+        self._cuda_h['old_fmm_cells'] = np.zeros((1, 1), dtype=INT64)
+        self._cuda_h['old_charges']   = np.zeros((1, 1), dtype=REAL)
+        self._cuda_h['old_energy']    = np.zeros((1, 1), dtype=REAL)
         
         self._host_lib = self._init_host_kernels(self.fmm.L)
 
-    def propose(self):
-        total_movs, num_particles = self._setup_propose(moves)
+    def propose(self, moves):
+        total_movs, num_particles = self._setup_propose(moves, direct=False)
         
         u0 = None
         u1 = None
-       
-    def _resize_host_arrays(self, total_movs):
-        if self._cuda_h['new_ids'].shape[0] < total_movs:
-            for keyx in self._cuda_h.keys():
-                ncomp = self._cuda_h[keyx].shape[1]
-                dtype = self._cuda_h[keyx].dtype
-                self._cuda_h[keyx] = np.zeros((total_movs, ncomp), dtype=dtype)
 
-    def initialise(self):
+        self._host_lib(
+            INT64(num_particles),
+            self._cuda_h['old_fmm_cells'].ctypes.get_as_parameter(),
+            self.cell_centres.ctypes.get_as_parameter(),
+            self._cuda_h['old_positions'].ctypes.get_as_parameter(),
+            self._cuda_h['old_charges'].ctypes.get_as_parameter(),
+            self.local_expansions.ctypes.get_as_parameter(),
+            self._cuda_h['old_energy'].ctypes.get_as_parameter()
+        )
+        self._host_lib(
+            INT64(total_movs),
+            self._cuda_h['new_fmm_cells'].ctypes.get_as_parameter(),
+            self.cell_centres.ctypes.get_as_parameter(),
+            self._cuda_h['new_positions'].ctypes.get_as_parameter(),
+            self._cuda_h['new_charges'].ctypes.get_as_parameter(),
+            self.local_expansions.ctypes.get_as_parameter(),
+            self._cuda_h['new_energy'].ctypes.get_as_parameter()
+        )        
+
+        u0 = self._cuda_h['old_energy'][:num_particles:]
+        u1 = self._cuda_h['new_energy'][:total_movs:]
+
+        return u0, u1
+
+
+    def initialise(self, positions, charges, fmm_cells):
+        self.positions = positions
+        self.charges = charges
+        self.fmm_cells = fmm_cells
         self._get_local_expansions()
         self._compute_cell_centres()
+        self.group = self.positions.group
+
 
     def _compute_cell_centres(self):
         lsd = self.local_store_dims
         extent_s2f = list(reversed(self.domain.extent))
         ncell_s2f = self.global_cell_size
         widths = [ex/sx for ex, sx in zip(extent_s2f, ncell_s2f)]
-        starts = [0.5*wx for wx in widths]
-        centres = [[starts[dimi] + cx * widths[dimi] for cx in dimx] for dimi, dimx in enumerate(self.cell_offsets)]
+        starts = [ -0.5*ex + 0.5*wx for wx, ex in zip(widths, extent_s2f)]
+        centres = [[starts[dimi] + cx * widths[dimi] for cx in dimx] for \
+            dimi, dimx in enumerate(self.cell_offsets)]
 
         # store the centres as xyz 
         for lcellx in product(range(lsd[0]), range(lsd[1]), range(lsd[2])):
             self.cell_centres[lcellx[0], lcellx[1], lcellx[2], :] = \
-                (centres[2][lcellx[2]], centres[1][lcellx[1]], centres[0][lcellx[0]])
+                (
+                    centres[2][lcellx[2]],
+                    centres[1][lcellx[1]], 
+                    centres[0][lcellx[0]]
+                )
 
     
     def _get_local_expansions(self):
@@ -246,6 +283,7 @@ class LocalCellExpansions(FMMMPIDecomp):
         header = str(Module(
             (
                 Include('math.h'),
+                Include('stdio.h'),
                 Define('REAL', 'double'),
                 Define('INT64', 'int64_t'),
                 Define('NTERMS', L),
@@ -265,7 +303,7 @@ class LocalCellExpansions(FMMMPIDecomp):
                 const REAL  * RESTRICT d_local_exp,
                 REAL * RESTRICT d_energy"""
 
-        src = """
+        src = r"""
         {HEADER}
         
         extern "C" int indirect_interactions(
@@ -362,6 +400,9 @@ class LocalCellExpansions(FMMMPIDecomp):
 
                 const REAL sin_phi = sin(phi);
                 const REAL cos_phi = cos(phi);
+
+                //printf("C pos: %f %f %f centre %f %f %f \n", d_positions[idx*3 + 0], d_positions[idx*3 + 1], d_positions[idx*3 + 2], d_centres[offset*3 + 0], d_centres[offset*3 + 1], d_centres[offset*3 + 2]);
+                //printf("C disp: %f %f %f\n", radius, theta, phi);
 
                 {SPH_GEN}
 

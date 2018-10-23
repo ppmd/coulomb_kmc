@@ -228,8 +228,10 @@ def test_kmc_fmm_free_space_1():
     
     kmc_fmm.initialise()
 
+
     for rx in range(2*N):
         pid = rng.randint(0, N-1)
+
         pos = rng.uniform(low=-0.5*E, high=0.5*E, size=3)
         
         A.PP[:] = A.P[:]

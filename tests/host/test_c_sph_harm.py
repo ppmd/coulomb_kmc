@@ -96,6 +96,7 @@ def test_c_sph_harm_2():
     def cptr(arr):
         return arr.ctypes.get_as_parameter()
     
+    t0 = time.time()
     lib(
         INT64(N),
         cptr(offsets),
@@ -105,6 +106,9 @@ def test_c_sph_harm_2():
         cptr(moments),
         cptr(energy)
     )
+    t1 = time.time()
+
+    # print("C", t1 - t0)
 
     for ix in range(N):
         pos = tuple(positions[ix, :] - centres)

@@ -185,8 +185,11 @@ class KMCFMM(object):
         self.energy = self.fmm(positions=self.positions, charges=self.charges)
         
         # get the local expansions into the correct places
-        self.kmco.initialise()
-        
+        self.kmco.initialise(
+            positions=self.positions,
+            charges=self.charges,
+            fmm_cells=self.group._fmm_cell
+        )        
         self._check_ordering_dats()
         self.kmcl.initialise(
             positions=self.positions,
@@ -221,9 +224,12 @@ class KMCFMM(object):
 
         self._assert_init()
         
+
+
         if not use_python:
             du0, du1 = self.kmcl.propose(moves)
-        
+            iu0, iu1 = self.kmco.propose(moves)
+
         num_particles = len(moves)
         max_num_moves = 0
         num_proposed = 0
@@ -251,19 +257,21 @@ class KMCFMM(object):
                 old_direct_energy = self._direct_contrib_old(pid)
 
             for mxi, mx in enumerate(movs):
-                self._tmp_energies[_ENERGY.U0_DIRECT][movxi, mxi] = old_direct_energy
+                self._tmp_energies[_ENERGY.U0_DIRECT][movxi, mxi] = \
+                    old_direct_energy
 
                 if not use_python:
                     new_direct_energy = du1[tmp_index]
                 else:
                     new_direct_energy = self._direct_contrib_new(pid, mx)
                 tmp_index += 1
-                self._tmp_energies[_ENERGY.U1_DIRECT][movxi, mxi] = new_direct_energy
+
+                self._tmp_energies[_ENERGY.U1_DIRECT][movxi, mxi] = \
+                    new_direct_energy
         
-        #print("------")
-        #print(self._tmp_energies[_ENERGY.U0_DIRECT])
-        #print(self._tmp_energies[_ENERGY.U1_DIRECT])
         hostt1 = time.time()
+
+        tmp_index = 0
 
         # indirect differences
         for movxi, movx in enumerate(moves):
@@ -272,11 +280,28 @@ class KMCFMM(object):
             # get passed moves, number of moves
             movs = np.atleast_2d(movx[1])
             num_movs = movs.shape[0]
-            old_indirect_energy = self._charge_indirect_energy_old(pid)
+            
+            if not use_python:
+                old_indirect_energy = iu0[movxi]
+            else:
+                old_indirect_energy = self._charge_indirect_energy_old(pid)
+
+
             for mxi, mx in enumerate(movs):
-                self._tmp_energies[_ENERGY.U0_INDIRECT][movxi, mxi] = old_indirect_energy
-                self._tmp_energies[_ENERGY.U1_INDIRECT][movxi, mxi] = self._charge_indirect_energy_new(pid, mx)
-        
+                self._tmp_energies[_ENERGY.U0_INDIRECT][movxi, mxi] = \
+                    old_indirect_energy
+
+                if not use_python:
+                    new_indirect_energy = du1[tmp_index]
+                else:
+                    new_indirect_energy = \
+                        self._charge_indirect_energy_new(pid, mx)
+                tmp_index += 1
+
+                self._tmp_energies[_ENERGY.U1_INDIRECT][movxi, mxi] = \
+                    new_indirect_energy
+
+
         # compute self interactions
         for movxi, movx in enumerate(moves):
             pid = movx[0]
@@ -379,7 +404,8 @@ class KMCFMM(object):
 
                 # position offset
                 # in python -5//7 = -1
-                image_mod = np.array([float(cx // sl)*ex for cx, ex in zip(jcell, extent)])
+                image_mod = np.array([float(cx // sl)*ex for cx, ex in \
+                    zip(jcell, extent)])
 
                 # find the correct cell
                 jcell = (jcell[0] % sl, jcell[1] % sl, jcell[2] % sl)
@@ -420,7 +446,8 @@ class KMCFMM(object):
                 sl = 2 ** (self.fmm.R - 1)
                 # position offset
                 # in python -5//7 = -1
-                image_mod = np.array([float(cx // sl)*ex for cx, ex in zip(jcell, extent)])
+                image_mod = np.array([float(cx // sl)*ex for \
+                    cx, ex in zip(jcell, extent)])
 
                 # find the correct cell
                 jcell = (jcell[0] % sl, jcell[1] % sl, jcell[2] % sl)
@@ -430,8 +457,6 @@ class KMCFMM(object):
                 _tvb = np.zeros(len(self._cell_map[jcell]))
 
                 for jxi, jx in enumerate(self._cell_map[jcell]):
-
-                    # print("\t\tHST: jpos", self.positions.data[jx, :] + image_mod, jx)
 
                     if jx == ix:
                         _tvb[jxi] = 0.0
@@ -469,8 +494,8 @@ class KMCFMM(object):
         # if a charge is slightly out of the negative end of an axis this will
         # truncate to zero
         cell = [int(pcx / cwx) for pcx, cwx in zip(spos, cell_widths)]
-        # truncate down if too high on axis, if way too high this should probably
-        # throw an error
+        # truncate down if too high on axis, if way too high this should 
+        # probably throw an error
         return tuple([min(cx, 2**(self.fmm.R -1)) for cx in cell ])
 
 
@@ -479,7 +504,8 @@ class KMCFMM(object):
         lexp = self._get_local_expansion(cell)
         disp = self._get_cell_disp(cell, prop_pos)
 
-        return self.charges.data[ix, 0] * self._lee.compute_phi_local(lexp, disp)[0]
+        return self.charges.data[ix, 0] * \
+            self._lee.compute_phi_local(lexp, disp)[0]
 
 
     def _charge_indirect_energy_old(self, ix):
@@ -487,7 +513,8 @@ class KMCFMM(object):
         lexp = self._get_local_expansion(cell)
         disp = self._get_cell_disp(cell, self.positions.data[ix,:])
 
-        return self.charges.data[ix, 0] * self._lee.compute_phi_local(lexp, disp)[0]
+        return self.charges.data[ix, 0] * \
+            self._lee.compute_phi_local(lexp, disp)[0]
 
 
     def _get_local_expansion(self, cell):
@@ -514,7 +541,8 @@ class KMCFMM(object):
 
     def _get_cell_disp(self, cell, position):
         """
-        Returns spherical coordinate of particle with local cell centre as an origin
+        Returns spherical coordinate of particle with local cell centre as an
+        origin
         """
         R = self.fmm.R
         extent = self.group.domain.extent
