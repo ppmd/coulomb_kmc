@@ -78,7 +78,7 @@ def test_c_sph_harm_1():
 
 def test_c_sph_harm_2():
     rng = np.random.RandomState(9476213)
-    N = 200
+    N = 2000
     L = 12
     ncomp = (L**2)*2
 
@@ -91,9 +91,11 @@ def test_c_sph_harm_2():
     
     lib = kmc_octal.LocalCellExpansions._init_host_kernels(L)
     
+    lee = LocalExpEval(L)
+
     def cptr(arr):
         return arr.ctypes.get_as_parameter()
-
+    
     lib(
         INT64(N),
         cptr(offsets),
@@ -103,8 +105,6 @@ def test_c_sph_harm_2():
         cptr(moments),
         cptr(energy)
     )
-    
-    lee = LocalExpEval(L)
 
     for ix in range(N):
         pos = tuple(positions[ix, :] - centres)

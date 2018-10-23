@@ -212,7 +212,7 @@ class LocalCellExpansions(FMMMPIDecomp):
     def _init_host_kernels(L):
         ncomp = (L**2)*2
 
-        sph_gen = SphGen(maxl=L-1, theta_sym='theta', phi_sym='phi', ctype='double')
+        sph_gen = SphGen(maxl=L-1, theta_sym='theta', phi_sym='phi', ctype='double', avoid_calls=True)
         def cube_ind(l, m):
             return ((l) * ( (l) + 1 ) + (m) )
         
@@ -251,7 +251,8 @@ class LocalCellExpansions(FMMMPIDecomp):
                 Define('NTERMS', L),
                 Define('ESTRIDE', ncomp),
                 Define('HESTRIDE', L**2),
-                Define('CUBE_IND(L, M)', '((L) * ( (L) + 1 ) + (M) )')
+                Define('CUBE_IND(L, M)', '((L) * ( (L) + 1 ) + (M) )'),
+                Define('BLOCK_SIZE', 32)
             )
         ))
 
@@ -270,8 +271,79 @@ class LocalCellExpansions(FMMMPIDecomp):
         extern "C" int indirect_interactions(
             {LIB_PARAMETERS}
         ){{
-            #pragma omp parallel for simd simdlen(16)
-            for(INT64 idx=0 ; idx<num_movs ; idx++){{
+            
+            const INT64 NBLOCKS = num_movs / BLOCK_SIZE;
+            const INT64 BLOCK_END = NBLOCKS * BLOCK_SIZE;
+            
+            #pragma omp parallel for 
+            for(INT64 bdx=0 ; bdx<NBLOCKS ; bdx++){{
+
+                REAL radius_set[BLOCK_SIZE];
+                //REAL phi_set[BLOCK_SIZE];
+                REAL cos_theta_set[BLOCK_SIZE];
+                REAL sqrt_theta_set[BLOCK_SIZE];
+                REAL energy_set[BLOCK_SIZE];
+                REAL sin_phi_set[BLOCK_SIZE];
+                REAL cos_phi_set[BLOCK_SIZE];
+
+                for(INT64 bix=0 ; bix<BLOCK_SIZE ; bix++){{
+                    const INT64 idx = bdx*BLOCK_SIZE + bix;
+                    const INT64 offset = offsets[idx];
+                    const REAL dx = d_positions[idx*3 + 0] - d_centres[offset*3 + 0];
+                    const REAL dy = d_positions[idx*3 + 1] - d_centres[offset*3 + 1];
+                    const REAL dz = d_positions[idx*3 + 2] - d_centres[offset*3 + 2];
+
+                    const REAL radius = sqrt(dx*dx + dy*dy + dz*dz);
+                    const REAL phi = atan2(dy, dx);
+                    const REAL theta = atan2(sqrt(dx*dx + dy*dy), dz);
+                    
+                    const REAL cos_theta = cos(theta);
+                    const REAL sqrt_theta_tmp = sqrt(1.0 - cos_theta*cos_theta);
+
+                    radius_set[bix] = radius;
+                    //phi_set[bix]    = phi;
+                    cos_theta_set[bix]  = cos(theta);
+                    sqrt_theta_set[bix]  = sqrt_theta_tmp;
+                    sin_phi_set[bix] = sin(phi);
+                    cos_phi_set[bix] = cos(phi);
+                }}
+                
+                #pragma omp simd simdlen(BLOCK_SIZE)
+                for(INT64 bix=0 ; bix<BLOCK_SIZE ; bix++){{
+
+                    const INT64 idx = bdx*BLOCK_SIZE + bix;
+                    const INT64 offset = offsets[idx];
+
+                    const REAL * RESTRICT re_exp = &d_local_exp[ESTRIDE * offset];
+                    const REAL * RESTRICT im_exp = &d_local_exp[ESTRIDE * offset + HESTRIDE];                   
+                    const REAL charge = d_charges[idx];
+                    const REAL radius           = radius_set[bix];
+                    //const REAL phi              = phi_set[bix];   
+                    const REAL cos_theta        = cos_theta_set[bix];
+                    const REAL sqrt_theta_tmp   = sqrt_theta_set[bix];
+                    const REAL sin_phi          = sin_phi_set[bix];
+                    const REAL cos_phi          = cos_phi_set[bix];
+
+                    {SPH_GEN}
+
+                    REAL tmp_energy = 0.0;
+                    REAL rhol = 1.0;
+                    REAL coeff = 0.0;
+
+                    {ENERGY_COMP}
+
+                    energy_set[bix] = tmp_energy;
+                }}
+
+                for(INT64 bix=0 ; bix<BLOCK_SIZE ; bix++){{
+                    const INT64 idx = bdx*BLOCK_SIZE + bix;               
+                    d_energy[idx] = energy_set[bix];
+                }}
+
+            }}
+
+            #pragma omp parallel for schedule(static, 1)
+            for(INT64 idx=BLOCK_END ; idx<num_movs ; idx++){{
                 // map fmm cell into data structure
                 const INT64 offset = offsets[idx];
                 const REAL dx = d_positions[idx*3 + 0] - d_centres[offset*3 + 0];
@@ -285,6 +357,11 @@ class LocalCellExpansions(FMMMPIDecomp):
                 const REAL radius = sqrt(dx*dx + dy*dy + dz*dz);
                 const REAL phi = atan2(dy, dx);
                 const REAL theta = atan2(sqrt(dx*dx + dy*dy), dz);
+                const REAL cos_theta = cos(theta);
+                const REAL sqrt_theta_tmp = sqrt(1.0 - cos_theta*cos_theta);
+
+                const REAL sin_phi = sin(phi);
+                const REAL cos_phi = cos(phi);
 
                 {SPH_GEN}
 
@@ -295,7 +372,6 @@ class LocalCellExpansions(FMMMPIDecomp):
                 {ENERGY_COMP}
 
                 d_energy[idx] = tmp_energy;
-
             }}
 
             return 0;
