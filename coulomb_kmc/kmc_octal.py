@@ -250,6 +250,9 @@ class LocalCellExpansions(FMMMPIDecomp):
         ncomp = (L**2)*2
 
         sph_gen = SphGen(maxl=L-1, theta_sym='theta', phi_sym='phi', ctype='double', avoid_calls=True)
+        
+        flops = dict(sph_gen.flops)
+
         def cube_ind(l, m):
             return ((l) * ( (l) + 1 ) + (m) )
         
@@ -275,10 +278,12 @@ class LocalCellExpansions(FMMMPIDecomp):
                 cm_re, cm_im = cmplx_mul(re_lnm, im_lnm, sph_gen.get_y_sym(lx, mx)[0],
                     sph_gen.get_y_sym(lx, mx)[1])
                 EC += 'tmp_energy += ({cm_re}) * coeff;\n'.format(cm_re=cm_re)
+
+                flops['*'] += 1
+                flops['+'] += 1
                 
-
             EC += 'rhol *= radius;\n'
-
+            flops['*'] += 2
 
         header = str(Module(
             (
@@ -382,6 +387,7 @@ class LocalCellExpansions(FMMMPIDecomp):
 
             #pragma omp parallel for schedule(static, 1)
             for(INT64 idx=BLOCK_END ; idx<num_movs ; idx++){{
+
                 // map fmm cell into data structure
                 const INT64 offset = offsets[idx];
                 const REAL dx = d_positions[idx*3 + 0] - d_centres[offset*3 + 0];
@@ -423,7 +429,7 @@ class LocalCellExpansions(FMMMPIDecomp):
             SPH_GEN=str(sph_gen.module),
             ENERGY_COMP=EC
         )
-
+        # print(flops, sum([flops[kx] for kx in flops.keys()]))
         return build.simple_lib_creator(header_code=' ', src_code=src)['indirect_interactions']
 
 

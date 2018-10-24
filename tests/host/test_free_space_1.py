@@ -410,8 +410,10 @@ def test_kmc_fmm_free_space_3():
     prop = []
 
     for px in range(N):
+        #for px in range(1):
 
         propn = rng.randint(1, 8)
+        #propn = 1
         prop.append(
             (
                 order[px],
@@ -420,9 +422,13 @@ def test_kmc_fmm_free_space_3():
         )
     
     # get the energy of the proposed moves
+    t0 = time.time()
     prop_energy_py = kmc_fmm.test_propose(moves=prop, use_python=True)
+    t1 = time.time()
     prop_energy_c  = kmc_fmm.test_propose(moves=prop, use_python=False)
+    t2 = time.time()
 
+    #print("\nN :", N ,"\nPY:", t1 - t0, "\nC :", t2 - t1)
 
     # test agains the direct calculation
     for rxi, rx in enumerate(prop):
@@ -431,7 +437,7 @@ def test_kmc_fmm_free_space_3():
             
             fmm_phi_py = prop_energy_py[rxi][movi]
             fmm_phi_c = prop_energy_c[rxi][movi]
-
+            
             assert abs(fmm_phi_py - fmm_phi_c)/abs(fmm_phi_py) < eps
 
     #from coulomb_kmc.common import print_profile

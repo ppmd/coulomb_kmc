@@ -272,7 +272,7 @@ class KMCFMM(object):
         hostt1 = time.time()
 
         tmp_index = 0
-
+        
         # indirect differences
         for movxi, movx in enumerate(moves):
             # get particle local id
@@ -292,7 +292,7 @@ class KMCFMM(object):
                     old_indirect_energy
 
                 if not use_python:
-                    new_indirect_energy = du1[tmp_index]
+                    new_indirect_energy = iu1[tmp_index]
                 else:
                     new_indirect_energy = \
                         self._charge_indirect_energy_new(pid, mx)
@@ -300,7 +300,7 @@ class KMCFMM(object):
 
                 self._tmp_energies[_ENERGY.U1_INDIRECT][movxi, mxi] = \
                     new_indirect_energy
-
+        
 
         # compute self interactions
         for movxi, movx in enumerate(moves):
@@ -311,6 +311,7 @@ class KMCFMM(object):
             for mxi, mx in enumerate(movs):
                 self._tmp_energies[_ENERGY.U01_SELF][movxi, mxi] = self._self_interaction(pid, mx)
         
+
         # compute differences
         self._tmp_energies[_ENERGY.U_DIFF] = \
               self._tmp_energies[_ENERGY.U1_DIRECT] \
@@ -318,6 +319,10 @@ class KMCFMM(object):
             - self._tmp_energies[_ENERGY.U0_DIRECT] \
             - self._tmp_energies[_ENERGY.U0_INDIRECT] \
             - self._tmp_energies[_ENERGY.U01_SELF]
+
+        #print('\n' + "--"*60)
+        #for kx in self._tmp_energies.keys():
+        #    print(kx, '\t', self._tmp_energies[kx][0])
 
         prop_energy = []
 

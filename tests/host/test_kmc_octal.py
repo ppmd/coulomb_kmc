@@ -94,7 +94,8 @@ def test_kmc_octal_1():
     ]
 
     kmco = kmc_octal.LocalCellExpansions(kmc_fmm.fmm, 1.0)
-    kmco.initialise()
+    kmco.initialise(positions=A.P, charges=A.Q, fmm_cells=None)
+
     lcl = kmco.cell_indices
     local_dims = kmco.local_store_dims
     for cellx in product(range(local_dims[0]), 
