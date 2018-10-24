@@ -224,11 +224,24 @@ class KMCFMM(object):
 
         self._assert_init()
         
-
+        td0 = 0.0
+        td1 = 0.0
+        ti0 = 0.0
+        ti1 = 0.0
 
         if not use_python:
+            td0 = time.time()
             du0, du1 = self.kmcl.propose(moves)
+            td1 = time.time()
+            
+            ti0 = time.time()
             iu0, iu1 = self.kmco.propose(moves)
+            ti1 = time.time()
+        
+        self._profile_inc('c-direct', td1 - td0)
+        self._profile_inc('c-indirect', ti1 - ti0)
+
+        tpd0 = time.time()
 
         num_particles = len(moves)
         max_num_moves = 0
@@ -242,7 +255,6 @@ class KMCFMM(object):
         # check tmp energy arrays are large enough
         tmp_eng_stride = self._tmp_energy_check((num_particles, max_num_moves))
         
-        hostt0 = time.time()
         tmp_index = 0
         # direct differences
         for movxi, movx in enumerate(moves):
@@ -269,7 +281,8 @@ class KMCFMM(object):
                 self._tmp_energies[_ENERGY.U1_DIRECT][movxi, mxi] = \
                     new_direct_energy
         
-        hostt1 = time.time()
+        tpd1 = time.time()
+        tpi0 = time.time()
 
         tmp_index = 0
         
@@ -300,7 +313,11 @@ class KMCFMM(object):
 
                 self._tmp_energies[_ENERGY.U1_INDIRECT][movxi, mxi] = \
                     new_indirect_energy
+
+        tpi1 = time.time()
         
+        self._profile_inc('py-direct', tpd1 - tpd0)
+        self._profile_inc('py-indirect', tpi1 - tpi0)
 
         # compute self interactions
         for movxi, movx in enumerate(moves):

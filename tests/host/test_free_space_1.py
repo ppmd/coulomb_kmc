@@ -361,7 +361,7 @@ def test_kmc_fmm_free_space_3():
     L = 12
     R = 3
 
-    N = 1000
+    N = 10000
     E = 4.
     rc = E/4
 
@@ -408,12 +408,15 @@ def test_kmc_fmm_free_space_3():
     # make  some random proposed moves
     order = rng.permutation(range(N))
     prop = []
-
+    
+    nmov = 0
     for px in range(N):
         #for px in range(1):
 
         propn = rng.randint(1, 8)
         #propn = 1
+        nmov += propn
+
         prop.append(
             (
                 order[px],
@@ -422,13 +425,26 @@ def test_kmc_fmm_free_space_3():
         )
     
     # get the energy of the proposed moves
+
+    #print("\nN :", N, "\nNMOVES:", nmov)
+    
+    import cProfile
+    pr = cProfile.Profile()
+    pr.enable()
     t0 = time.time()
-    prop_energy_py = kmc_fmm.test_propose(moves=prop, use_python=True)
-    t1 = time.time()
     prop_energy_c  = kmc_fmm.test_propose(moves=prop, use_python=False)
+    t1 = time.time()
+    pr.disable()
+    pr.dump_stats('/tmp/propose.prof')
+
+    print("C :", t1 - t0)
+    #common.print_profile()
+
+    prop_energy_py = kmc_fmm.test_propose(moves=prop, use_python=True)
     t2 = time.time()
 
-    #print("\nN :", N ,"\nPY:", t1 - t0, "\nC :", t2 - t1)
+    #print("PY:", t2 - t1)
+    #common.print_profile()
 
     # test agains the direct calculation
     for rxi, rx in enumerate(prop):
