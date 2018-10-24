@@ -361,7 +361,7 @@ def test_kmc_fmm_free_space_3():
     L = 12
     R = 3
 
-    N = 10000
+    N = 200
     E = 4.
     rc = E/4
 
@@ -435,9 +435,9 @@ def test_kmc_fmm_free_space_3():
     prop_energy_c  = kmc_fmm.test_propose(moves=prop, use_python=False)
     t1 = time.time()
     pr.disable()
-    pr.dump_stats('/tmp/propose.prof')
+    #pr.dump_stats('/tmp/propose.prof')
 
-    print("C :", t1 - t0)
+    #print("C :", t1 - t0)
     #common.print_profile()
 
     prop_energy_py = kmc_fmm.test_propose(moves=prop, use_python=True)
