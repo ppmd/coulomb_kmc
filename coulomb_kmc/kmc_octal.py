@@ -64,9 +64,9 @@ class LocalCellExpansions(FMMMPIDecomp):
         # cell indices as offsets from owned octal cells
         cell_indices = [ lpx + list(range(lsx)) + hpx for lpx, lsx, hpx in zip(pad_low, ls, pad_high) ]
  
-        # s2f last allowable cell offset index
-        self.upper_allowed = [cx[-2] for cx in cell_indices]
-        self.lower_allowed = [cx[1] for cx in cell_indices]
+        # xyz last allowable cell offset index
+        self.upper_allowed = list(reversed([cx[-2] for cx in cell_indices]))
+        self.lower_allowed = list(reversed([cx[1] for cx in cell_indices]))
 
         # use cell indices to get periodic coefficients
         self.periodic_factors = [[ (lo[di] + cellx)//csc[di] for cellx in dimx ] for \

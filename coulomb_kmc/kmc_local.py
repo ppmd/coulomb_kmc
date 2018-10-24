@@ -87,7 +87,8 @@ class LocalParticleData(FMMMPIDecomp):
         self.entry_local_size = fmm.tree.entry_map.local_size
         self.entry_local_offset = fmm.tree.entry_map.local_offset
         
-        assert boundary_condition in (BCType.PBC, BCType.FREE_SPACE, BCType.NEAREST)
+        assert boundary_condition in \
+            (BCType.PBC, BCType.FREE_SPACE, BCType.NEAREST)
         self._bc = boundary_condition
 
         ls = self.local_size
@@ -95,8 +96,10 @@ class LocalParticleData(FMMMPIDecomp):
         els = self.entry_local_size
 
         self.cell_occupancy = np.zeros((ls[0], ls[1], ls[2], 1), dtype=INT64)
-        self.entry_cell_occupancy = np.zeros((els[0], els[1], els[2], 1), dtype=INT64)
-        self.entry_cell_occupancy_send = np.zeros((els[0], els[1], els[2], 1), dtype=INT64)
+        self.entry_cell_occupancy = np.zeros(
+            (els[0], els[1], els[2], 1), dtype=INT64)
+        self.entry_cell_occupancy_send = np.zeros(
+                (els[0], els[1], els[2], 1), dtype=INT64)
         self.remote_inds = np.zeros((els[0], els[1], els[2], 1), dtype=INT64)
 
         self._wing = MPI.Win()
@@ -146,9 +149,9 @@ class LocalParticleData(FMMMPIDecomp):
         for cx in cell_indices:
             assert len(cx) > 4, "owned domain appears to be of zero size"
         
-        # s2f last allowable cell offset index
-        self.upper_allowed = [cx[-2] for cx in cell_indices]
-        self.lower_allowed = [cx[1] for cx in cell_indices]
+        # xyz last allowable cell offset index
+        self.upper_allowed = list(reversed([cx[-2] for cx in cell_indices]))
+        self.lower_allowed = list(reversed([cx[1] for cx in cell_indices]))
         
         # periodic factors: slow to fast
         self.periodic_factors = [[ (lo[di] + cellx)//csc[di] for cellx in dimx ] for \

@@ -85,7 +85,22 @@ class LocalExpEval(object):
                 arr[im_lm(lx, mx)] += sinv[mx] * coeff
 
 
+
+
+
+
+
+
+
+
+
 class FMMMPIDecomp:
+    def _profile_inc(self, key, inc):
+        key = self.__class__.__name__ + ':' + key
+        if key not in PROFILE.keys():
+            PROFILE[key] = inc
+        else:
+            PROFILE[key] += inc
 
     def _setup_propose(self, moves, direct=True):
         total_movs = 0
@@ -187,8 +202,8 @@ class FMMMPIDecomp:
         cell_widths = [ex / ncps for ex in extent]
 
         # convert to xyz
-        ua = reversed(self.upper_allowed)
-        la = reversed(self.lower_allowed)
+        ua = self.upper_allowed
+        la = self.lower_allowed
 
         # compute position if origin was lower left not central
         spos = [0.5*ex + po for po, ex in zip(position, extent)]
@@ -197,35 +212,37 @@ class FMMMPIDecomp:
         cell = [int(pcx / cwx) for pcx, cwx in zip(spos, cell_widths)]
         cell = tuple([ min(cx, 2**(self.fmm.R -1)) for cx in cell ])
         if self._bc is BCType.FREE_SPACE:
-            # Proposed cell should never be over a periodic boundary, as there are none.
-            # Truncate down if too high on axis, if way too high this should probably
-            # throw an error.
+            # Proposed cell should never be over a periodic boundary, as there
+            # are none.
+            # Truncate down if too high on axis, if way too high this should
+            # probably throw an error.
             return cell, np.array((0., 0., 0.), dtype=REAL)
         else:
             assert self._bc in (BCType.PBC, BCType.NEAREST)
-            # we assume that in both 27 nearest and pbc a proposed move could be over a periodic boundary
-            # following the idea that a proposed move is always in the simulation domain we need to shift
+            # we assume that in both 27 nearest and pbc a proposed move could
+            # be over a periodic boundary
+            # following the idea that a proposed move is always in the
+            # simulation domain we need to shift
             # positions accordingly
             
             # correct for round towards zero
             rtzc = [-1 if px < 0 else 0 for px in spos]
             cell = [cx + rx for cx, rx in zip(cell, rtzc)]
 
-            offset = [((1 if cx < lx else 0) if cx <= ux else -1) for lx, cx, ux in zip(la, cell, ua)]
+            offset = [((1 if cx < lx else 0) if cx <= ux else -1) for \
+                lx, cx, ux in zip(la, cell, ua)]
 
-            # use the offsets to attempt to map into the region this rank has data over the boundary
+            # use the offsets to attempt to map into the region this rank has 
+            # data over the boundary
             cell = [cx + ox * ncps for cx, ox in zip(cell, offset)]
             lc = [cx >= lx for cx, lx in zip(cell, la)]
             uc = [cx <= ux for cx, ux in zip(cell, ua)]
             if not (all(lc) and all(uc)):
-                raise RuntimeError('Could not map position into sub-domain. Check all proposed positions are valid')
+                raise RuntimeError('Could not map position into sub-domain. \
+                    Check all proposed positions are valid')
 
-            return cell, np.array([ox * ex for ox, ex in zip(offset, extent)], dtype=REAL)
+            return cell, np.array(
+                [ox * ex for ox, ex in zip(offset, extent)], dtype=REAL)
 
-    def _profile_inc(self, key, inc):
-        key = self.__class__.__name__ + ':' + key
-        if key not in PROFILE.keys():
-            PROFILE[key] = inc
-        else:
-            PROFILE[key] += inc
+
 
