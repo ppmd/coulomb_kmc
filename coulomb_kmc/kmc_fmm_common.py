@@ -126,6 +126,29 @@ class LocalOctalBase:
         else:
             return cz, cy, cx
 
+
+    def _get_fmm_cell(self, ix, cell_map, slow_to_fast=False):
+        # produces xyz tuple by default
+        R = self.fmm.R
+        cc = cell_map[ix][0]
+        sl = 2 ** (R - 1)
+        cx = cc % sl
+        cycz = (cc - cx) // sl
+        cy = cycz % sl
+        cz = (cycz - cy) // sl
+        
+        els = self.entry_local_size
+        elo = self.entry_local_offset
+
+        assert cz >= elo[0] and cz < elo[0] + els[0]
+        assert cy >= elo[1] and cy < elo[1] + els[1]
+        assert cx >= elo[2] and cx < elo[2] + els[2]
+
+        if not slow_to_fast:
+            return cx, cy, cz
+        else:
+            return cz, cy, cx
+
     def _global_cell_xyz(self, tcx):
         """get global cell index from xyz tuple"""
         gcs = self.global_cell_size
