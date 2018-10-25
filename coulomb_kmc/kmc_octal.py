@@ -71,32 +71,32 @@ class LocalCellExpansions(LocalOctalBase):
         self.cell_centres = np.zeros(local_store_dims + [3], dtype=REAL)
         self._host_lib = self._init_host_kernels(self.fmm.L)
 
-    def propose(self, moves):
-        total_movs, num_particles, _cuda_h, _cuda_d = self.md.setup_propose(moves)        
+    def propose(self, total_movs, num_particles, host_data, cuda_data):
+
         u0 = None
         u1 = None
 
         self._host_lib(
             INT64(num_particles),
-            _cuda_h['old_fmm_cells'].ctypes.get_as_parameter(),
+            host_data['old_fmm_cells'].ctypes.get_as_parameter(),
             self.cell_centres.ctypes.get_as_parameter(),
-            _cuda_h['old_positions'].ctypes.get_as_parameter(),
-            _cuda_h['old_charges'].ctypes.get_as_parameter(),
+            host_data['old_positions'].ctypes.get_as_parameter(),
+            host_data['old_charges'].ctypes.get_as_parameter(),
             self.local_expansions.ctypes.get_as_parameter(),
-            _cuda_h['old_energy'].ctypes.get_as_parameter()
+            host_data['old_energy_i'].ctypes.get_as_parameter()
         )
         self._host_lib(
             INT64(total_movs),
-            _cuda_h['new_fmm_cells'].ctypes.get_as_parameter(),
+            host_data['new_fmm_cells'].ctypes.get_as_parameter(),
             self.cell_centres.ctypes.get_as_parameter(),
-            _cuda_h['new_positions'].ctypes.get_as_parameter(),
-            _cuda_h['new_charges'].ctypes.get_as_parameter(),
+            host_data['new_positions'].ctypes.get_as_parameter(),
+            host_data['new_charges'].ctypes.get_as_parameter(),
             self.local_expansions.ctypes.get_as_parameter(),
-            _cuda_h['new_energy'].ctypes.get_as_parameter()
+            host_data['new_energy_i'].ctypes.get_as_parameter()
         )        
 
-        u0 = _cuda_h['old_energy'][:num_particles:]
-        u1 = _cuda_h['new_energy'][:total_movs:]
+        u0 = host_data['old_energy_i'][:num_particles:]
+        u1 = host_data['new_energy_i'][:total_movs:]
 
         return u0, u1
 
@@ -378,16 +378,6 @@ class LocalCellExpansions(LocalOctalBase):
         )
         # print(flops, sum([flops[kx] for kx in flops.keys()]))
         return build.simple_lib_creator(header_code=' ', src_code=src)['indirect_interactions']
-
-
-    def _profile_inc(self, key, inc):
-        key = self.__class__.__name__ + ':' + key
-        if key not in PROFILE.keys():
-            PROFILE[key] = inc
-        else:
-            PROFILE[key] += inc
-
-
 
 
 

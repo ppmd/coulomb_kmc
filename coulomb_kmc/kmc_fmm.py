@@ -224,13 +224,15 @@ class KMCFMM(object):
         ti0 = 0.0
         ti1 = 0.0
 
+        cmove_data = self.md.setup_propose(moves)
+
         if not use_python:
             td0 = time.time()
-            du0, du1 = self.kmcl.propose(moves)
+            du0, du1 = self.kmcl.propose(*cmove_data)
             td1 = time.time()
             
             ti0 = time.time()
-            iu0, iu1 = self.kmco.propose(moves)
+            iu0, iu1 = self.kmco.propose(*cmove_data)
             ti1 = time.time()
         
         self._profile_inc('c-direct', td1 - td0)

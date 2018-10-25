@@ -435,10 +435,10 @@ def test_kmc_fmm_free_space_3():
     prop_energy_c  = kmc_fmm.test_propose(moves=prop, use_python=False)
     t1 = time.time()
     pr.disable()
-    pr.dump_stats('/tmp/propose.prof')
+    #pr.dump_stats('/tmp/propose.prof')
 
-    print("C :", t1 - t0)
-    common.print_profile()
+    #print("C :", t1 - t0)
+    #common.print_profile()
 
     prop_energy_py = kmc_fmm.test_propose(moves=prop, use_python=True)
     t2 = time.time()

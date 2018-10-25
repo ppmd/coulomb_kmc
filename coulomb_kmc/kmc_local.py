@@ -153,10 +153,8 @@ class LocalParticleData(LocalOctalBase):
         else:
             self._init_host_kernels()
 
-    def propose(self, moves):
-        tm1 = time.time()
-        total_movs, num_particles, _cuda_h, _cuda_d = self.md.setup_propose(moves)
-        self._profile_inc('c_direct_setup', time.time() - tm1)
+    def propose(self, total_movs, num_particles, host_data, cuda_data):
+
         t0 = time.time()
 
         u0 = None
@@ -169,14 +167,14 @@ class LocalParticleData(LocalOctalBase):
             stride = self.local_particle_store.shape[3] * self.local_particle_store.shape[4]
             self._cuda_direct_new(
                 np.int64(total_movs),
-                _cuda_d['new_positions'],
-                _cuda_d['new_charges'],
-                _cuda_d['new_ids'],
-                _cuda_d['new_fmm_cells'],
+                cuda_data['new_positions'],
+                cuda_data['new_charges'],
+                cuda_data['new_ids'],
+                cuda_data['new_fmm_cells'],
                 self._cuda_d_pdata,
                 self._cuda_d_occupancy,
                 np.int64(stride),
-                _cuda_d['new_energy'],
+                cuda_data['new_energy_d'],
                 block=block_size,
                 grid=grid_size
             )
@@ -184,20 +182,20 @@ class LocalParticleData(LocalOctalBase):
             grid_size = (int(ceil(num_particles/block_size[0])), 1)
             self._cuda_direct_old(
                 np.int64(num_particles),
-                _cuda_d['old_positions'],
-                _cuda_d['old_charges'],
-                _cuda_d['old_ids'],
-                _cuda_d['old_fmm_cells'],
+                cuda_data['old_positions'],
+                cuda_data['old_charges'],
+                cuda_data['old_ids'],
+                cuda_data['old_fmm_cells'],
                 self._cuda_d_pdata,
                 self._cuda_d_occupancy,
                 np.int64(stride),
-                _cuda_d['old_energy'],
+                cuda_data['old_energy_d'],
                 block=block_size,
                 grid=grid_size
             )
 
-            u1 = _cuda_d['new_energy'].get()[:total_movs:, :]
-            u0 = _cuda_d['old_energy'].get()[:num_particles:, :]
+            u1 = cuda_data['new_energy_d'].get()[:total_movs:, :]
+            u0 = cuda_data['old_energy_d'].get()[:num_particles:, :]
             self._profile_inc('cuda_direct', time.time() - t0)
         else:
 
@@ -205,15 +203,15 @@ class LocalParticleData(LocalOctalBase):
                 INT64(total_movs),
                 self.local_store_dims_arr.ctypes.get_as_parameter(),
                 self.offsets_arr.ctypes.get_as_parameter(),
-                _cuda_h['new_positions'].ctypes.get_as_parameter(),
-                _cuda_h['new_charges'].ctypes.get_as_parameter(),
-                _cuda_h['new_ids'].ctypes.get_as_parameter(),
-                _cuda_h['new_fmm_cells'].ctypes.get_as_parameter(),
+                host_data['new_positions'].ctypes.get_as_parameter(),
+                host_data['new_charges'].ctypes.get_as_parameter(),
+                host_data['new_ids'].ctypes.get_as_parameter(),
+                host_data['new_fmm_cells'].ctypes.get_as_parameter(),
                 self.local_particle_store.ctypes.get_as_parameter(),
                 self.local_particle_store_ids.ctypes.get_as_parameter(),
                 self.local_cell_occupancy.ctypes.get_as_parameter(),
                 INT64(self.local_particle_store[0, 0, 0, :, 0].shape[0]),
-                _cuda_h['new_energy'].ctypes.get_as_parameter()
+                host_data['new_energy_d'].ctypes.get_as_parameter()
             )
             self._profile_inc('c_direct_new', time.time() - t0)
             t1 = time.time()
@@ -221,20 +219,20 @@ class LocalParticleData(LocalOctalBase):
                 INT64(num_particles),
                 self.local_store_dims_arr.ctypes.get_as_parameter(),
                 self.offsets_arr.ctypes.get_as_parameter(),
-                _cuda_h['old_positions'].ctypes.get_as_parameter(),
-                _cuda_h['old_charges'].ctypes.get_as_parameter(),
-                _cuda_h['old_ids'].ctypes.get_as_parameter(),
-                _cuda_h['old_fmm_cells'].ctypes.get_as_parameter(),
+                host_data['old_positions'].ctypes.get_as_parameter(),
+                host_data['old_charges'].ctypes.get_as_parameter(),
+                host_data['old_ids'].ctypes.get_as_parameter(),
+                host_data['old_fmm_cells'].ctypes.get_as_parameter(),
                 self.local_particle_store.ctypes.get_as_parameter(),
                 self.local_particle_store_ids.ctypes.get_as_parameter(),
                 self.local_cell_occupancy.ctypes.get_as_parameter(),
                 INT64(self.local_particle_store[0, 0, 0, :, 0].shape[0]),
-                _cuda_h['old_energy'].ctypes.get_as_parameter()
+                host_data['old_energy_d'].ctypes.get_as_parameter()
             )
             self._profile_inc('c_direct_old', time.time() - t1)
 
-            u1 = _cuda_h['new_energy'][:total_movs:, :]
-            u0 = _cuda_h['old_energy'][:num_particles:, :]
+            u1 = host_data['new_energy_d'][:total_movs:, :]
+            u0 = host_data['old_energy_d'][:num_particles:, :]
         
         assert u1 is not None
         assert u0 is not None

@@ -93,7 +93,7 @@ def test_kmc_octal_1():
         :
     ]
     
-    mpi_decomp = kmc_fmm_common.FMMMPIDecomp(kmc_fmm, 1.0, common.BCType.FREE_SPACE)
+    mpi_decomp = kmc_mpi_decomp.FMMMPIDecomp(kmc_fmm.fmm, 1.0, common.BCType.FREE_SPACE)
     kmco = kmc_octal.LocalCellExpansions(mpi_decomp)
     kmco.initialise(positions=A.P, charges=A.Q, fmm_cells=None)
 
