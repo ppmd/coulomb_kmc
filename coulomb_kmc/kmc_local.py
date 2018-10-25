@@ -22,7 +22,6 @@ from ppmd import mpi, runtime
 from ppmd.lib import build
 
 
-
 MPI = mpi.MPI
 
 if ppmd.cuda.CUDA_IMPORT:
@@ -33,7 +32,8 @@ if ppmd.cuda.CUDA_IMPORT:
 
 # coulomb_kmc imports
 from coulomb_kmc.common import BCType, PROFILE
-from coulomb_kmc.kmc_fmm_common import FMMMPIDecomp
+from coulomb_kmc.kmc_fmm_common import LocalOctalBase
+
 
 _BUILD_DIR = runtime.BUILD_DIR
 
@@ -69,31 +69,29 @@ _offsets = (
     (  1,  1,  1),
 )
 
-class LocalParticleData(FMMMPIDecomp):
+class LocalParticleData(LocalOctalBase):
 
-    def __init__(self, fmm, max_move, boundary_condition=BCType.PBC, cuda=False):
-        self.cuda_enabled = cuda
-        
-        if cuda and not ppmd.cuda.CUDA_IMPORT:
-            print(ppmd.cuda.CUDA_IMPORT_ERROR)
-            raise RuntimeError('CUDA was requested but failed to be initialised')
+    def __init__(self, mpi_decomp):
 
-        self.fmm = fmm
-        self.domain = fmm.domain
-        self.comm = fmm.tree.cart_comm
-        self.local_size = fmm.tree[-1].local_grid_cube_size
-        self.local_offset = fmm.tree[-1].local_grid_offset
-        
-        self.entry_local_size = fmm.tree.entry_map.local_size
-        self.entry_local_offset = fmm.tree.entry_map.local_offset
-        
-        assert boundary_condition in \
-            (BCType.PBC, BCType.FREE_SPACE, BCType.NEAREST)
-        self._bc = boundary_condition
+        self.md = mpi_decomp
+        self.comm = self.md.comm
+        self.cuda_enabled = self.md.cuda_enabled
+        self.fmm = self.md.fmm
+        self.domain = self.md.domain
+        self.local_store_dims = self.md.local_store_dims
+        self.local_size = self.md.local_size
+        self.local_offset = self.md.local_offset
+        self.cell_indices = self.md.cell_indices
+        self.cell_offsets = self.md.cell_offsets
+        self.global_cell_size = self.md.global_cell_size
+        self.entry_local_size = self.md.entry_local_size
+        self.entry_local_offset = self.md.entry_local_offset
+        self.periodic_factors = self.md.periodic_factors
+        self.boundary_condition = self.md.boundary_condition
 
-        ls = self.local_size
-        lo = self.local_offset
-        els = self.entry_local_size
+        ls = self.md.local_size
+        lo = self.md.local_offset
+        els = self.md.entry_local_size
 
         self.cell_occupancy = np.zeros((ls[0], ls[1], ls[2], 1), dtype=INT64)
         self.entry_cell_occupancy = np.zeros(
@@ -119,66 +117,12 @@ class LocalParticleData(FMMMPIDecomp):
         self._owner_store = None
         self.local_particle_store = None
         self.local_particle_store_ids = None
+        
+        lsd = self.local_store_dims
 
-        # compute the cells required for direct interactions
-
-        csc = fmm.tree.entry_map.cube_side_count
-        # in future domains may not be square
-        # slow to fast tuple of domain dims
-        csc = [csc, csc, csc]
-        self.global_cell_size = csc
-
-        csw = [self.domain.extent[2] / csc[0],
-               self.domain.extent[1] / csc[1],
-               self.domain.extent[0] / csc[2]]
-        
-        # this is pad per dimension slow to fast
-        pad = [2 + int(ceil(max_move/cx)) for cx in csw]
- 
-        # as offset indices slow to fast
-        pad_low = [list(range(-px, 0)) for px in pad]
-        pad_high = [list(range(lsx, lsx + px)) for px, lsx in zip(pad, ls)]
-        
-        # slowest to fastest to match octal tree indexing
-        #global_to_local = [-lo[dx] + pad[dx] for dx in range(3)]
-        #self.global_to_local = np.array(global_to_local, dtype=INT64)
-
-        # cell indices as offsets from owned octal cells
-        cell_indices = [ lpx + list(range(lsx)) + hpx for lpx, lsx, hpx in zip(pad_low, ls, pad_high) ]
-        
-        for cx in cell_indices:
-            assert len(cx) > 4, "owned domain appears to be of zero size"
-        
-        # xyz last allowable cell offset index
-        self.upper_allowed = list(reversed([cx[-2] for cx in cell_indices]))
-        self.lower_allowed = list(reversed([cx[1] for cx in cell_indices]))
-        
-        # periodic factors: slow to fast
-        self.periodic_factors = [[ (lo[di] + cellx)//csc[di] for cellx in dimx ] for \
-            di,dimx in enumerate(cell_indices)]
-        
-        # turn relative offsets into absolute cell indices
-        cell_indices = [[ (cx + osx) % cscx for cx in dx ] for dx, cscx, osx in zip(cell_indices, csc, lo)]
-        
-        # compute the offset to apply (addition) to fmm cells to map into the local store
-        cell_data_offset = [len(px) - ox for px, ox in zip(pad_low, lo)]
-        self.cell_data_offset = np.array(cell_data_offset, dtype=INT64)
-        # this is now slowest to fastest not xyz
-        # cell_indices = list(reversed(cell_indices))
-
-        # this is slowest to fastest not xyz
-        local_store_dims = [len(dx) for dx in cell_indices]
-        
-        # this is slowest to fastest not xyz
-        self.local_store_dims = local_store_dims
-        self.local_store_dims_arr = np.array(local_store_dims, dtype=INT64)
-        self.cell_indices = cell_indices
-
-        self.remote_inds_particles = np.zeros((local_store_dims[0], local_store_dims[1], 
-            local_store_dims[2], 1), dtype=INT64)
-
-        self.local_cell_occupancy = np.zeros((local_store_dims[0], local_store_dims[1], 
-            local_store_dims[2], 1), dtype=INT64)
+        self.local_store_dims_arr = np.array(lsd, dtype=INT64)
+        self.remote_inds_particles = np.zeros((lsd[0], lsd[1], lsd[2], 1), dtype=INT64)
+        self.local_cell_occupancy = np.zeros((lsd[0], lsd[1], lsd[2], 1), dtype=INT64)
         
         # force creation of self._owner_store and self.local_particle_store
         self._check_owner_store(max_cell_occ=1)
@@ -194,36 +138,11 @@ class LocalParticleData(FMMMPIDecomp):
         self._cuda_direct_new = None
         self._cuda_direct_old = None
 
-        # host copy of particle data for moves
-        self._cuda_h = {}
-        self._cuda_h['new_ids']           = np.zeros((1, 1), dtype=INT64)
-        self._cuda_h['new_positions']     = np.zeros((1, 3), dtype=REAL)
-        self._cuda_h['new_fmm_cells']     = np.zeros((1, 1), dtype=INT64)
-        self._cuda_h['new_charges']       = np.zeros((1, 1), dtype=REAL)
-        self._cuda_h['new_energy']        = np.zeros((1, 1), dtype=REAL)           
-        self._cuda_h['old_positions']     = np.zeros((1, 3), dtype=REAL)
-        self._cuda_h['old_fmm_cells']     = np.zeros((1, 1), dtype=INT64)
-        self._cuda_h['old_charges']       = np.zeros((1, 1), dtype=REAL)
-        self._cuda_h['old_energy']        = np.zeros((1, 1), dtype=REAL)
-        self._cuda_h['old_ids']           = np.zeros((1, 1), dtype=INT64)
-
         self.offsets_list = [str(ox[0] + self.local_store_dims[2] * (ox[1] + self.local_store_dims[1]*ox[2])) \
             for ox in _offsets]
         self.offsets_arr = np.array(self.offsets_list, dtype=INT64)
         
         if self.cuda_enabled:
-            # device copy of particle data for moves
-            self._cuda_d = {}
-            self._cuda_d['new_ids']       = None
-            self._cuda_d['new_positions'] = None
-            self._cuda_d['new_fmm_cells'] = None
-            self._cuda_d['new_charges']   = None
-            self._cuda_d['new_energy']    = None
-            self._cuda_d['old_positions'] = None
-            self._cuda_d['old_fmm_cells'] = None
-            self._cuda_d['old_charges']   = None
-            self._cuda_d['old_energy']    = None
-            self._cuda_d['old_ids']       = None
             # device data for other particles
             # cell to particle map
             self._cuda_d_occupancy = None
@@ -236,7 +155,7 @@ class LocalParticleData(FMMMPIDecomp):
 
     def propose(self, moves):
         tm1 = time.time()
-        total_movs, num_particles = self._setup_propose(moves)
+        total_movs, num_particles, _cuda_h, _cuda_d = self.md.setup_propose(moves)
         self._profile_inc('c_direct_setup', time.time() - tm1)
         t0 = time.time()
 
@@ -244,21 +163,20 @@ class LocalParticleData(FMMMPIDecomp):
         u1 = None
 
         if self.cuda_enabled:
-            self._copy_to_device()
 
             block_size = (256, 1, 1)
             grid_size = (int(ceil(total_movs/block_size[0])), 1)
             stride = self.local_particle_store.shape[3] * self.local_particle_store.shape[4]
             self._cuda_direct_new(
                 np.int64(total_movs),
-                self._cuda_d['new_positions'],
-                self._cuda_d['new_charges'],
-                self._cuda_d['new_ids'],
-                self._cuda_d['new_fmm_cells'],
+                _cuda_d['new_positions'],
+                _cuda_d['new_charges'],
+                _cuda_d['new_ids'],
+                _cuda_d['new_fmm_cells'],
                 self._cuda_d_pdata,
                 self._cuda_d_occupancy,
                 np.int64(stride),
-                self._cuda_d['new_energy'],
+                _cuda_d['new_energy'],
                 block=block_size,
                 grid=grid_size
             )
@@ -266,20 +184,20 @@ class LocalParticleData(FMMMPIDecomp):
             grid_size = (int(ceil(num_particles/block_size[0])), 1)
             self._cuda_direct_old(
                 np.int64(num_particles),
-                self._cuda_d['old_positions'],
-                self._cuda_d['old_charges'],
-                self._cuda_d['old_ids'],
-                self._cuda_d['old_fmm_cells'],
+                _cuda_d['old_positions'],
+                _cuda_d['old_charges'],
+                _cuda_d['old_ids'],
+                _cuda_d['old_fmm_cells'],
                 self._cuda_d_pdata,
                 self._cuda_d_occupancy,
                 np.int64(stride),
-                self._cuda_d['old_energy'],
+                _cuda_d['old_energy'],
                 block=block_size,
                 grid=grid_size
             )
 
-            u1 = self._cuda_d['new_energy'].get()[:total_movs:, :]
-            u0 = self._cuda_d['old_energy'].get()[:num_particles:, :]
+            u1 = _cuda_d['new_energy'].get()[:total_movs:, :]
+            u0 = _cuda_d['old_energy'].get()[:num_particles:, :]
             self._profile_inc('cuda_direct', time.time() - t0)
         else:
 
@@ -287,15 +205,15 @@ class LocalParticleData(FMMMPIDecomp):
                 INT64(total_movs),
                 self.local_store_dims_arr.ctypes.get_as_parameter(),
                 self.offsets_arr.ctypes.get_as_parameter(),
-                self._cuda_h['new_positions'].ctypes.get_as_parameter(),
-                self._cuda_h['new_charges'].ctypes.get_as_parameter(),
-                self._cuda_h['new_ids'].ctypes.get_as_parameter(),
-                self._cuda_h['new_fmm_cells'].ctypes.get_as_parameter(),
+                _cuda_h['new_positions'].ctypes.get_as_parameter(),
+                _cuda_h['new_charges'].ctypes.get_as_parameter(),
+                _cuda_h['new_ids'].ctypes.get_as_parameter(),
+                _cuda_h['new_fmm_cells'].ctypes.get_as_parameter(),
                 self.local_particle_store.ctypes.get_as_parameter(),
                 self.local_particle_store_ids.ctypes.get_as_parameter(),
                 self.local_cell_occupancy.ctypes.get_as_parameter(),
                 INT64(self.local_particle_store[0, 0, 0, :, 0].shape[0]),
-                self._cuda_h['new_energy'].ctypes.get_as_parameter()
+                _cuda_h['new_energy'].ctypes.get_as_parameter()
             )
             self._profile_inc('c_direct_new', time.time() - t0)
             t1 = time.time()
@@ -303,20 +221,20 @@ class LocalParticleData(FMMMPIDecomp):
                 INT64(num_particles),
                 self.local_store_dims_arr.ctypes.get_as_parameter(),
                 self.offsets_arr.ctypes.get_as_parameter(),
-                self._cuda_h['old_positions'].ctypes.get_as_parameter(),
-                self._cuda_h['old_charges'].ctypes.get_as_parameter(),
-                self._cuda_h['old_ids'].ctypes.get_as_parameter(),
-                self._cuda_h['old_fmm_cells'].ctypes.get_as_parameter(),
+                _cuda_h['old_positions'].ctypes.get_as_parameter(),
+                _cuda_h['old_charges'].ctypes.get_as_parameter(),
+                _cuda_h['old_ids'].ctypes.get_as_parameter(),
+                _cuda_h['old_fmm_cells'].ctypes.get_as_parameter(),
                 self.local_particle_store.ctypes.get_as_parameter(),
                 self.local_particle_store_ids.ctypes.get_as_parameter(),
                 self.local_cell_occupancy.ctypes.get_as_parameter(),
                 INT64(self.local_particle_store[0, 0, 0, :, 0].shape[0]),
-                self._cuda_h['old_energy'].ctypes.get_as_parameter()
+                _cuda_h['old_energy'].ctypes.get_as_parameter()
             )
             self._profile_inc('c_direct_old', time.time() - t1)
 
-            u1 = self._cuda_h['new_energy'][:total_movs:, :]
-            u0 = self._cuda_h['old_energy'][:num_particles:, :]
+            u1 = _cuda_h['new_energy'][:total_movs:, :]
+            u0 = _cuda_h['old_energy'][:num_particles:, :]
         
         assert u1 is not None
         assert u0 is not None
@@ -377,10 +295,10 @@ class LocalParticleData(FMMMPIDecomp):
             else:
                 self._cell_map[cell] = [pid]       
         
-        lo = self.local_offset
-        ls = self.local_size
-        elo = self.entry_local_offset
-        els = self.entry_local_size
+        lo  = self.md.local_offset
+        ls  = self.md.local_size
+        elo = self.md.entry_local_offset
+        els = self.md.entry_local_size
 
         self.comm.Barrier()
         self._win_ind.Fence(MPI.MODE_NOPUT)
@@ -552,12 +470,14 @@ class LocalParticleData(FMMMPIDecomp):
                 self.local_particle_store[lcellx[0], lcellx[1], lcellx[2], : , dimx_xyz:dimx_xyz+1: ] += \
                     self.periodic_factors[dimx][lcellx[dimx]] * self.domain.extent[dimx_xyz]
 
-                if self._bc is BCType.FREE_SPACE and self.periodic_factors[dimx][lcellx[dimx]] != 0:
+                if self.boundary_condition is BCType.FREE_SPACE and \
+                        self.periodic_factors[dimx][lcellx[dimx]] != 0:
                     self.local_cell_occupancy[lcellx[0], lcellx[1], lcellx[2]] = 0
                     self.local_particle_store[lcellx[0], lcellx[1], lcellx[2], : , :] = np.nan
 
 
-                elif self._bc is BCType.NEAREST and abs(self.periodic_factors[dimx][lcellx[dimx]]) > 1:
+                elif self.boundary_condition is BCType.NEAREST and \
+                        abs(self.periodic_factors[dimx][lcellx[dimx]]) > 1:
                     self.local_cell_occupancy[lcellx[0], lcellx[1], lcellx[2]] = 0
                     self.local_particle_store[lcellx[0], lcellx[1], lcellx[2], : , :] = np.nan
 
@@ -768,9 +688,34 @@ class LocalParticleData(FMMMPIDecomp):
         self._host_direct_new = self._host_lib["direct_new"]
         self._host_direct_old = self._host_lib["direct_old"]
 
+    def _profile_inc(self, key, inc):
+        key = self.__class__.__name__ + ':' + key
+        if key not in PROFILE.keys():
+            PROFILE[key] = inc
+        else:
+            PROFILE[key] += inc
 
+    def _get_fmm_cell(self, ix, cell_map, slow_to_fast=False):
+        # produces xyz tuple by default
+        R = self.fmm.R
+        cc = cell_map[ix][0]
+        sl = 2 ** (R - 1)
+        cx = cc % sl
+        cycz = (cc - cx) // sl
+        cy = cycz % sl
+        cz = (cycz - cy) // sl
+        
+        els = self.entry_local_size
+        elo = self.entry_local_offset
 
+        assert cz >= elo[0] and cz < elo[0] + els[0]
+        assert cy >= elo[1] and cy < elo[1] + els[1]
+        assert cx >= elo[2] and cx < elo[2] + els[2]
 
+        if not slow_to_fast:
+            return cx, cy, cz
+        else:
+            return cz, cy, cx
 
 
 

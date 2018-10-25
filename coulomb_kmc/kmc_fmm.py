@@ -23,6 +23,7 @@ from ppmd.data import ParticleDat
 from coulomb_kmc import kmc_octal, kmc_local
 from coulomb_kmc.common import BCType, PROFILE
 from coulomb_kmc.kmc_fmm_common import *
+from coulomb_kmc.kmc_mpi_decomp import *
 
 REAL = ctypes.c_double
 INT64 = ctypes.c_int64
@@ -122,12 +123,14 @@ class KMCFMM(object):
         else:
             self.max_move = max(self.domain.extent[:])
 
-        # class to collect required local expansions
-        self.kmco = kmc_octal.LocalCellExpansions(self.fmm, self.max_move, boundary_condition=self._bc)
-        # class to collect and redistribute particle data
-        self.kmcl = kmc_local.LocalParticleData(self.fmm, self.max_move,
+        # class to handle the mpi decomposition and preprocessing of moves
+        self.md = FMMMPIDecomp(self.fmm, self.max_move,
             boundary_condition=self._bc, cuda=self.cuda_direct)
 
+        # class to collect required local expansions
+        self.kmco = self.md.kmco
+        # class to collect and redistribute particle data
+        self.kmcl = self.md.kmcl
         
         self._tmp_energies = {
             _ENERGY.U_DIFF      : np.zeros((1, 1), dtype=REAL),
@@ -137,7 +140,6 @@ class KMCFMM(object):
             _ENERGY.U1_INDIRECT : np.zeros((1, 1), dtype=REAL),
             _ENERGY.U01_SELF    : np.zeros((1, 1), dtype=REAL)
         }
-
 
         self._wing = MPI.Win()
         self._ordering_buf = np.zeros(1, dtype=INT64)
@@ -183,15 +185,8 @@ class KMCFMM(object):
         
         # get the current energy, also bins particles into cells
         self.energy = self.fmm(positions=self.positions, charges=self.charges)
-        
-        # get the local expansions into the correct places
-        self.kmco.initialise(
-            positions=self.positions,
-            charges=self.charges,
-            fmm_cells=self.group._fmm_cell
-        )        
         self._check_ordering_dats()
-        self.kmcl.initialise(
+        self.md.initialise(
             positions=self.positions,
             charges=self.charges,
             fmm_cells=self.group._fmm_cell,

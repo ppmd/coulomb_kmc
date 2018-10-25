@@ -92,8 +92,9 @@ def test_kmc_octal_1():
         lo[2]:lo[2]+ls[2]:,
         :
     ]
-
-    kmco = kmc_octal.LocalCellExpansions(kmc_fmm.fmm, 1.0)
+    
+    mpi_decomp = kmc_fmm_common.FMMMPIDecomp(kmc_fmm, 1.0, common.BCType.FREE_SPACE)
+    kmco = kmc_octal.LocalCellExpansions(mpi_decomp)
     kmco.initialise(positions=A.P, charges=A.Q, fmm_cells=None)
 
     lcl = kmco.cell_indices

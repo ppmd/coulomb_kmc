@@ -125,7 +125,9 @@ def test_kmc_local_collection_1():
        domain=A.domain, r=R, l=L, boundary_condition='free_space')
     # kmc_fmm.initialise()
 
-    kmcl = kmc_local.LocalParticleData(kmc_fmm.fmm, 1.0)
+    mpi_decomp = kmc_fmm_common.FMMMPIDecomp(kmc_fmm, 1.0, common.BCType.FREE_SPACE)
+    kmcl = kmc_octal.LocalParticleData(mpi_decomp)
+
     kmcl.initialise(A.P, A.Q, A.test_fmm_cell, A.ID)
     
     # assume the chosen  cell is on rank 0
@@ -230,8 +232,8 @@ def test_kmc_local_collection_2():
        domain=A.domain, r=R, l=L, boundary_condition='free_space')
     # kmc_fmm.initialise()
 
-    kmcl = kmc_local.LocalParticleData(kmc_fmm.fmm, 1.0, boundary_condition=BCType.FREE_SPACE)
-    
+    mpi_decomp = kmc_fmm_common.FMMMPIDecomp(kmc_fmm, 1.0, common.BCType.FREE_SPACE)
+    kmcl = kmc_octal.LocalParticleData(mpi_decomp)
     
     nlocal = A.P.npart_local
 
@@ -367,8 +369,8 @@ def test_kmc_local_collection_3():
        domain=A.domain, r=R, l=L, boundary_condition='27')
     # kmc_fmm.initialise()
 
-    kmcl = kmc_local.LocalParticleData(kmc_fmm.fmm, 1.0, boundary_condition=BCType.NEAREST)
-    
+    mpi_decomp = kmc_fmm_common.FMMMPIDecomp(kmc_fmm, 1.0, common.BCType.NEAREST)
+    kmcl = kmc_octal.LocalParticleData(mpi_decomp)
     
     nlocal = A.P.npart_local
 
@@ -510,8 +512,8 @@ def test_kmc_local_collection_4():
        domain=A.domain, r=R, l=L, boundary_condition='pbc')
     # kmc_fmm.initialise()
 
-    kmcl = kmc_local.LocalParticleData(kmc_fmm.fmm, 1.0, boundary_condition=BCType.PBC)
-    
+    mpi_decomp = kmc_fmm_common.FMMMPIDecomp(kmc_fmm, 1.0, common.BCType.PBC)
+    kmcl = kmc_octal.LocalParticleData(mpi_decomp)
     
     nlocal = A.P.npart_local
 

@@ -10,8 +10,18 @@ from scipy.special import lpmv
 REAL = ctypes.c_double
 INT64 = ctypes.c_int64
 
-
 from coulomb_kmc.common import BCType, PROFILE
+
+# cuda imports if possible
+import ppmd
+import ppmd.cuda
+
+if ppmd.cuda.CUDA_IMPORT:
+    cudadrv = ppmd.cuda.cuda_runtime.cudadrv
+    # the device should be initialised already by ppmd
+    from pycuda.compiler import SourceModule
+    import pycuda.gpuarray as gpuarray
+
 
 class LocalExpEval(object):
     
@@ -85,93 +95,14 @@ class LocalExpEval(object):
                 arr[im_lm(lx, mx)] += sinv[mx] * coeff
 
 
+class LocalOctalBase:
 
-
-
-
-
-
-
-
-
-class FMMMPIDecomp:
     def _profile_inc(self, key, inc):
         key = self.__class__.__name__ + ':' + key
         if key not in PROFILE.keys():
             PROFILE[key] = inc
         else:
             PROFILE[key] += inc
-
-    def _setup_propose(self, moves, direct=True):
-        total_movs = 0
-        for movx in moves:
-            movs = np.atleast_2d(movx[1])
-            num_movs = movs.shape[0]
-            total_movs += num_movs
-        
-        num_particles = len(moves)
-
-        self._resize_host_arrays(total_movs)
-    
-        tmp_index = 0
-        for movi, movx in enumerate(moves):
-            movs = np.atleast_2d(movx[1])
-            num_movs = movs.shape[0]
-            pid = movx[0]
-            
-            ts = tmp_index
-            te = ts + num_movs
-            if direct:
-                self._cuda_h['new_ids'][ts:te:, 0]       = self.ids[pid, 0]
-            self._cuda_h['new_charges'][ts:te:, :]   = self.charges[pid, 0]
-
-            self._cuda_h['old_positions'][movi, :] = self.positions[pid, :]
-            self._cuda_h['old_charges'][movi, :]   = self.charges[pid, 0]
-            self._cuda_h['old_fmm_cells'][movi, 0] = self._gcell_to_lcell(
-                self._get_fmm_cell(pid, self.fmm_cells)
-            )
-            if direct:
-                self._cuda_h['old_ids'][movi, 0]       = self.ids[pid, 0]
-
-            for ti, tix in enumerate(range(tmp_index, tmp_index + num_movs)):
-                cell, offset = self._get_cell(movs[ti])
-                self._cuda_h['new_positions'][tix, :] = movs[ti] + offset
-                self._cuda_h['new_fmm_cells'][tix, 0] = \
-                    self._gcell_to_lcell(cell)
-
-            tmp_index += num_movs
-
-        return total_movs, num_particles
-
-    def _copy_to_device(self):
-        assert self.cuda_enabled is True
-        # copy the particle data to the device
-        for keyx in self._cuda_h.keys():
-            self._cuda_d[keyx] = gpuarray.to_gpu(self._cuda_h[keyx])
-
-    def _resize_host_arrays(self, total_movs):
-        if self._cuda_h['new_positions'].shape[0] < total_movs:
-            for keyx in self._cuda_h.keys():
-                ncomp = self._cuda_h[keyx].shape[1]
-                dtype = self._cuda_h[keyx].dtype
-                self._cuda_h[keyx] = np.zeros((total_movs, ncomp), dtype=dtype)
-
-    def _gcell_to_lcell(self, cell):
-        """
-        convert a xyz global cell tuple to a linear index in the parallel data
-        structure
-        """
-
-        cell = [cx + ox for cx, ox in \
-            zip(cell, reversed(self.cell_data_offset))]
-
-        return cell[0] + self.local_store_dims[2] * \
-            (cell[1] + self.local_store_dims[1]*cell[2])
-    
-    def _global_cell_xyz(self, tcx):
-        """get global cell index from xyz tuple"""
-        gcs = self.global_cell_size
-        return tcx[0] + gcs[0] * ( tcx[1] + gcs[1] * tcx[2] )
 
     def _get_fmm_cell(self, ix, cell_map, slow_to_fast=False):
         # produces xyz tuple by default
@@ -195,67 +126,9 @@ class FMMMPIDecomp:
         else:
             return cz, cy, cx
 
-    def _get_cell(self, position):
-        # produces xyz tuple
-        extent = self.group.domain.extent
-        ncps = (2**(self.fmm.R - 1))
-        cell_widths = [extent[0] / ncps, extent[1] / ncps, extent[2] / ncps]
-
-        # convert to xyz
-        ua = self.upper_allowed
-        la = self.lower_allowed
-
-
-
-        # compute position if origin was lower left not central
-        cell = [min(int((0.5*extent[0] + position[0])/cell_widths[0]), ncps), 
-                min(int((0.5*extent[1] + position[1])/cell_widths[1]), ncps), 
-                min(int((0.5*extent[2] + position[2])/cell_widths[2]), ncps)]
-
-        if self._bc is BCType.FREE_SPACE:
-            # Proposed cell should never be over a periodic boundary, as there
-            # are none.
-            # Truncate down if too high on axis, if way too high this should
-            # probably throw an error.
-            return cell, np.array((0., 0., 0.), dtype=REAL)
-        else:
-            assert self._bc in (BCType.PBC, BCType.NEAREST)
-            # we assume that in both 27 nearest and pbc a proposed move could
-            # be over a periodic boundary
-            # following the idea that a proposed move is always in the
-            # simulation domain we need to shift
-            # positions accordingly
-            spos = [0.5*ex + po for po, ex in zip(position, extent)]            
-            # correct for round towards zero
-            rtzc = [-1 if px < 0 else 0 for px in spos]
-            cell = [cx + rx for cx, rx in zip(cell, rtzc)]
-
-            offset = [((1 if cx < lx else 0) if cx <= ux else -1) for \
-                lx, cx, ux in zip(la, cell, ua)]
-
-            # use the offsets to attempt to map into the region this rank has 
-            # data over the boundary
-            cell = [cx + ox * ncps for cx, ox in zip(cell, offset)]
-            lc = [cx >= lx for cx, lx in zip(cell, la)]
-            uc = [cx <= ux for cx, ux in zip(cell, ua)]
-            if not (all(lc) and all(uc)):
-                raise RuntimeError('Could not map position into sub-domain. \
-                    Check all proposed positions are valid')
-
-            return cell, np.array(
-                [ox * ex for ox, ex in zip(offset, extent)], dtype=REAL)
-
-
-
-
-
-
-
-
-
-
-
-
-
+    def _global_cell_xyz(self, tcx):
+        """get global cell index from xyz tuple"""
+        gcs = self.global_cell_size
+        return tcx[0] + gcs[0] * ( tcx[1] + gcs[1] * tcx[2] )
 
 

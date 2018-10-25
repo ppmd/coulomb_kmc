@@ -16,79 +16,40 @@ from ppmd.coulomb.sph_harm import SphGen, SphSymbol, cmplx_mul
 from ppmd.lib import build
 
 from coulomb_kmc.common import BCType, PROFILE
-from coulomb_kmc.kmc_fmm_common import FMMMPIDecomp
-
+from coulomb_kmc.kmc_fmm_common import LocalOctalBase
 
 MPI = mpi.MPI
 
 REAL = ctypes.c_double
 INT64 = ctypes.c_int64
 
-class LocalCellExpansions(FMMMPIDecomp):
+class LocalCellExpansions(LocalOctalBase):
     """
     Object to get, store and update local expansions from an fmm instance.
     """
-    def __init__(self, fmm, max_move, boundary_condition=BCType.PBC):
-
-        self.fmm = fmm
-        self.max_move = max_move
-        self.domain = fmm.domain
-        self.comm = fmm.tree.cart_comm
-        self.entry_local_size = fmm.tree.entry_map.local_size
-        self.entry_local_offset = fmm.tree.entry_map.local_offset
-        self._bc = boundary_condition
-
-        csc = fmm.tree.entry_map.cube_side_count
-        # in future domains may not be square, s2f
-        csc = [csc, csc, csc]
-
-        # s2f
-        csw = [self.domain.extent[2] / csc[0],
-               self.domain.extent[1] / csc[1],
-               self.domain.extent[0] / csc[2]]
+    def __init__(self, mpi_decomp):
         
-        # this is pad per dimension s2f
-        pad = [2 + int(ceil(max_move/cx)) for cx in csw]
- 
-        ls = fmm.tree.entry_map.local_size
-        lo = fmm.tree.entry_map.local_offset
+        self.md = mpi_decomp
+        self.fmm = self.md.fmm
+        self.domain = self.md.domain
+        self.comm = self.md.comm
+        self.fmm = self.md.fmm
+        self.local_store_dims = self.md.local_store_dims
+        self.local_size = self.md.local_size
+        self.local_offset = self.md.local_offset        
+        self.cell_indices = self.md.cell_indices
+        self.cell_offsets = self.md.cell_offsets
+        self.global_cell_size = self.md.global_cell_size
+        self.entry_local_size = self.md.entry_local_size
+        self.entry_local_offset = self.md.entry_local_offset
+        self.periodic_factors = self.md.periodic_factors
+        self.global_to_local = self.md.global_to_local
+        self.boundary_condition = self.md.boundary_condition
 
-        # as offset indices
-        pad_low = [list(range(-px, 0)) for px in pad]
-        pad_high = [list(range(lsx, lsx + px)) for px, lsx in zip(pad, ls)]
-        
-        # slowest to fastest to match octal tree indexing
-        global_to_local = [-lo[dx] + pad[dx] for dx in range(3)]
-        self.global_to_local = np.array(global_to_local, dtype=INT64)
-        
-        # cell indices as offsets from owned octal cells
-        cell_indices = [ lpx + list(range(lsx)) + hpx for lpx, lsx, hpx in zip(pad_low, ls, pad_high) ]
- 
-        # xyz last allowable cell offset index
-        self.upper_allowed = list(reversed([cx[-2] for cx in cell_indices]))
-        self.lower_allowed = list(reversed([cx[1] for cx in cell_indices]))
+        local_store_dims = self.local_store_dims
 
-        # use cell indices to get periodic coefficients
-        self.periodic_factors = [[ (lo[di] + cellx)//csc[di] for cellx in dimx ] for \
-            di, dimx in enumerate(cell_indices)]
-        
-        self.cell_offsets = cell_indices
-
-        # cell indices as actual cell indices
-        cell_indices = [[ (cx + osx) % cscx for cx in dx ] for dx, cscx, osx in zip(cell_indices, csc, lo)]
-
-        # this is slowest to fastest (s2f) not xyz
-        local_store_dims = [len(dx) for dx in cell_indices]
-        
-        cell_data_offset = [len(px) - ox for px, ox in zip(pad_low, lo)]
-        self.cell_data_offset = np.array(cell_data_offset, dtype=INT64)
-
-        # this is slowest to fastest not xyz
-        self.local_store_dims = local_store_dims
-        self.global_cell_size = csc
-        self.cell_indices = cell_indices
         self.local_expansions = np.zeros(
-            local_store_dims + [2 * (fmm.L**2)], dtype=REAL)
+            local_store_dims + [2 * (self.fmm.L**2)], dtype=REAL)
         self.remote_inds = np.zeros(local_store_dims + [1], dtype=INT64)
         self.remote_inds[:] = -1
         
@@ -108,48 +69,34 @@ class LocalCellExpansions(FMMMPIDecomp):
 
         # compute the cell centres
         self.cell_centres = np.zeros(local_store_dims + [3], dtype=REAL)
-
-
-        # host copy of particle data for moves
-        self._cuda_h = {}
-        self._cuda_h['new_positions'] = np.zeros((1, 3), dtype=REAL)
-        self._cuda_h['new_fmm_cells'] = np.zeros((1, 1), dtype=INT64)
-        self._cuda_h['new_charges']   = np.zeros((1, 1), dtype=REAL)
-        self._cuda_h['new_energy']    = np.zeros((1, 1), dtype=REAL)           
-        self._cuda_h['old_positions'] = np.zeros((1, 3), dtype=REAL)
-        self._cuda_h['old_fmm_cells'] = np.zeros((1, 1), dtype=INT64)
-        self._cuda_h['old_charges']   = np.zeros((1, 1), dtype=REAL)
-        self._cuda_h['old_energy']    = np.zeros((1, 1), dtype=REAL)
-        
         self._host_lib = self._init_host_kernels(self.fmm.L)
 
     def propose(self, moves):
-        total_movs, num_particles = self._setup_propose(moves, direct=False)
-        
+        total_movs, num_particles, _cuda_h, _cuda_d = self.md.setup_propose(moves)        
         u0 = None
         u1 = None
 
         self._host_lib(
             INT64(num_particles),
-            self._cuda_h['old_fmm_cells'].ctypes.get_as_parameter(),
+            _cuda_h['old_fmm_cells'].ctypes.get_as_parameter(),
             self.cell_centres.ctypes.get_as_parameter(),
-            self._cuda_h['old_positions'].ctypes.get_as_parameter(),
-            self._cuda_h['old_charges'].ctypes.get_as_parameter(),
+            _cuda_h['old_positions'].ctypes.get_as_parameter(),
+            _cuda_h['old_charges'].ctypes.get_as_parameter(),
             self.local_expansions.ctypes.get_as_parameter(),
-            self._cuda_h['old_energy'].ctypes.get_as_parameter()
+            _cuda_h['old_energy'].ctypes.get_as_parameter()
         )
         self._host_lib(
             INT64(total_movs),
-            self._cuda_h['new_fmm_cells'].ctypes.get_as_parameter(),
+            _cuda_h['new_fmm_cells'].ctypes.get_as_parameter(),
             self.cell_centres.ctypes.get_as_parameter(),
-            self._cuda_h['new_positions'].ctypes.get_as_parameter(),
-            self._cuda_h['new_charges'].ctypes.get_as_parameter(),
+            _cuda_h['new_positions'].ctypes.get_as_parameter(),
+            _cuda_h['new_charges'].ctypes.get_as_parameter(),
             self.local_expansions.ctypes.get_as_parameter(),
-            self._cuda_h['new_energy'].ctypes.get_as_parameter()
+            _cuda_h['new_energy'].ctypes.get_as_parameter()
         )        
 
-        u0 = self._cuda_h['old_energy'][:num_particles:]
-        u1 = self._cuda_h['new_energy'][:total_movs:]
+        u0 = _cuda_h['old_energy'][:num_particles:]
+        u1 = _cuda_h['new_energy'][:total_movs:]
 
         return u0, u1
 
@@ -431,6 +378,16 @@ class LocalCellExpansions(FMMMPIDecomp):
         )
         # print(flops, sum([flops[kx] for kx in flops.keys()]))
         return build.simple_lib_creator(header_code=' ', src_code=src)['indirect_interactions']
+
+
+    def _profile_inc(self, key, inc):
+        key = self.__class__.__name__ + ':' + key
+        if key not in PROFILE.keys():
+            PROFILE[key] = inc
+        else:
+            PROFILE[key] += inc
+
+
 
 
 
