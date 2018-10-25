@@ -123,7 +123,7 @@ class KMCFMM(object):
             self.max_move = max(self.domain.extent[:])
 
         # class to collect required local expansions
-        self.kmco = kmc_octal.LocalCellExpansions(self.fmm, self.max_move)
+        self.kmco = kmc_octal.LocalCellExpansions(self.fmm, self.max_move, boundary_condition=self._bc)
         # class to collect and redistribute particle data
         self.kmcl = kmc_local.LocalParticleData(self.fmm, self.max_move,
             boundary_condition=self._bc, cuda=self.cuda_direct)

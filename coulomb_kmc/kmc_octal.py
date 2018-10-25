@@ -48,7 +48,7 @@ class LocalCellExpansions(FMMMPIDecomp):
                self.domain.extent[0] / csc[2]]
         
         # this is pad per dimension s2f
-        pad = [1 + int(ceil(max_move/cx)) for cx in csw]
+        pad = [2 + int(ceil(max_move/cx)) for cx in csw]
  
         ls = fmm.tree.entry_map.local_size
         lo = fmm.tree.entry_map.local_offset

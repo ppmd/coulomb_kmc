@@ -199,18 +199,19 @@ class FMMMPIDecomp:
         # produces xyz tuple
         extent = self.group.domain.extent
         ncps = (2**(self.fmm.R - 1))
-        cell_widths = [ex / ncps for ex in extent]
+        cell_widths = [extent[0] / ncps, extent[1] / ncps, extent[2] / ncps]
 
         # convert to xyz
         ua = self.upper_allowed
         la = self.lower_allowed
 
+
+
         # compute position if origin was lower left not central
-        spos = [0.5*ex + po for po, ex in zip(position, extent)]
-        # if a charge is slightly out of the negative end of an axis this will
-        # truncate to zero
-        cell = [int(pcx / cwx) for pcx, cwx in zip(spos, cell_widths)]
-        cell = tuple([ min(cx, 2**(self.fmm.R -1)) for cx in cell ])
+        cell = [min(int((0.5*extent[0] + position[0])/cell_widths[0]), ncps), 
+                min(int((0.5*extent[1] + position[1])/cell_widths[1]), ncps), 
+                min(int((0.5*extent[2] + position[2])/cell_widths[2]), ncps)]
+
         if self._bc is BCType.FREE_SPACE:
             # Proposed cell should never be over a periodic boundary, as there
             # are none.
@@ -224,7 +225,7 @@ class FMMMPIDecomp:
             # following the idea that a proposed move is always in the
             # simulation domain we need to shift
             # positions accordingly
-            
+            spos = [0.5*ex + po for po, ex in zip(position, extent)]            
             # correct for round towards zero
             rtzc = [-1 if px < 0 else 0 for px in spos]
             cell = [cx + rx for cx, rx in zip(cell, rtzc)]
@@ -243,6 +244,18 @@ class FMMMPIDecomp:
 
             return cell, np.array(
                 [ox * ex for ox, ex in zip(offset, extent)], dtype=REAL)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
