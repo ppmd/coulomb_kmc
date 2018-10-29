@@ -370,6 +370,7 @@ class KMCFMM(object):
         if self._bc is BCType.FREE_SPACE:
             e_tmp = q * q * self.energy_unit / np.linalg.norm(
                 old_pos - prop_pos)
+            return e_tmp
         
         # 26 nearest primary images
         elif self._bc in (BCType.NEAREST, BCType.PBC):
@@ -394,7 +395,10 @@ class KMCFMM(object):
                 rlr = self.charges.data[ix, 0] * self._lee.compute_phi_local(lexp, disp)[0]
                 e_tmp -= rlr
 
-        return e_tmp
+            return e_tmp
+
+        else:
+            raise RuntimeError('bad boundary condition in _self_interaction')
 
 
     def _direct_contrib_new(self, ix, prop_pos):

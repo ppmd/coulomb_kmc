@@ -26,6 +26,71 @@ SHARED_MEMORY = 'omp'
 
 from coulomb_kmc import *
 
+c_double = ctypes.c_double
+
+
+def test_c_multipole_expansion():
+    
+    L = 26
+    N = 10
+    ncomp = 2 * (L**2)
+
+    rng = np.random.RandomState(235243095)
+
+    ExpInst = kmc_fmm_common.LocalExpEval(L)
+    
+    radii = rng.uniform(0.1, 10, N)
+    theta_set = rng.uniform(0.001, pi, N)
+    phi_set = rng.uniform(0.001, 2.*pi, N)
+    
+    
+    for ix in range(N):
+        arr_py = np.zeros(ncomp, dtype=c_double)
+        arr_c  = np.zeros(ncomp, dtype=c_double)
+
+        ExpInst.py_multipole_exp((radii[ix], theta_set[ix], phi_set[ix]), 1.0, arr_py)
+        ExpInst.multipole_exp((radii[ix], theta_set[ix], phi_set[ix]), 1.0, arr_c)
+        
+        for cx in range(ncomp):
+            rel = 1.0 if abs(arr_py[cx]) < 1.0 else abs(arr_py[cx])
+            err = abs(arr_py[cx] - arr_c[cx]) / rel
+            assert err < 10.**-12
+
+
+def test_c_local_expansion_eval():
+    
+    L = 26
+    N = 10
+    ncomp = 2 * (L**2)
+
+    rng = np.random.RandomState(235243095)
+
+    ExpInst = kmc_fmm_common.LocalExpEval(L)
+    
+    radii = rng.uniform(0.1, 10, N)
+    theta_set = rng.uniform(0.001, pi, N)
+    phi_set = rng.uniform(0.001, 2.*pi, N)
+    
+    print('\n')
+    for ix in range(N):
+        moments = np.array(rng.uniform(size=ncomp), dtype=c_double)
+
+        py_phi = ExpInst.py_compute_phi_local(moments, (radii[ix], theta_set[ix], phi_set[ix]))[0]
+        c_phi = ExpInst.compute_phi_local(moments, (radii[ix], theta_set[ix], phi_set[ix]))[0]
+        rel = 1.0 if abs(py_phi) < 1.0 else abs(py_phi)
+        err = abs(py_phi - c_phi) / rel
+        assert err < 10.**-12
+        
+
+
+
+
+
+
+
+
+
+
 
 @pytest.mark.skipif('MPISIZE > 1')
 def test_kmc_fmm_pbc_1():
@@ -262,7 +327,7 @@ def test_kmc_fmm_pbc_3():
     L = 12
     R = 3
 
-    N = 50
+    N = 2000
     E = 4.
     rc = E/4
 
@@ -320,9 +385,20 @@ def test_kmc_fmm_pbc_3():
             )
         )
     
-    # get the energy of the proposed moves
-    prop_energy_py = kmc_fmm.test_propose(moves=prop, use_python=True)
+    import cProfile
+    pr = cProfile.Profile()
+    pr.enable()
+    t0 = time.time()
     prop_energy_c  = kmc_fmm.test_propose(moves=prop, use_python=False)
+    t1 = time.time()
+    pr.disable()
+    pr.dump_stats('/tmp/propose.prof')
+    print("C :", t1 - t0)
+    common.print_profile()
+    # get the energy of the proposed moves
+
+
+    prop_energy_py = kmc_fmm.test_propose(moves=prop, use_python=True)
     
     # test agains the direct calculation
     for rxi, rx in enumerate(prop):

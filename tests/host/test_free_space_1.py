@@ -436,7 +436,6 @@ def test_kmc_fmm_free_space_3():
     t1 = time.time()
     pr.disable()
     #pr.dump_stats('/tmp/propose.prof')
-
     #print("C :", t1 - t0)
     #common.print_profile()
 

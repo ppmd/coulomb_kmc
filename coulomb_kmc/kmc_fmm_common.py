@@ -15,6 +15,8 @@ from coulomb_kmc.common import BCType, PROFILE
 # cuda imports if possible
 import ppmd
 import ppmd.cuda
+from ppmd.coulomb.sph_harm import *
+from ppmd.lib.build import simple_lib_creator
 
 if ppmd.cuda.CUDA_IMPORT:
     cudadrv = ppmd.cuda.cuda_runtime.cudadrv
@@ -32,8 +34,109 @@ class LocalExpEval(object):
         for nx in range(self.L):
             for mx in range(-nx, nx+1):
                 self._hmatrix_py[nx, mx] = Hfoo(nx, mx)
+        
+        self.sph_gen = SphGen(L-1)
+        self._multipole_lib = None
+        self._generate_host_libs()
+
+    def _generate_host_libs(self):
+
+        sph_gen = self.sph_gen
+
+        def cube_ind(L, M):
+            return ((L) * ( (L) + 1 ) + (M) )
+
+        assign_gen = 'double rhol = 1.0;\n'
+        for lx in range(self.L):
+            for mx in range(-lx, lx+1):
+                assign_gen += 'out[{ind}] += {ylmm} * rhol * charge;\n'.format(
+                        ind=cube_ind(lx, mx),
+                        ylmm=str(sph_gen.get_y_sym(lx, -mx)[0])
+                    )
+                assign_gen += 'out[IM_OFFSET + {ind}] += {ylmm} * rhol * charge;\n'.format(
+                        ind=cube_ind(lx, mx),
+                        ylmm=str(sph_gen.get_y_sym(lx, -mx)[1])
+                    )
+            assign_gen += 'rhol *= radius;\n'
+
+        src = """
+        #define IM_OFFSET ({IM_OFFSET})
+
+        extern "C" int multipole_exp(
+            const double charge,
+            const double radius,
+            const double theta,
+            const double phi,
+            double * RESTRICT out
+        ){{
+            {SPH_GEN}
+            {ASSIGN_GEN}
+            return 0;
+        }}
+        """.format(
+            SPH_GEN=str(sph_gen.module),
+            ASSIGN_GEN=str(assign_gen),
+            IM_OFFSET=(self.L**2),
+        )
+        header = str(sph_gen.header)
+
+        self._multipole_lib = simple_lib_creator(header_code=header, src_code=src)['multipole_exp']
+
+
+        # --- lib to evaluate local expansions --- 
+
+        assign_gen = ''
+        for lx in range(self.L):
+            for mx in range(-lx, lx+1):
+                reL = SphSymbol('moments[{ind}]'.format(ind=cube_ind(lx, mx)))
+                imL = SphSymbol('moments[IM_OFFSET + {ind}]'.format(ind=cube_ind(lx, mx)))
+                reY, imY = sph_gen.get_y_sym(lx, mx)
+                phi_sym = cmplx_mul(reL, imL, reY, imY)[0]
+                assign_gen += 'tmp_energy += rhol * ({phi_sym});\n'.format(phi_sym=str(phi_sym))
+
+            assign_gen += 'rhol *= radius;\n'
+
+        src = """
+        #define IM_OFFSET ({IM_OFFSET})
+
+        extern "C" int local_eval(
+            const double radius,
+            const double theta,
+            const double phi,
+            const double * RESTRICT moments,
+            double * RESTRICT out
+        ){{
+            {SPH_GEN}
+            double rhol = 1.0;
+            double tmp_energy = 0.0;
+            {ASSIGN_GEN}
+
+            out[0] = tmp_energy;
+            return 0;
+        }}
+        """.format(
+            SPH_GEN=str(sph_gen.module),
+            ASSIGN_GEN=str(assign_gen),
+            IM_OFFSET=(self.L**2),
+        )
+        header = str(sph_gen.header)
+
+        self._local_eval_lib = simple_lib_creator(header_code=header, src_code=src)['local_eval']
 
     def compute_phi_local(self, moments, disp_sph):
+        assert moments.dtype == REAL
+        _out = REAL(0.0)
+        self._local_eval_lib(
+            REAL(disp_sph[0]),
+            REAL(disp_sph[1]),
+            REAL(disp_sph[2]),
+            moments.ctypes.get_as_parameter(),
+            ctypes.byref(_out)
+        )
+        return _out.value, None
+
+
+    def py_compute_phi_local(self, moments, disp_sph):
         """
         Computes the field at the podint disp_sph given by the local expansion 
         in moments
@@ -70,7 +173,23 @@ class LocalExpEval(object):
 
         return phi_sph_re, phi_sph_im
 
+
     def multipole_exp(self, sph, charge, arr):
+        """
+        For a charge at the point sph computes the multipole moments at the origin
+        and appends them onto arr.
+        """
+
+        assert arr.dtype == REAL
+        self._multipole_lib(
+            REAL(charge),
+            REAL(sph[0]),
+            REAL(sph[1]),
+            REAL(sph[2]),
+            arr.ctypes.get_as_parameter()
+        )
+
+    def py_multipole_exp(self, sph, charge, arr):
         """
         For a charge at the point sph computes the multipole moments at the origin
         and appends them onto arr.
@@ -93,6 +212,7 @@ class LocalExpEval(object):
                 coeff = charge * radn * self._hmatrix_py[lx, mx] * scipy_p[abs(mx)] 
                 arr[re_lm(lx, mx)] += cosv[mx] * coeff
                 arr[im_lm(lx, mx)] += sinv[mx] * coeff
+
 
 
 class LocalOctalBase:
