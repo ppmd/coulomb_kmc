@@ -71,7 +71,6 @@ def test_c_local_expansion_eval():
     theta_set = rng.uniform(0.001, pi, N)
     phi_set = rng.uniform(0.001, 2.*pi, N)
     
-    print('\n')
     for ix in range(N):
         moments = np.array(rng.uniform(size=ncomp), dtype=c_double)
 
@@ -327,7 +326,7 @@ def test_kmc_fmm_pbc_3():
     L = 12
     R = 3
 
-    N = 2000
+    N = 200
     E = 4.
     rc = E/4
 
@@ -392,9 +391,9 @@ def test_kmc_fmm_pbc_3():
     prop_energy_c  = kmc_fmm.test_propose(moves=prop, use_python=False)
     t1 = time.time()
     pr.disable()
-    pr.dump_stats('/tmp/propose.prof')
-    print("C :", t1 - t0)
-    common.print_profile()
+    #pr.dump_stats('/tmp/propose.prof')
+    #print("C :", t1 - t0)
+    #common.print_profile()
     # get the energy of the proposed moves
 
 

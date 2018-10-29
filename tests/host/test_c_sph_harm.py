@@ -68,7 +68,7 @@ def test_c_sph_harm_1():
 
     for ix in range(N):
         pos = tuple(positions[ix, :] - centres)
-        sph_coord = KMCFMM.spherical(pos)
+        sph_coord = spherical(pos)
         e_py = lee.compute_phi_local(moments, sph_coord)[0] * charges[ix]
 
         err = abs(e_py - energy[ix])
@@ -112,7 +112,7 @@ def test_c_sph_harm_2():
 
     for ix in range(N):
         pos = tuple(positions[ix, :] - centres)
-        sph_coord = KMCFMM.spherical(pos)
+        sph_coord = spherical(pos)
         e_py = lee.compute_phi_local(moments, sph_coord)[0] * charges[ix]
 
         err = abs(e_py - energy[ix])

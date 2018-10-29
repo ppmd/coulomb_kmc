@@ -46,38 +46,6 @@ class KMCFMM(object):
 
     _prof_time = 0.0
 
-    _offsets = (
-        ( -1, -1, -1),
-        (  0, -1, -1),
-        (  1, -1, -1),
-        ( -1,  0, -1),
-        (  0,  0, -1),
-        (  1,  0, -1),
-        ( -1,  1, -1),
-        (  0,  1, -1),
-        (  1,  1, -1),
-
-        ( -1, -1,  0),
-        (  0, -1,  0),
-        (  1, -1,  0),
-        ( -1,  0,  0),
-        (  0,  0,  0),
-        (  1,  0,  0),
-        ( -1,  1,  0),
-        (  0,  1,  0),
-        (  1,  1,  0),
-
-        ( -1, -1,  1),
-        (  0, -1,  1),
-        (  1, -1,  1),
-        ( -1,  0,  1),
-        (  0,  0,  1),
-        (  1,  0,  1),
-        ( -1,  1,  1),
-        (  0,  1,  1),
-        (  1,  1,  1),
-    )
-
 
     def __init__(self, positions, charges, domain, N=None, boundary_condition='pbc',
         r=None, shell_width=0.0, energy_unit=1.0,
@@ -126,6 +94,9 @@ class KMCFMM(object):
         # class to handle the mpi decomposition and preprocessing of moves
         self.md = FMMMPIDecomp(self.fmm, self.max_move,
             boundary_condition=self._bc, cuda=self.cuda_direct)
+
+        # self interaction handling class
+        self._si = FMMSelfInteraction(self.fmm, domain, self._bc, self._lee) 
 
         # class to collect required local expansions
         self.kmco = self.md.kmco
@@ -316,15 +287,21 @@ class KMCFMM(object):
         self._profile_inc('py-direct', tpd1 - tpd0)
         self._profile_inc('py-indirect', tpi1 - tpi0)
 
-        # compute self interactions
-        for movxi, movx in enumerate(moves):
-            pid = movx[0]
-            movs = np.atleast_2d(movx[1])
-            num_movs = movs.shape[0]
-
-            for mxi, mx in enumerate(movs):
-                self._tmp_energies[_ENERGY.U01_SELF][movxi, mxi] = self._self_interaction(pid, mx)
         
+
+        # compute self interactions
+        #for movxi, movx in enumerate(moves):
+        #    pid = movx[0]
+        #    movs = np.atleast_2d(movx[1])
+        #    num_movs = movs.shape[0]
+
+        #    for mxi, mx in enumerate(movs):
+        #        self._tmp_energies[_ENERGY.U01_SELF][movxi, mxi] = self._self_interaction(pid, mx)
+        
+
+        self._si.propose(*tuple(list(cmove_data) + [self._tmp_energies[_ENERGY.U01_SELF]]))
+
+
 
         # compute differences
         self._tmp_energies[_ENERGY.U_DIFF] = \
@@ -333,10 +310,6 @@ class KMCFMM(object):
             - self._tmp_energies[_ENERGY.U0_DIRECT] \
             - self._tmp_energies[_ENERGY.U0_INDIRECT] \
             - self._tmp_energies[_ENERGY.U01_SELF]
-
-        #print('\n' + "--"*60)
-        #for kx in self._tmp_energies.keys():
-        #    print(kx, '\t', self._tmp_energies[kx][0])
 
         prop_energy = []
 
@@ -355,50 +328,6 @@ class KMCFMM(object):
             prop_energy.append(pid_prop_energy)
 
         return tuple(prop_energy)
-    
-    
-    def _self_interaction(self, ix, prop_pos):
-        """
-        Compute the self interaction of the proposed move in the primary image with the old position
-        in all other images.
-        """
-        old_pos = self.positions.data[ix, :]
-        q = self.charges.data[ix, 0]
-        ex = self.domain.extent
-
-        # self interaction with primary image
-        if self._bc is BCType.FREE_SPACE:
-            e_tmp = q * q * self.energy_unit / np.linalg.norm(
-                old_pos - prop_pos)
-            return e_tmp
-        
-        # 26 nearest primary images
-        elif self._bc in (BCType.NEAREST, BCType.PBC):
-            coeff = q * q * self.energy_unit
-            e_tmp = 0.0
-            for ox in KMCFMM._offsets:
-                # image of old pos
-                dox = np.array((ex[0] * ox[0], ex[1] * ox[1], ex[2] * ox[2]))
-                iold_pos = old_pos + dox
-                e_tmp +=  coeff / np.linalg.norm(iold_pos - prop_pos)
-
-                # add back on the new self interaction ( this is a function of the domain extent
-                # and can be precomputed up to the charge part )
-                if ox != (0,0,0):
-                    e_tmp -= coeff / np.linalg.norm(dox)
-            
-            # really long range part in the PBC case
-            if self._bc == BCType.PBC:
-                lexp = self._really_long_range_diff(ix, prop_pos)
-                # the origin is the centre of the domain hence no offsets are needed
-                disp = KMCFMM.spherical(tuple(prop_pos))
-                rlr = self.charges.data[ix, 0] * self._lee.compute_phi_local(lexp, disp)[0]
-                e_tmp -= rlr
-
-            return e_tmp
-
-        else:
-            raise RuntimeError('bad boundary condition in _self_interaction')
 
 
     def _direct_contrib_new(self, ix, prop_pos):
@@ -416,7 +345,7 @@ class KMCFMM(object):
         _tvc = self._dsc
         
 
-        for ox in KMCFMM._offsets:
+        for ox in cell_offsets:
             jcell = (icx + ox[0], icy + ox[1], icz + ox[2])
             image_mod = np.zeros(3)
             # print("\tHST: jcell", jcell)
@@ -460,7 +389,7 @@ class KMCFMM(object):
 
         q = self.charges.data[ix, 0] * self.energy_unit
         pos = self.positions.data[ix, :]
-        for ox in KMCFMM._offsets:
+        for ox in cell_offsets:
             jcell = (icx + ox[0], icy + ox[1], icz + ox[2])
             image_mod = np.zeros(3)
 
@@ -581,86 +510,9 @@ class KMCFMM(object):
         ec = [esx + 0.5 * cx + ccx * cx for esx, cx, ccx in zip(es, csl, cell)]
         
         disp = (position[0] - ec[0], position[1] - ec[1], position[2] - ec[2])
-        sph = KMCFMM.spherical(disp)
+        sph = spherical(disp)
         
         return sph
-
-    @staticmethod
-    def spherical(xyz):
-        """
-        Converts the cartesian coordinates in xyz to spherical coordinates
-        (radius, polar angle, longitude angle)
-        """
-        if type(xyz) is tuple:
-            sph = np.zeros(3)
-            xy = xyz[0]**2 + xyz[1]**2
-            # r
-            sph[0] = np.sqrt(xy + xyz[2]**2)
-            # polar angle
-            sph[1] = np.arctan2(np.sqrt(xy), xyz[2])
-            # longitude angle
-            sph[2] = np.arctan2(xyz[1], xyz[0])
-
-        else:
-            sph = np.zeros(xyz.shape)
-            xy = xyz[:,0]**2 + xyz[:,1]**2
-            # r
-            sph[:,0] = np.sqrt(xy + xyz[:,2]**2)
-            # polar angle
-            sph[:,1] = np.arctan2(np.sqrt(xy), xyz[:,2])
-            # longitude angle
-            sph[:,2] = np.arctan2(xyz[:,1], xyz[:,0])
-
-        return sph
-
-    def _multipole_diff(self, old_pos, new_pos, charge, arr):
-        # output is in the numpy array arr
-        # plan is to do all "really long range" corrections
-        # as a matmul
-
-        # remove the old charge
-        disp = KMCFMM.spherical(tuple(old_pos))
-        self._lee.multipole_exp(disp, -1.0 * charge, arr)
-        
-        # add the new charge
-        disp = KMCFMM.spherical(tuple(new_pos))
-        self._lee.multipole_exp(disp, charge, arr)
-
-    @staticmethod
-    def _numpy_ptr(arr):
-        return arr.ctypes.data_as(ctypes.c_void_p)
-
-    def _really_long_range_diff(self, ix, prop_pos):
-        """
-        Compute the correction in potential field from the "very well separated"
-        images
-        """
-        
-        l2 = self.fmm.L * self.fmm.L * 2
-        arr = np.zeros(l2)
-        arr_out = np.zeros(l2)
-        
-        self._multipole_diff(
-            self.positions.data[ix, :],
-            prop_pos,
-            self.charges.data[ix, 0],
-            arr
-        )
-        
-        # use the really long range part of the fmm instance (extract this into a matrix)
-        self.fmm._translate_mtl_lib['mtl_test_wrapper'](
-            INT64(self.fmm.L),
-            REAL(1.),
-            KMCFMM._numpy_ptr(arr),
-            KMCFMM._numpy_ptr(self.fmm._boundary_ident),
-            KMCFMM._numpy_ptr(self.fmm._boundary_terms),
-            KMCFMM._numpy_ptr(self.fmm._a),
-            KMCFMM._numpy_ptr(self.fmm._ar),
-            KMCFMM._numpy_ptr(self.fmm._ipower_mtl),
-            KMCFMM._numpy_ptr(arr_out)
-        )
-
-        return arr_out
 
     def _tmp_energy_check(self, new_size):
         ts = self._tmp_energies[_ENERGY.U0_DIRECT].shape

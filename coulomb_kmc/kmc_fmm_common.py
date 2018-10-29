@@ -24,6 +24,176 @@ if ppmd.cuda.CUDA_IMPORT:
     from pycuda.compiler import SourceModule
     import pycuda.gpuarray as gpuarray
 
+def spherical(xyz):
+    """
+    Converts the cartesian coordinates in xyz to spherical coordinates
+    (radius, polar angle, longitude angle)
+    """
+    if type(xyz) is tuple:
+        sph = np.zeros(3)
+        xy = xyz[0]**2 + xyz[1]**2
+        # r
+        sph[0] = np.sqrt(xy + xyz[2]**2)
+        # polar angle
+        sph[1] = np.arctan2(np.sqrt(xy), xyz[2])
+        # longitude angle
+        sph[2] = np.arctan2(xyz[1], xyz[0])
+
+    else:
+        sph = np.zeros(xyz.shape)
+        xy = xyz[:,0]**2 + xyz[:,1]**2
+        # r
+        sph[:,0] = np.sqrt(xy + xyz[:,2]**2)
+        # polar angle
+        sph[:,1] = np.arctan2(np.sqrt(xy), xyz[:,2])
+        # longitude angle
+        sph[:,2] = np.arctan2(xyz[:,1], xyz[:,0])
+
+    return sph
+
+cell_offsets = (
+    ( -1, -1, -1),
+    (  0, -1, -1),
+    (  1, -1, -1),
+    ( -1,  0, -1),
+    (  0,  0, -1),
+    (  1,  0, -1),
+    ( -1,  1, -1),
+    (  0,  1, -1),
+    (  1,  1, -1),
+
+    ( -1, -1,  0),
+    (  0, -1,  0),
+    (  1, -1,  0),
+    ( -1,  0,  0),
+    (  0,  0,  0),
+    (  1,  0,  0),
+    ( -1,  1,  0),
+    (  0,  1,  0),
+    (  1,  1,  0),
+
+    ( -1, -1,  1),
+    (  0, -1,  1),
+    (  1, -1,  1),
+    ( -1,  0,  1),
+    (  0,  0,  1),
+    (  1,  0,  1),
+    ( -1,  1,  1),
+    (  0,  1,  1),
+    (  1,  1,  1),
+)
+
+
+
+class FMMSelfInteraction:
+    def __init__(self, fmm, domain, boundary_condition, local_exp_eval):
+        self.domain = domain
+        self._lee = local_exp_eval
+        self._bc = boundary_condition
+        self.fmm = fmm
+
+
+    def propose(self, total_movs, num_particles, host_data, cuda_data, arr):
+
+        es = host_data['exclusive_sum']
+        old_pos = host_data['old_positions']
+        new_pos = host_data['new_positions']
+
+        old_chr = host_data['old_charges']
+        
+        for px in range(num_particles):
+            # assumed charge doesn't change
+            charge = old_chr[px]
+            opos = old_pos[px, :]
+
+            for movxi, movx in enumerate(range(es[px, 0], es[px+1, 0])):
+                arr[px, movxi] = self.py_self_interaction(opos, new_pos[movx, :], charge)
+
+    def py_self_interaction(self, old_pos, prop_pos, q):
+        """
+        Compute the self interaction of the proposed move in the primary image with the old position
+        in all other images.
+        """
+
+        ex = self.domain.extent
+
+        # self interaction with primary image
+        if self._bc is BCType.FREE_SPACE:
+            return q * q / np.linalg.norm(old_pos - prop_pos)
+        
+        # 26 nearest primary images
+        elif self._bc in (BCType.NEAREST, BCType.PBC):
+            coeff = q * q
+            e_tmp = 0.0
+            for ox in cell_offsets:
+                # image of old pos
+                dox = np.array((ex[0] * ox[0], ex[1] * ox[1], ex[2] * ox[2]))
+                iold_pos = old_pos + dox
+                e_tmp +=  coeff / np.linalg.norm(iold_pos - prop_pos)
+
+                # add back on the new self interaction ( this is a function of the domain extent
+                # and can be precomputed up to the charge part )
+                if ox != (0,0,0):
+                    e_tmp -= coeff / np.linalg.norm(dox)
+            
+            # really long range part in the PBC case
+            if self._bc == BCType.PBC:
+                lexp = self._really_long_range_diff(old_pos, prop_pos, q)
+
+                # the origin is the centre of the domain hence no offsets are needed
+                disp = spherical(tuple(prop_pos))
+                rlr = q * self._lee.compute_phi_local(lexp, disp)[0]
+                e_tmp -= rlr
+
+            return e_tmp
+
+        else:
+            raise RuntimeError('bad boundary condition in _self_interaction')
+
+
+    def _multipole_diff(self, old_pos, new_pos, charge, arr):
+        # output is in the numpy array arr
+        # plan is to do all "really long range" corrections
+        # as a matmul
+
+        # remove the old charge
+        disp = spherical(tuple(old_pos))
+        self._lee.multipole_exp(disp, -1.0 * charge, arr)
+        
+        # add the new charge
+        disp = spherical(tuple(new_pos))
+        self._lee.multipole_exp(disp, charge, arr)
+
+
+    def _really_long_range_diff(self, old_pos, prop_pos, q):
+        """
+        Compute the correction in potential field from the "very well separated"
+        images
+        """
+        
+        l2 = self.fmm.L * self.fmm.L * 2
+        arr = np.zeros(l2)
+        arr_out = np.zeros(l2)
+        
+        self._multipole_diff(old_pos, prop_pos, q, arr)
+        
+        # use the really long range part of the fmm instance (extract this into a matrix)
+        self.fmm._translate_mtl_lib['mtl_test_wrapper'](
+            INT64(self.fmm.L),
+            REAL(1.),
+            arr.ctypes.get_as_parameter(),
+            self.fmm._boundary_ident.ctypes.get_as_parameter(),
+            self.fmm._boundary_terms.ctypes.get_as_parameter(),
+            self.fmm._a.ctypes.get_as_parameter(),
+            self.fmm._ar.ctypes.get_as_parameter(),
+            self.fmm._ipower_mtl.ctypes.get_as_parameter(),
+            arr_out.ctypes.get_as_parameter()
+        )
+
+        return arr_out
+
+
+
 
 class LocalExpEval(object):
     
