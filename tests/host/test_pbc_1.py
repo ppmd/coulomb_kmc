@@ -326,7 +326,7 @@ def test_kmc_fmm_pbc_3():
     L = 12
     R = 3
 
-    N = 200
+    N = 2000
     E = 4.
     rc = E/4
 
@@ -368,15 +368,18 @@ def test_kmc_fmm_pbc_3():
     # create a kmc instance
     kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
         domain=A.domain, r=R, l=L, boundary_condition='pbc')
-    kmc_fmm.initialise()
-    
+
+ 
+
     # make  some random proposed moves
     order = rng.permutation(range(N))
     prop = []
-
+    nmov = 0
     for px in range(N):
 
         propn = rng.randint(1, 8)
+        nmov += propn
+
         prop.append(
             (
                 order[px],
@@ -387,13 +390,16 @@ def test_kmc_fmm_pbc_3():
     import cProfile
     pr = cProfile.Profile()
     pr.enable()
+    
+    kmc_fmm.initialise()
+
     t0 = time.time()
     prop_energy_c  = kmc_fmm.test_propose(moves=prop, use_python=False)
     t1 = time.time()
     pr.disable()
-    #pr.dump_stats('/tmp/propose.prof')
-    #print("C :", t1 - t0)
-    #common.print_profile()
+    pr.dump_stats('/tmp/propose.prof')
+    print("C :", t1 - t0, N, nmov)
+    common.print_profile()
     # get the energy of the proposed moves
 
 

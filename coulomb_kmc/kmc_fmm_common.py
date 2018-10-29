@@ -92,6 +92,118 @@ class FMMSelfInteraction:
         self._bc = boundary_condition
         self.fmm = fmm
 
+        self._new27direct = 0.0
+        ex = self.domain.extent
+        for ox in cell_offsets:
+            # image of old pos
+            dox = np.array((ex[0] * ox[0], ex[1] * ox[1], ex[2] * ox[2]))
+            if ox != (0,0,0):
+                self._new27direct -= 1.0 / np.linalg.norm(dox)
+        
+
+        preloop = ''
+        bc27 = ''
+        if self._bc not in (BCType.NEAREST, BCType.PBC):
+            pass
+        else:
+            bc27 = 'energy27 = (DOMAIN_27_ENERGY);\n'
+            for oxi, ox in enumerate(cell_offsets):
+
+                preloop += '''
+                const REAL dox{oxi} = EX * {OX};
+                const REAL doy{oxi} = EY * {OY};
+                const REAL doz{oxi} = EZ * {OZ};
+                '''.format(
+                    oxi=str(oxi),
+                    OX=str(ox[0]),
+                    OY=str(ox[1]),
+                    OZ=str(ox[2]),
+                )
+
+                bc27 += '''
+                const REAL dpx{oxi} = dox{oxi} + opx;
+                const REAL dpy{oxi} = doy{oxi} + opy;
+                const REAL dpz{oxi} = doz{oxi} + opz;
+
+                const REAL ddx{oxi} = dpx{oxi} - npx;
+                const REAL ddy{oxi} = dpy{oxi} - npy;
+                const REAL ddz{oxi} = dpz{oxi} - npz;
+
+                energy27 += 1.0 / sqrt(ddx{oxi}*ddx{oxi} + ddy{oxi}*ddy{oxi} + ddz{oxi}*ddz{oxi});
+                '''.format(
+                    oxi=str(oxi)
+                )
+
+        src = r'''
+        extern "C" int self_interaction(
+            const INT64 store_stride,
+            const INT64 num_particles,
+            const INT64 * RESTRICT exclusive_sum,
+            const REAL * RESTRICT old_positions,
+            const REAL * RESTRICT old_charges,
+            const REAL * RESTRICT new_positions,
+            REAL * RESTRICT out
+        )
+        {{
+            
+            {preloop}
+
+            #pragma omp parallel for schedule(dynamic)
+            for(INT64 px=0 ; px<num_particles ; px++){{
+                
+                const REAL coeff = old_charges[px] * old_charges[px];
+                const REAL opx = old_positions[3*px + 0];
+                const REAL opy = old_positions[3*px + 1];
+                const REAL opz = old_positions[3*px + 2];
+
+                const INT64 nprop = exclusive_sum[px+1] - exclusive_sum[px];
+
+                #pragma omp simd simdlen(8)
+                for(INT64 movii=0 ; movii<nprop ; movii++){{
+                    const INT64 movi = movii + exclusive_sum[px];
+                    const REAL npx = new_positions[3*movi + 0];
+                    const REAL npy = new_positions[3*movi + 1];
+                    const REAL npz = new_positions[3*movi + 2];
+
+                    const REAL dx = opx - npx;
+                    const REAL dy = opy - npy;
+                    const REAL dz = opz - npz;
+                    
+                    REAL energy27 = (1.0 / sqrt(dx*dx + dy*dy + dz*dz));
+
+                    {bc27}
+
+                    REAL tmp_energy = energy27;
+                    out[store_stride * px + movii] = coeff * tmp_energy;
+                    
+                }}
+
+            }}
+
+            return 0;
+        }}
+        '''.format(
+            bc27=bc27,
+            preloop=preloop
+        )
+
+        header = str(
+            Module((
+                Include('stdio.h'),
+                Include('math.h'),
+                Define('DOMAIN_27_ENERGY', str(self._new27direct)),
+                Define('INT64', 'int64_t'),
+                Define('REAL', 'double'),
+                Define('EX', str(self.domain.extent[0])),
+                Define('EY', str(self.domain.extent[1])),
+                Define('EZ', str(self.domain.extent[2])),
+            ))
+        )
+        
+
+        self.lib = simple_lib_creator(header_code=header, src_code=src)['self_interaction']
+
+
 
     def propose(self, total_movs, num_particles, host_data, cuda_data, arr):
 
@@ -101,15 +213,33 @@ class FMMSelfInteraction:
 
         old_chr = host_data['old_charges']
         
-        for px in range(num_particles):
-            # assumed charge doesn't change
-            charge = old_chr[px]
-            opos = old_pos[px, :]
+        assert es.dtype == INT64
+        assert old_pos.dtype == REAL
+        assert old_chr.dtype == REAL
+        assert new_pos.dtype == REAL
+        assert arr.dtype == REAL
 
-            for movxi, movx in enumerate(range(es[px, 0], es[px+1, 0])):
-                arr[px, movxi] = self.py_self_interaction(opos, new_pos[movx, :], charge)
+        self.lib(
+            INT64(arr.shape[1]),
+            INT64(num_particles),
+            es.ctypes.get_as_parameter(),
+            old_pos.ctypes.get_as_parameter(),
+            old_chr.ctypes.get_as_parameter(),
+            new_pos.ctypes.get_as_parameter(),
+            arr.ctypes.get_as_parameter()           
+        )
+        
+        if self._bc is BCType.PBC:
+            for px in range(num_particles):
+                # assumed charge doesn't change
+                charge = old_chr[px]
+                opos = old_pos[px, :]
 
-    def py_self_interaction(self, old_pos, prop_pos, q):
+                for movxi, movx in enumerate(range(es[px, 0], es[px+1, 0])):
+                    arr[px, movxi] -= self.py_self_interaction_indirect(opos, new_pos[movx, :], charge)
+
+
+    def py_self_interaction_direct(self, old_pos, prop_pos, q):
         """
         Compute the self interaction of the proposed move in the primary image with the old position
         in all other images.
@@ -124,31 +254,32 @@ class FMMSelfInteraction:
         # 26 nearest primary images
         elif self._bc in (BCType.NEAREST, BCType.PBC):
             coeff = q * q
-            e_tmp = 0.0
+            e_tmp = self._new27direct * coeff
+
             for ox in cell_offsets:
                 # image of old pos
                 dox = np.array((ex[0] * ox[0], ex[1] * ox[1], ex[2] * ox[2]))
                 iold_pos = old_pos + dox
                 e_tmp +=  coeff / np.linalg.norm(iold_pos - prop_pos)
 
-                # add back on the new self interaction ( this is a function of the domain extent
-                # and can be precomputed up to the charge part )
-                if ox != (0,0,0):
-                    e_tmp -= coeff / np.linalg.norm(dox)
-            
-            # really long range part in the PBC case
-            if self._bc == BCType.PBC:
-                lexp = self._really_long_range_diff(old_pos, prop_pos, q)
-
-                # the origin is the centre of the domain hence no offsets are needed
-                disp = spherical(tuple(prop_pos))
-                rlr = q * self._lee.compute_phi_local(lexp, disp)[0]
-                e_tmp -= rlr
-
             return e_tmp
 
         else:
             raise RuntimeError('bad boundary condition in _self_interaction')
+
+    def py_self_interaction_indirect(self, old_pos, prop_pos, q):
+
+        if self._bc == BCType.PBC:
+            ex = self.domain.extent
+            lexp = self._really_long_range_diff(old_pos, prop_pos, q)
+            # the origin is the centre of the domain hence no offsets are needed
+            disp = spherical(tuple(prop_pos))
+            rlr = q * self._lee.compute_phi_local(lexp, disp)[0]
+            return rlr
+
+        else:
+            return 0.0
+
 
 
     def _multipole_diff(self, old_pos, new_pos, charge, arr):
