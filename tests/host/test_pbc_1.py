@@ -136,8 +136,9 @@ def test_kmc_lr_1():
     kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
         domain=A.domain, r=R, l=L, boundary_condition='pbc')
 
-    lrc = kmc_fmm_common.LongRangeCorrection(kmc_fmm.fmm, A.domain)
- 
+    ExpInst = kmc_fmm_common.LocalExpEval(L)
+    lrc = kmc_fmm_common.LongRangeCorrection(kmc_fmm.fmm, A.domain, ExpInst)
+    
     '''
     for nx in range(1,100):
         x = rng.uniform(size=(ncomp, nx))
@@ -188,8 +189,95 @@ def test_kmc_lr_1():
 
 
 
-    
+def test_kmc_lr_2():
+    """
+    Passes all proposed moves to kmc at once, then checks all outputs
+    """
+    L = 12
+    R = 3
 
+    N = 2000
+    E = 1.
+    rc = E/4
+
+    ncomp = (L**2)*2
+    half_ncomp = (L**2)
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    A.npart = N
+
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+    A.PP = data.ParticleDat(ncomp=3)
+
+    A.crr = data.ScalarArray(ncomp=1)
+
+    rng = np.random.RandomState(seed=1234)
+
+    if N == 4:
+        ra = 0.25 * E
+        nra = -0.25 * E
+
+        A.P[0,:] = ( 1.6,  1.6, 0.0)
+        A.P[1,:] = (-1.500001,  1.499999, 0.0)
+        A.P[2,:] = (-1.500001, -1.500001, 0.0)
+        A.P[3,:] = ( 0.0,  0.0, 0.0)
+
+        A.Q[0,0] = -1.
+        A.Q[1,0] = 1.
+        A.Q[2,0] = -1.
+        A.Q[3,0] = 0.
+    else:
+        A.P[:] = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
+        for px in range(N):
+            A.Q[px,0] = (-1.0)**(px+1)
+        bias = np.sum(A.Q[:N:, 0])/N
+        A.Q[:, 0] -= bias
+
+    A.scatter_data_from(0)
+
+    # create a kmc instance
+    kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
+        domain=A.domain, r=R, l=L, boundary_condition='pbc')
+    kmc_fmm.initialise()
+    
+    ExpInst = kmc_fmm_common.LocalExpEval(L)
+    #lrc = kmc_fmm_common.LongRangeCorrection(kmc_fmm.fmm, A.domain, ExpInst)
+    si = kmc_fmm_common.FMMSelfInteraction(kmc_fmm.fmm, A.domain, kmc_fmm._bc, ExpInst)
+
+    # make  some random proposed moves
+    order = rng.permutation(range(N))
+    prop = []
+    max_nprop = 1
+    for px in range(N):
+        #for px in range(1):
+
+        propn = rng.randint(1, 8)
+        #propn = 1
+        max_nprop = max(max_nprop, propn)
+
+        prop.append(
+            (
+                order[px],
+                rng.uniform(low=-0.5*E, high=0.5*E, size=(propn, 3))
+            )
+        )
+    
+    processed_movs = list(kmc_fmm.md.setup_propose(prop))
+    correct = np.zeros((N, max_nprop), dtype=c_double)
+    matmulv = np.zeros_like(correct)
+    si.propose(*tuple(processed_movs + [correct, True]))
+    si.propose(*tuple(processed_movs + [matmulv, False]))
+    
+    for px in range(1):
+        for mv in range(prop[px][1].shape[0]):
+            c = correct[px, mv]
+            m = matmulv[px, mv]
+            rel = 1.0 if abs(c) < 1.0 else abs(c)
+            err = abs(c - m)/rel
+            assert err < 10.**-15
+            
     
 
 
@@ -430,7 +518,7 @@ def test_kmc_fmm_pbc_3():
     L = 12
     R = 3
 
-    N = 2000
+    N = 200
     E = 4.
     rc = E/4
 
@@ -491,19 +579,19 @@ def test_kmc_fmm_pbc_3():
             )
         )
     
-    import cProfile
-    pr = cProfile.Profile()
-    pr.enable()
+    #import cProfile
+    #pr = cProfile.Profile()
+    #pr.enable()
     
     kmc_fmm.initialise()
 
     t0 = time.time()
     prop_energy_c  = kmc_fmm.test_propose(moves=prop, use_python=False)
     t1 = time.time()
-    pr.disable()
-    pr.dump_stats('/tmp/propose.prof')
-    print("C :", t1 - t0, N, nmov)
-    common.print_profile()
+    #pr.disable()
+    #pr.dump_stats('/tmp/propose.prof')
+    #print("C :", t1 - t0, N, nmov)
+    #common.print_profile()
     # get the energy of the proposed moves
 
 

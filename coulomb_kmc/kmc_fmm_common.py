@@ -103,9 +103,11 @@ def _re_lm(l, m): return l**2 + l + m
 
 
 class LongRangeCorrection:
-    def __init__(self, fmm, domain):
+    def __init__(self, fmm, domain, local_exp_eval):
+
         self.fmm = fmm
         self.domain = domain
+        self._lee = local_exp_eval
         self._rvec = self.fmm._boundary_terms
 
         L = self.fmm.L
@@ -131,6 +133,15 @@ class LongRangeCorrection:
         self.linop = aslinearoperator(self.rmat)
         self.sparse_linop = aslinearoperator(self.sparse_rmat)
 
+        self._orig_space = np.zeros((self.ncomp), dtype=REAL)
+
+        self._prop_space = np.zeros((100, self.ncomp), dtype=REAL)
+        self._prop_matmul = np.zeros((self.ncomp, 100), dtype=REAL)
+    
+    def _resize_if_needed(self, nc):
+        if self._prop_space.shape[0] < nc:
+            self._prop_space = np.zeros((nc, self.ncomp), dtype=REAL)
+            self._prop_matmul = np.zeros((self.ncomp, nc), dtype=REAL)
 
     def compute_corrections(self, total_movs, num_particles, host_data, cuda_data, arr):
 
@@ -140,13 +151,48 @@ class LongRangeCorrection:
 
         old_chr = host_data['old_charges']
         
+        L = self.fmm.L
+        ncomp = (L**2)*2
+        half_ncomp = (L**2)
+        
         assert es.dtype == INT64
         assert old_pos.dtype == REAL
         assert old_chr.dtype == REAL
         assert new_pos.dtype == REAL
         assert arr.dtype == REAL
 
+        for px in range(num_particles):
+            charge = old_chr[px, 0]
+            opos = old_pos[px, :]
+            num_prop = es[px+1, 0] - es[px, 0]
+            
+            disp = spherical(tuple(opos))
 
+            self._orig_space[:] = 0.0
+            self._lee.multipole_exp(disp, -1.0 * charge, self._orig_space)
+
+            self._resize_if_needed(num_prop)
+
+            prop_pos = new_pos[es[px, 0]:es[px+1, 0]:, :]
+            prop_sph = spherical(prop_pos)
+
+            self._prop_space.fill(0.0)
+
+            for movxi in range(num_prop):
+                self._lee.multipole_exp(prop_sph[movxi, :], charge, self._prop_space[movxi, :])
+                self._prop_space[movxi, :] += self._orig_space
+            
+            self._prop_matmul[:half_ncomp ,:num_prop] = \
+                self.sparse_linop.matmat(np.transpose(self._prop_space[:num_prop,:half_ncomp]))
+            self._prop_matmul[half_ncomp: ,:num_prop] = \
+                self.sparse_linop.matmat(np.transpose(self._prop_space[:num_prop,half_ncomp:]))
+
+            self._prop_space[:num_prop, :] = self._prop_matmul[:, :num_prop].transpose().copy()
+
+            for movxi in range(num_prop):
+                arr[px, movxi] -= charge * self._lee.compute_phi_local(
+                    self._prop_space[movxi, :], prop_sph[movxi, :]
+                )[0]
 
 
 class FMMSelfInteraction:
@@ -155,6 +201,9 @@ class FMMSelfInteraction:
         self._lee = local_exp_eval
         self._bc = boundary_condition
         self.fmm = fmm
+
+        if self._bc is BCType.PBC:
+            self.lrc = LongRangeCorrection(fmm, domain, local_exp_eval)
 
         self._new27direct = 0.0
         ex = self.domain.extent
@@ -269,7 +318,7 @@ class FMMSelfInteraction:
 
 
 
-    def propose(self, total_movs, num_particles, host_data, cuda_data, arr):
+    def propose(self, total_movs, num_particles, host_data, cuda_data, arr, use_python=False):
 
         es = host_data['exclusive_sum']
         old_pos = host_data['old_positions']
@@ -293,14 +342,18 @@ class FMMSelfInteraction:
             arr.ctypes.get_as_parameter()           
         )
         
-        if self._bc is BCType.PBC:
-            for px in range(num_particles):
-                # assumed charge doesn't change
-                charge = old_chr[px]
-                opos = old_pos[px, :]
 
-                for movxi, movx in enumerate(range(es[px, 0], es[px+1, 0])):
-                    arr[px, movxi] -= self.py_self_interaction_indirect(opos, new_pos[movx, :], charge)
+        if self._bc is BCType.PBC:
+            if not use_python:
+                self.lrc.compute_corrections(total_movs, num_particles, host_data, cuda_data, arr)
+            else:
+                for px in range(num_particles):
+                    # assumed charge doesn't change
+                    charge = old_chr[px]
+                    opos = old_pos[px, :]
+
+                    for movxi, movx in enumerate(range(es[px, 0], es[px+1, 0])):
+                        arr[px, movxi] -= self.py_self_interaction_indirect(opos, new_pos[movx, :], charge)
 
 
     def py_self_interaction_direct(self, old_pos, prop_pos, q):
@@ -332,17 +385,12 @@ class FMMSelfInteraction:
             raise RuntimeError('bad boundary condition in _self_interaction')
 
     def py_self_interaction_indirect(self, old_pos, prop_pos, q):
-
-        if self._bc == BCType.PBC:
-            ex = self.domain.extent
-            lexp = self._really_long_range_diff(old_pos, prop_pos, q)
-            # the origin is the centre of the domain hence no offsets are needed
-            disp = spherical(tuple(prop_pos))
-            rlr = q * self._lee.compute_phi_local(lexp, disp)[0]
-            return rlr
-
-        else:
-            return 0.0
+        ex = self.domain.extent
+        lexp = self._really_long_range_diff(old_pos, prop_pos, q)
+        # the origin is the centre of the domain hence no offsets are needed
+        disp = spherical(tuple(prop_pos))
+        rlr = q * self._lee.compute_phi_local(lexp, disp)[0]
+        return rlr
 
 
 
