@@ -6,6 +6,10 @@ import numpy as np
 from math import *
 import scipy
 from scipy.special import lpmv
+from scipy.sparse import csr_matrix
+from scipy.sparse.linalg import aslinearoperator
+
+from functools import lru_cache
 
 REAL = ctypes.c_double
 INT64 = ctypes.c_int64
@@ -82,6 +86,66 @@ cell_offsets = (
     (  0,  1,  1),
     (  1,  1,  1),
 )
+
+
+@lru_cache(maxsize=128)
+def _A(n,m):
+    return ((-1.0)**n)/sqrt(factorial(n-m)*factorial(n+m))
+@lru_cache(maxsize=128)
+def _h(j,k,n,m):
+    if abs(k) > j: return 0.0
+    if abs(m) > n: return 0.0
+    if abs(m-k) > j+n: return 0.0
+    icoeff = ((1.j)**(abs(k-m) - abs(k) - abs(m))).real
+    return icoeff * _A(n, m) * _A(j, k) / (((-1.0) ** n) * _A(j+n, m-k))
+
+def _re_lm(l, m): return l**2 + l + m
+
+
+class LongRangeCorrection:
+    def __init__(self, fmm, domain):
+        self.fmm = fmm
+        self.domain = domain
+        self._rvec = self.fmm._boundary_terms
+
+        L = self.fmm.L
+        self.ncomp = 2*(L**2)
+        self.half_ncomp = L**2
+        self.rmat = np.zeros((self.half_ncomp, self.half_ncomp), dtype=REAL)
+        #self.rmat = csr_matrix((self.half_ncomp, self.half_ncomp), dtype=REAL)
+        row = 0
+        for jx in range(L):
+            for kx in range(-jx, jx+1):
+                col = 0
+                for nx in range(L):
+                    for mx in range(-nx, nx+1):
+                        if (not abs(mx-kx) > jx+nx) and \
+                            (not (abs(mx-kx) % 2 == 1)) and \
+                            (not (abs(jx+nx) % 2 == 1)):
+
+                            self.rmat[row, col] = _h(jx, kx, nx, mx) * self._rvec[_re_lm(jx+nx, mx-kx)]
+                        col += 1
+                row += 1
+        
+        self.sparse_rmat = csr_matrix(self.rmat)
+        self.linop = aslinearoperator(self.rmat)
+        self.sparse_linop = aslinearoperator(self.sparse_rmat)
+
+
+    def compute_corrections(self, total_movs, num_particles, host_data, cuda_data, arr):
+
+        es = host_data['exclusive_sum']
+        old_pos = host_data['old_positions']
+        new_pos = host_data['new_positions']
+
+        old_chr = host_data['old_charges']
+        
+        assert es.dtype == INT64
+        assert old_pos.dtype == REAL
+        assert old_chr.dtype == REAL
+        assert new_pos.dtype == REAL
+        assert arr.dtype == REAL
+
 
 
 
