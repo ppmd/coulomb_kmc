@@ -130,9 +130,23 @@ class KMCFMM(object):
         """
         return self.test_propose(moves, use_python=False)
 
-    def accept(self):
-        pass
-    
+    def accept(self, move):
+        """
+        Accept a move passed as a tuple (int: px, np.array: new_pos), where px is the
+        current particle local id, and new_pos is the new position e.g.
+        (46, np.array(1.0, 2.0, 3.0))
+        
+        Note this will move the particle in the position dat used in the intialiser.
+
+        :arg move: move to accept
+        """
+        self.test_accept_reinit(move)
+        
+    def test_accept_reinit(self, move):
+        # perform the move by setting the new position and reinitialising the instance
+        self.positions[move[0], :] = move[1]
+        self.initialise()
+
     def _check_ordering_dats(self):
         # self._ordering_win
         if (not hasattr(self.group, '_kmc_fmm_order')) or \
