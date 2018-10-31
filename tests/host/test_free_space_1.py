@@ -547,6 +547,12 @@ def test_kmc_fmm_free_space_accept_1():
         prop_accept_pos = prop[pid][1][prop_accept_id]
 
         kmc_fmm.test_accept_reinit((particle_id, prop_accept_pos))
+
+        print("REMOVE BELOW LINE")
+        kmc_fmm.accept((particle_id, prop_accept_pos))
+        print("---------")
+
+
         
         rel = abs(prop_accept_energy) if abs(prop_accept_energy) > 1.0 else 1.0
 

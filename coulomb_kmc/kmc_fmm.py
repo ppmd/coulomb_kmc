@@ -130,7 +130,7 @@ class KMCFMM(object):
         """
         return self.test_propose(moves, use_python=False)
 
-    def accept(self, move):
+    def accept(self, move=None):
         """
         Accept a move passed as a tuple (int: px, np.array: new_pos), where px is the
         current particle local id, and new_pos is the new position e.g.
@@ -140,12 +140,50 @@ class KMCFMM(object):
 
         :arg move: move to accept
         """
+
+        self._accept(move)
+
         self.test_accept_reinit(move)
+
+    def _accept(self, move):
+        
+        data = np.zeros(10 , dtype=INT64)
+        realdata = data[:7].view(dtype=REAL)
+
+        if move is not None:
+            old_position = self.positions[move[0], :]
+            new_position = np.zeros(3, REAL)
+            new_position[:] = move[1]
+            charge = self.charges[move[0], 0]
+            gid = self.md.ids[move[0], 0]
+            old_fmm_cell = self.group._fmm_cell[move[0], 0]           
+            new_fmm_cell = self._get_lin_cell(move[1])
+
+            realdata[0:3:] = old_position
+            realdata[3:6:] = new_position
+            realdata[6]    = charge
+            data[7]        = gid
+            data[8]        = old_fmm_cell
+            data[9]        = new_fmm_cell
+
+
+        # with parallel MPI the move needs to be communicated here
+        movedata = data.copy()
+
+        assert self.comm.size == 1
+        # update the position assuming one rank for now
+        self.positions[move[0], :] = move[1]
+        # update the fmm cell
+        self.group._fmm_cell[move[0]] = new_fmm_cell
+
+        self.kmcl.accept(movedata)
+
         
     def test_accept_reinit(self, move):
         # perform the move by setting the new position and reinitialising the instance
         self.positions[move[0], :] = move[1]
         self.initialise()
+
 
     def _check_ordering_dats(self):
         # self._ordering_win
@@ -451,6 +489,11 @@ class KMCFMM(object):
         cz = (cycz - cy) // sl
         return cx, cy, cz
     
+    def _get_lin_cell(self, position):
+        cell_tuple = self._get_cell(position)
+        cc = 2**(self.fmm.R -1)
+        return cell_tuple[0] + cc * (cell_tuple[1] + cc * cell_tuple[2])
+
     def _get_cell(self, position):
 
         extent = self.group.domain.extent

@@ -153,6 +153,77 @@ class LocalParticleData(LocalOctalBase):
         else:
             self._init_host_kernels()
 
+
+    def accept(self, movedata):
+        """
+        We assume that the particle dats were already updated
+        """
+
+        movedata = np.zeros(10 , dtype=INT64)
+        realdata = movedata[:7].view(dtype=REAL)
+
+        old_position = realdata[0:3:]
+        new_position = realdata[3:6:]
+        charge       = realdata[6]
+        gid          = movedata[7]
+        old_fmm_cell = movedata[8]
+        new_fmm_cell = movedata[9]
+
+        new_cell_tuple = self._cell_lin_to_tuple(new_fmm_cell)
+        old_cell_tuple = self._cell_lin_to_tuple(old_fmm_cell)
+        
+        old_tuple_s2f = tuple(reversed(old_cell_tuple))
+        new_tuple_s2f = tuple(reversed(new_cell_tuple))
+
+        old_locs = [[cxi for cxi, cx in enumerate(dims) if (cx == old_tuple_s2f[di])] for \
+            di, dims in enumerate(self.cell_indices)]
+        new_locs = [[cxi for cxi, cx in enumerate(dims) if (cx == new_tuple_s2f[di])] for \
+            di, dims in enumerate(self.cell_indices)]
+        
+
+        # add the new data if the new position is on this rank
+        if (len(new_locs[0]) > 0) and (len(new_locs[1]) > 0) and (len(new_locs[2]) > 0):
+            old_occupancy = self.local_cell_occupancy[new_locs[0][0], new_locs[1][0], new_locs[2][0], 0]
+            possible_new_max = old_occupancy + 1
+            # resize if needed
+            self._resize_particle_store(possible_new_max)
+
+            self.local_cell_occupancy[new_locs[0], new_locs[1], new_locs[2], 0] += 1
+            self.local_particle_store_ids[new_locs[0], new_locs[1], new_locs[2], possible_new_max] = gid
+            self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], possible_new_max, 0] = new_position[0]
+            self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], possible_new_max, 1] = new_position[1]
+            self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], possible_new_max, 2] = new_position[2]
+            self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], possible_new_max, 3] = charge
+            
+            # insert the gid if cuda is used
+            intview = self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], possible_new_max, 3].view(
+                dtype=INT64)
+            intview[:] = gid
+
+        # check this rank has relevevant cells for the old location
+        if (len(old_locs[0]) > 0) and (len(old_locs[1]) > 0) and (len(old_locs[2]) > 0):
+            # need to find the old location in the store
+            index = self.local_particle_store_ids[old_locs[0][0], old_locs[1][0], old_locs[2][0], :] == gid
+            assert len(index) == 1
+            old_occupancy = self.local_cell_occupancy[old_locs[0][0], old_locs[1][0], old_locs[2][0], 0]
+            # set new occupancy
+            self.local_cell_occupancy[old_locs[0], old_locs[1], old_locs[2], 0] -= 1
+            
+            # get the old data
+            pos0 = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy, 0]
+            pos1 = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy, 1]
+            pos2 = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy, 2]
+            char = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy, 3]
+            gido = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy, 4]
+            
+            # shuffle the data down
+            self.local_particle_store[old_locs[0], old_locs[1], old_locs[2], index, 0] = pos0
+            self.local_particle_store[old_locs[0], old_locs[1], old_locs[2], index, 1] = pos1
+            self.local_particle_store[old_locs[0], old_locs[1], old_locs[2], index, 2] = pos2
+            self.local_particle_store[old_locs[0], old_locs[1], old_locs[2], index, 3] = char
+            self.local_particle_store[old_locs[0], old_locs[1], old_locs[2], index, 4] = gido
+
+
     def propose(self, total_movs, num_particles, host_data, cuda_data):
 
         t0 = time.time()
@@ -256,6 +327,7 @@ class LocalParticleData(LocalOctalBase):
                 disp_unit=nbytes,
                 comm=self.comm
             )
+
             # this stride is also used for the local store
             self._max_cell_occ = max_cell_occ
             
@@ -271,6 +343,30 @@ class LocalParticleData(LocalOctalBase):
 
         else:
             self._owner_store.fill(0)
+
+
+    def _resize_particle_store(self, max_cell_occ):
+        if self.local_particle_store.shape[3] < max_cell_occ:
+
+            old_max = self.local_particle_store.shape[3]
+            self._mac_cell_occ = max_cell_occ
+
+            old_store = self.local_particle_store
+            old_store_ids = self.local_particle_store_ids
+
+            lsd = self.local_store_dims
+            self.local_particle_store = np.zeros(
+                (lsd[0], lsd[1], lsd[2], max_cell_occ, 5), 
+                dtype=REAL
+            )
+            self.local_particle_store_ids = np.zeros(
+                (lsd[0], lsd[1], lsd[2], max_cell_occ), 
+                dtype=INT64
+            )
+
+            self.local_particle_store[:,:,:, :old_max, :] = old_store[:,:,:,:,:]
+            self.local_particle_store_ids[:,:,:, :old_max] = old_store_ids[:,:,:,:]
+
 
     
     def initialise(self, positions, charges, fmm_cells, ids):
