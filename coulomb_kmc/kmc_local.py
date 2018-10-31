@@ -189,22 +189,26 @@ class LocalParticleData(LocalOctalBase):
             self._resize_particle_store(possible_new_max)
 
             self.local_cell_occupancy[new_locs[0], new_locs[1], new_locs[2], 0] += 1
-            self.local_particle_store_ids[new_locs[0], new_locs[1], new_locs[2], possible_new_max] = gid
-            self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], possible_new_max, 0] = new_position[0]
-            self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], possible_new_max, 1] = new_position[1]
-            self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], possible_new_max, 2] = new_position[2]
-            self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], possible_new_max, 3] = charge
+            self.local_particle_store_ids[new_locs[0], new_locs[1], new_locs[2], old_occupancy] = gid
+            self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], old_occupancy, 0] = new_position[0]
+            self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], old_occupancy, 1] = new_position[1]
+            self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], old_occupancy, 2] = new_position[2]
+            self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], old_occupancy, 3] = charge
             
             # insert the gid if cuda is used
             intview = self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], possible_new_max, 3].view(
                 dtype=INT64)
             intview[:] = gid
 
+
         # check this rank has relevevant cells for the old location
         if (len(old_locs[0]) > 0) and (len(old_locs[1]) > 0) and (len(old_locs[2]) > 0):
             # need to find the old location in the store
             index = self.local_particle_store_ids[old_locs[0][0], old_locs[1][0], old_locs[2][0], :] == gid
+
+            # this index should be unique, if not something else failed
             assert len(index) == 1
+
             old_occupancy = self.local_cell_occupancy[old_locs[0][0], old_locs[1][0], old_locs[2][0], 0]
             # set new occupancy
             self.local_cell_occupancy[old_locs[0], old_locs[1], old_locs[2], 0] -= 1
