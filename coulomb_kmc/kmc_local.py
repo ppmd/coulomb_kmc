@@ -214,11 +214,11 @@ class LocalParticleData(LocalOctalBase):
             self.local_cell_occupancy[old_locs[0], old_locs[1], old_locs[2], 0] -= 1
             
             # get the old data
-            pos0 = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy, 0]
-            pos1 = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy, 1]
-            pos2 = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy, 2]
-            char = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy, 3]
-            gido = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy, 4]
+            pos0 = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy-1, 0]
+            pos1 = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy-1, 1]
+            pos2 = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy-1, 2]
+            char = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy-1, 3]
+            gido = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy-1, 4]
             
             # shuffle the data down
             self.local_particle_store[old_locs[0], old_locs[1], old_locs[2], index, 0] = pos0

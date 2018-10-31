@@ -141,7 +141,7 @@ class KMCFMM(object):
         :arg move: move to accept
         """
 
-        self._accept(move)
+        # self._accept(move)
 
         self.test_accept_reinit(move)
 
