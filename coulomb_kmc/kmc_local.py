@@ -155,11 +155,7 @@ class LocalParticleData(LocalOctalBase):
 
 
     def accept(self, movedata):
-        """
-        We assume that the particle dats were already updated
-        """
 
-        movedata = np.zeros(10 , dtype=INT64)
         realdata = movedata[:7].view(dtype=REAL)
 
         old_position = realdata[0:3:]
@@ -174,12 +170,21 @@ class LocalParticleData(LocalOctalBase):
         
         old_tuple_s2f = tuple(reversed(old_cell_tuple))
         new_tuple_s2f = tuple(reversed(new_cell_tuple))
-
-        old_locs = [[cxi for cxi, cx in enumerate(dims) if (cx == old_tuple_s2f[di])] for \
-            di, dims in enumerate(self.cell_indices)]
-        new_locs = [[cxi for cxi, cx in enumerate(dims) if (cx == new_tuple_s2f[di])] for \
-            di, dims in enumerate(self.cell_indices)]
         
+        if self.boundary_condition is BCType.FREE_SPACE:
+            old_locs = [[cxi for cxi, cx in enumerate(dims) if \
+                ((cx == old_tuple_s2f[di]) and (abs(pbcs[cxi]) == 0))] for \
+                di, (dims, pbcs) in enumerate(zip(self.cell_indices, self.periodic_factors))]
+
+            new_locs = [[cxi for cxi, cx in enumerate(dims) if \
+                ((cx == new_tuple_s2f[di]) and (abs(pbcs[cxi]) == 0))] for \
+                di, (dims, pbcs) in enumerate(zip(self.cell_indices, self.periodic_factors))]
+
+        elif self.boundary_condition in (BCType.PBC, BCType.NEAREST):
+            old_locs = [[cxi for cxi, cx in enumerate(dims) if (cx == old_tuple_s2f[di])] for \
+                di, dims in enumerate(self.cell_indices)]
+            new_locs = [[cxi for cxi, cx in enumerate(dims) if (cx == new_tuple_s2f[di])] for \
+                di, dims in enumerate(self.cell_indices)]
 
         # add the new data if the new position is on this rank
         if (len(new_locs[0]) > 0) and (len(new_locs[1]) > 0) and (len(new_locs[2]) > 0):
@@ -196,7 +201,7 @@ class LocalParticleData(LocalOctalBase):
             self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], old_occupancy, 3] = charge
             
             # insert the gid if cuda is used
-            intview = self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], possible_new_max, 3].view(
+            intview = self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], old_occupancy, 4].view(
                 dtype=INT64)
             intview[:] = gid
 
@@ -204,12 +209,21 @@ class LocalParticleData(LocalOctalBase):
         # check this rank has relevevant cells for the old location
         if (len(old_locs[0]) > 0) and (len(old_locs[1]) > 0) and (len(old_locs[2]) > 0):
             # need to find the old location in the store
-            index = self.local_particle_store_ids[old_locs[0][0], old_locs[1][0], old_locs[2][0], :] == gid
+            old_occupancy = self.local_cell_occupancy[old_locs[0][0], old_locs[1][0], old_locs[2][0], 0]
+
+            index = self.local_particle_store_ids[old_locs[0][0], old_locs[1][0], old_locs[2][0], :old_occupancy] == gid
+            index = np.where(index)
 
             # this index should be unique, if not something else failed
-            assert len(index) == 1
+            if len(index[0]) != 1 and old_fmm_cell != new_fmm_cell:
+                print("Index was not unique, this is an error.")
+                print(index)
+                raise RuntimeError()
+            elif len(index[0]) != 2 and old_fmm_cell == new_fmm_cell:
+                raise RuntimeError()
+            else:
+                index = int(index[0][0])
 
-            old_occupancy = self.local_cell_occupancy[old_locs[0][0], old_locs[1][0], old_locs[2][0], 0]
             # set new occupancy
             self.local_cell_occupancy[old_locs[0], old_locs[1], old_locs[2], 0] -= 1
             

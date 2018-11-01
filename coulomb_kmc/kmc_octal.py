@@ -16,7 +16,7 @@ from ppmd.coulomb.sph_harm import SphGen, SphSymbol, cmplx_mul
 from ppmd.lib import build
 
 from coulomb_kmc.common import BCType, PROFILE
-from coulomb_kmc.kmc_fmm_common import LocalOctalBase
+from coulomb_kmc.kmc_fmm_common import LocalOctalBase, LocalExpEval, spherical
 
 MPI = mpi.MPI
 
@@ -45,6 +45,7 @@ class LocalCellExpansions(LocalOctalBase):
         self.periodic_factors = self.md.periodic_factors
         self.global_to_local = self.md.global_to_local
         self.boundary_condition = self.md.boundary_condition
+        self._lee = LocalExpEval(self.fmm.L)
 
         local_store_dims = self.local_store_dims
 
@@ -70,6 +71,69 @@ class LocalCellExpansions(LocalOctalBase):
         # compute the cell centres
         self.cell_centres = np.zeros(local_store_dims + [3], dtype=REAL)
         self._host_lib = self._init_host_kernels(self.fmm.L)
+
+
+    def accept(self, movedata):
+        self._accept_py(movedata)
+
+    def _accept_py(self, movedata):
+        realdata = movedata[:7].view(dtype=REAL)
+
+        old_position = realdata[0:3:]
+        new_position = realdata[3:6:]
+        charge       = realdata[6]
+        gid          = movedata[7]
+        old_fmm_cell = movedata[8]
+        new_fmm_cell = movedata[9]
+
+        new_cell_tuple = self._cell_lin_to_tuple(new_fmm_cell)
+        old_cell_tuple = self._cell_lin_to_tuple(old_fmm_cell)
+        
+        old_tuple_s2f = tuple(reversed(old_cell_tuple))
+        new_tuple_s2f = tuple(reversed(new_cell_tuple))
+
+        lsd = self.local_store_dims
+
+        if self.boundary_condition is BCType.FREE_SPACE:
+
+            def old_cell_well_separated(cx):
+                return not all([abs(cx - old_tuple_s2f[cxi]) < 2 for cxi, cx in enumerate(cx)])
+            
+            lsdi = (range(lsd[0]), range(lsd[1]), range(lsd[2]))
+
+            for lsx in product(*lsdi):
+                cellx = (self.cell_indices[0][lsx[0]], self.cell_indices[1][lsx[1]], 
+                    self.cell_indices[2][lsx[2]])
+
+                if old_cell_well_separated(cellx) and \
+                    abs(self.periodic_factors[0][lsx[0]]) == 0 and \
+                    abs(self.periodic_factors[1][lsx[1]]) == 0 and \
+                    abs(self.periodic_factors[2][lsx[2]]) == 0:
+
+                    cind = tuple(list(lsx) + [None])
+                    cell_centre = self.cell_centres[cind][0]
+                    disp = spherical(tuple(old_position - cell_centre))
+                    self._lee.local_exp(disp, -1.0 * charge, self.local_expansions[cind])
+
+            def new_cell_well_separated(cx):
+                return not all([abs(cx - new_tuple_s2f[cxi]) < 2 for cxi, cx in enumerate(cx)])
+
+            for lsx in product(*lsdi):
+                cellx = (self.cell_indices[0][lsx[0]], self.cell_indices[1][lsx[1]], 
+                    self.cell_indices[2][lsx[2]])
+
+                if new_cell_well_separated(cellx) and \
+                    abs(self.periodic_factors[0][lsx[0]]) == 0 and \
+                    abs(self.periodic_factors[1][lsx[1]]) == 0 and \
+                    abs(self.periodic_factors[2][lsx[2]]) == 0:
+
+                    cind = tuple(list(lsx) + [None])
+                    cell_centre = self.cell_centres[cind][0]
+                    disp = spherical(tuple(new_position - cell_centre))
+                    self._lee.local_exp(disp, charge, self.local_expansions[cind])
+
+        else:
+            raise RuntimeError()
 
     def propose(self, total_movs, num_particles, host_data, cuda_data):
 

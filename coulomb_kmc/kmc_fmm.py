@@ -141,7 +141,7 @@ class KMCFMM(object):
         :arg move: move to accept
         """
 
-        # self._accept(move)
+        self._accept(move)
 
         self.test_accept_reinit(move)
 
@@ -165,6 +165,9 @@ class KMCFMM(object):
             data[7]        = gid
             data[8]        = old_fmm_cell
             data[9]        = new_fmm_cell
+        
+            new_energy = self.propose((move,))[0][0]
+            self.energy = new_energy
 
 
         # with parallel MPI the move needs to be communicated here
@@ -177,6 +180,7 @@ class KMCFMM(object):
         self.group._fmm_cell[move[0]] = new_fmm_cell
 
         self.kmcl.accept(movedata)
+        self.kmco.accept(movedata)
 
         
     def test_accept_reinit(self, move):
@@ -362,6 +366,17 @@ class KMCFMM(object):
             - self._tmp_energies[_ENERGY.U0_DIRECT] \
             - self._tmp_energies[_ENERGY.U0_INDIRECT] \
             - self._tmp_energies[_ENERGY.U01_SELF]
+
+        """
+        print("="*60)
+        for kx in (_ENERGY.U_DIFF,
+            _ENERGY.U1_DIRECT,
+            _ENERGY.U1_INDIRECT,
+            _ENERGY.U0_DIRECT,
+            _ENERGY.U0_INDIRECT,
+            _ENERGY.U01_SELF):
+            print(kx, self._tmp_energies[kx][0])
+        """
 
         prop_energy = []
 

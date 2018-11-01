@@ -495,7 +495,6 @@ class LocalExpEval(object):
 
         self._multipole_lib = simple_lib_creator(header_code=header, src_code=src)['multipole_exp']
 
-
         # --- lib to evaluate local expansions --- 
 
         assign_gen = ''
@@ -535,6 +534,46 @@ class LocalExpEval(object):
         header = str(sph_gen.header)
 
         self._local_eval_lib = simple_lib_creator(header_code=header, src_code=src)['local_eval']
+
+        # lib to create local expansions
+
+        assign_gen = 'const double iradius = 1.0/radius;\n'
+        assign_gen += 'double rhol = iradius;\n'
+        for lx in range(self.L):
+            for mx in range(-lx, lx+1):
+                assign_gen += 'out[{ind}] += {ylmm} * rhol * charge;\n'.format(
+                        ind=cube_ind(lx, mx),
+                        ylmm=str(sph_gen.get_y_sym(lx, -mx)[0])
+                    )
+                assign_gen += 'out[IM_OFFSET + {ind}] += {ylmm} * rhol * charge;\n'.format(
+                        ind=cube_ind(lx, mx),
+                        ylmm=str(sph_gen.get_y_sym(lx, -mx)[1])
+                    )
+            assign_gen += 'rhol *= iradius;\n'
+
+        src = """
+        #define IM_OFFSET ({IM_OFFSET})
+
+        extern "C" int create_local_exp(
+            const double charge,
+            const double radius,
+            const double theta,
+            const double phi,
+            double * RESTRICT out
+        ){{
+            {SPH_GEN}
+            {ASSIGN_GEN}
+            return 0;
+        }}
+        """.format(
+            SPH_GEN=str(sph_gen.module),
+            ASSIGN_GEN=str(assign_gen),
+            IM_OFFSET=(self.L**2),
+        )
+        header = str(sph_gen.header)
+
+        self._local_create_lib = simple_lib_creator(header_code=header, src_code=src)['create_local_exp']
+
 
     def compute_phi_local(self, moments, disp_sph):
         assert moments.dtype == REAL
@@ -586,6 +625,20 @@ class LocalExpEval(object):
 
         return phi_sph_re, phi_sph_im
 
+    def local_exp(self, sph, charge, arr):
+        """
+        For a charge at the point sph computes the local expansion at the origin
+        and appends it onto arr.
+        """
+
+        assert arr.dtype == REAL
+        self._local_create_lib(
+            REAL(charge),
+            REAL(sph[0]),
+            REAL(sph[1]),
+            REAL(sph[2]),
+            arr.ctypes.get_as_parameter()
+        )
 
     def multipole_exp(self, sph, charge, arr):
         """
