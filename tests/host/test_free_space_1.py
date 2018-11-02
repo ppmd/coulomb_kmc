@@ -640,7 +640,7 @@ def test_kmc_fmm_free_space_accept_2():
         for px in range(1):
 
             propn = rng.randint(1, 8)
-            propn = 1
+            # propn = 1
             nmov += propn
 
             prop.append(

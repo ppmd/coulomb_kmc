@@ -367,16 +367,14 @@ class KMCFMM(object):
             - self._tmp_energies[_ENERGY.U0_INDIRECT] \
             - self._tmp_energies[_ENERGY.U01_SELF]
 
-        """
-        print("="*60)
-        for kx in (_ENERGY.U_DIFF,
-            _ENERGY.U1_DIRECT,
-            _ENERGY.U1_INDIRECT,
-            _ENERGY.U0_DIRECT,
-            _ENERGY.U0_INDIRECT,
-            _ENERGY.U01_SELF):
-            print(kx, self._tmp_energies[kx][0])
-        """
+        #print("="*60)
+        #for kx in (_ENERGY.U_DIFF,
+        #    _ENERGY.U1_DIRECT,
+        #    _ENERGY.U1_INDIRECT,
+        #    _ENERGY.U0_DIRECT,
+        #    _ENERGY.U0_INDIRECT,
+        #    _ENERGY.U01_SELF):
+        #    print(kx, self._tmp_energies[kx][0])
 
         prop_energy = []
 

@@ -16,7 +16,7 @@ from ppmd.coulomb.sph_harm import SphGen, SphSymbol, cmplx_mul
 from ppmd.lib import build
 
 from coulomb_kmc.common import BCType, PROFILE
-from coulomb_kmc.kmc_fmm_common import LocalOctalBase, LocalExpEval, spherical
+from coulomb_kmc.kmc_fmm_common import LocalOctalBase, LocalExpEval, spherical, cell_offsets
 
 MPI = mpi.MPI
 
@@ -136,15 +136,16 @@ class LocalCellExpansions(LocalOctalBase):
         elif self.boundary_condition in (BCType.PBC, BCType.NEAREST):
             R = self.fmm.R
             sl = 2 ** (R - 1)
-            fmm_cell_offset = (sl*ox[0], sl*ox[1], sl*ox[2])
             extent = self.domain.extent
 
             for ox in cell_offsets:
 
+                fmm_cell_offset = (sl*ox[0], sl*ox[1], sl*ox[2])
                 offset_pos = np.array((ox[2] * extent[0], ox[1] * extent[1], ox[0] * extent[2]))
 
                 def old_cell_well_separated(cx):
-                    return not all([abs(cx - old_tuple_s2f[cxi] - fmm_cell_offset[cxi]) < 2 for cxi, cx in enumerate(cx)])
+                    return not all([abs(cx - old_tuple_s2f[cxi] - fmm_cell_offset[cxi]) < 2 \
+                        for cxi, cx in enumerate(cx)])
                 
                 lsdi = (range(lsd[0]), range(lsd[1]), range(lsd[2]))
 
@@ -166,7 +167,8 @@ class LocalCellExpansions(LocalOctalBase):
                         self._lee.local_exp(disp, -1.0 * charge, self.local_expansions[cind])
 
                 def new_cell_well_separated(cx):
-                    return not all([abs(cx - new_tuple_s2f[cxi] - fmm_cell_offset[cxi]) < 2 for cxi, cx in enumerate(cx)])
+                    return not all([abs(cx - new_tuple_s2f[cxi] - fmm_cell_offset[cxi]) < 2 \
+                        for cxi, cx in enumerate(cx)])
 
                 for lsx in product(*lsdi):
                     # get the original fmm cell in the primary image

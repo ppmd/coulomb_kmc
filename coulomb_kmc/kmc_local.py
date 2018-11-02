@@ -180,9 +180,18 @@ class LocalParticleData(LocalOctalBase):
                 ((cx == new_tuple_s2f[di]) and (abs(pbcs[cxi]) == 0))] for \
                 di, (dims, pbcs) in enumerate(zip(self.cell_indices, self.periodic_factors))]
 
-        elif self.boundary_condition in (BCType.PBC, BCType.NEAREST):
+        elif self.boundary_condition is BCType.NEAREST:
+            old_locs = [[cxi for cxi, cx in enumerate(dims) if \
+                ((cx == old_tuple_s2f[di]) and (abs(pbcs[cxi]) < 2))] for \
+                di, (dims, pbcs) in enumerate(zip(self.cell_indices, self.periodic_factors))]
+
+            new_locs = [[cxi for cxi, cx in enumerate(dims) if \
+                ((cx == new_tuple_s2f[di]) and (abs(pbcs[cxi]) < 2))] for \
+                di, (dims, pbcs) in enumerate(zip(self.cell_indices, self.periodic_factors))]
+
+        elif self.boundary_condition is BCType.PBC:
             old_locs = [[cxi for cxi, cx in enumerate(dims) if (cx == old_tuple_s2f[di])] for \
-                di, dims in enumerate(self.cell_indices)]
+                di, dims in enumerate(self.cell_indices)]           
             new_locs = [[cxi for cxi, cx in enumerate(dims) if (cx == new_tuple_s2f[di])] for \
                 di, dims in enumerate(self.cell_indices)]
         else:
@@ -191,20 +200,29 @@ class LocalParticleData(LocalOctalBase):
         # add the new data if the new position is on this rank
         if (len(new_locs[0]) > 0) and (len(new_locs[1]) > 0) and (len(new_locs[2]) > 0):
             old_occupancy = self.local_cell_occupancy[new_locs[0][0], new_locs[1][0], new_locs[2][0], 0]
+            
+
             possible_new_max = old_occupancy + 1
             # resize if needed
             self._resize_particle_store(possible_new_max)
 
-            self.local_cell_occupancy[new_locs[0], new_locs[1], new_locs[2], 0] += 1
-            self.local_particle_store_ids[new_locs[0], new_locs[1], new_locs[2], old_occupancy] = gid
-            self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], old_occupancy, 0] = new_position[0]
-            self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], old_occupancy, 1] = new_position[1]
-            self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], old_occupancy, 2] = new_position[2]
-            self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], old_occupancy, 3] = charge
+            occ_index = np.ix_(new_locs[0], new_locs[1], new_locs[2], (0,))
+            store_id_index = np.ix_(new_locs[0], new_locs[1], new_locs[2], (old_occupancy,))
+            store_index0 = np.ix_(new_locs[0], new_locs[1], new_locs[2], (old_occupancy,), (0,))
+            store_index1 = np.ix_(new_locs[0], new_locs[1], new_locs[2], (old_occupancy,), (1,))
+            store_index2 = np.ix_(new_locs[0], new_locs[1], new_locs[2], (old_occupancy,), (2,))
+            store_index3 = np.ix_(new_locs[0], new_locs[1], new_locs[2], (old_occupancy,), (3,))
+            store_index4 = np.ix_(new_locs[0], new_locs[1], new_locs[2], (old_occupancy,), (4,))
+            
+            self.local_cell_occupancy[occ_index] += 1
+            self.local_particle_store_ids[store_id_index] = gid
+            self.local_particle_store[store_index0] = new_position[0]
+            self.local_particle_store[store_index1] = new_position[1]
+            self.local_particle_store[store_index2] = new_position[2]
+            self.local_particle_store[store_index3] = charge
             
             # insert the gid if cuda is used
-            intview = self.local_particle_store[new_locs[0], new_locs[1], new_locs[2], old_occupancy, 4].view(
-                dtype=INT64)
+            intview = self.local_particle_store[store_index4].view(dtype=INT64)
             intview[:] = gid
 
             # apply periodic boundary conditions to the newly inserted positions
@@ -217,7 +235,6 @@ class LocalParticleData(LocalOctalBase):
                     self.local_particle_store[cellx[0], cellx[1], cellx[2], old_occupancy, 0] += xshift
                     self.local_particle_store[cellx[0], cellx[1], cellx[2], old_occupancy, 1] += yshift
                     self.local_particle_store[cellx[0], cellx[1], cellx[2], old_occupancy, 2] += zshift
-
 
         # check this rank has relevevant cells for the old location
         if (len(old_locs[0]) > 0) and (len(old_locs[1]) > 0) and (len(old_locs[2]) > 0):
@@ -239,22 +256,40 @@ class LocalParticleData(LocalOctalBase):
             else:
                 index = int(index[0][0])
 
+
+            occ_index = np.ix_(old_locs[0], old_locs[1], old_locs[2], (0,))
+            store_id_index = np.ix_(old_locs[0], old_locs[1], old_locs[2], (old_occupancy-1,))
+            store_index0 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (old_occupancy-1,), (0,))
+            store_index1 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (old_occupancy-1,), (1,))
+            store_index2 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (old_occupancy-1,), (2,))
+            store_index3 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (old_occupancy-1,), (3,))
+            store_index4 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (old_occupancy-1,), (4,))
+
+            store_id_indexi = np.ix_(old_locs[0], old_locs[1], old_locs[2], (index,))
+            store_indexi0 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (index,), (0,))
+            store_indexi1 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (index,), (1,))
+            store_indexi2 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (index,), (2,))
+            store_indexi3 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (index,), (3,))
+            store_indexi4 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (index,), (4,))
+
             # set new occupancy
-            self.local_cell_occupancy[old_locs[0], old_locs[1], old_locs[2], 0] -= 1
-            
+            self.local_cell_occupancy[occ_index] -= 1
+
             # get the end data
-            pos0 = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy-1, 0]
-            pos1 = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy-1, 1]
-            pos2 = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy-1, 2]
-            char = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy-1, 3]
-            gido = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy-1, 4]
+            gidi = self.local_particle_store_ids[store_id_index]
+            pos0 = self.local_particle_store[store_index0]
+            pos1 = self.local_particle_store[store_index1]
+            pos2 = self.local_particle_store[store_index2]
+            char = self.local_particle_store[store_index3]
+            gido = self.local_particle_store[store_index4]
             
             # shuffle the data down
-            self.local_particle_store[old_locs[0], old_locs[1], old_locs[2], index, 0] = pos0
-            self.local_particle_store[old_locs[0], old_locs[1], old_locs[2], index, 1] = pos1
-            self.local_particle_store[old_locs[0], old_locs[1], old_locs[2], index, 2] = pos2
-            self.local_particle_store[old_locs[0], old_locs[1], old_locs[2], index, 3] = char
-            self.local_particle_store[old_locs[0], old_locs[1], old_locs[2], index, 4] = gido
+            self.local_particle_store_ids[store_id_indexi] = gidi 
+            self.local_particle_store[store_indexi0] = pos0
+            self.local_particle_store[store_indexi1] = pos1
+            self.local_particle_store[store_indexi2] = pos2
+            self.local_particle_store[store_indexi3] = char
+            self.local_particle_store[store_indexi4] = gido
 
 
     def propose(self, total_movs, num_particles, host_data, cuda_data):
