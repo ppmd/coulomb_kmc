@@ -70,6 +70,7 @@ class LocalCellExpansions(LocalOctalBase):
 
         # compute the cell centres
         self.cell_centres = np.zeros(local_store_dims + [3], dtype=REAL)
+        self.orig_cell_centres = np.zeros_like(self.cell_centres)
         self._host_lib = self._init_host_kernels(self.fmm.L)
 
 
@@ -111,7 +112,7 @@ class LocalCellExpansions(LocalOctalBase):
                     abs(self.periodic_factors[2][lsx[2]]) == 0:
 
                     cind = tuple(list(lsx) + [None])
-                    cell_centre = self.cell_centres[cind][0]
+                    cell_centre = self.orig_cell_centres[cind][0]
                     disp = spherical(tuple(old_position - cell_centre))
                     self._lee.local_exp(disp, -1.0 * charge, self.local_expansions[cind])
 
@@ -128,12 +129,65 @@ class LocalCellExpansions(LocalOctalBase):
                     abs(self.periodic_factors[2][lsx[2]]) == 0:
 
                     cind = tuple(list(lsx) + [None])
-                    cell_centre = self.cell_centres[cind][0]
+                    cell_centre = self.orig_cell_centres[cind][0]
                     disp = spherical(tuple(new_position - cell_centre))
                     self._lee.local_exp(disp, charge, self.local_expansions[cind])
 
+        elif self.boundary_condition in (BCType.PBC, BCType.NEAREST):
+            R = self.fmm.R
+            sl = 2 ** (R - 1)
+            fmm_cell_offset = (sl*ox[0], sl*ox[1], sl*ox[2])
+            extent = self.domain.extent
+
+            for ox in cell_offsets:
+
+                offset_pos = np.array((ox[2] * extent[0], ox[1] * extent[1], ox[0] * extent[2]))
+
+                def old_cell_well_separated(cx):
+                    return not all([abs(cx - old_tuple_s2f[cxi] - fmm_cell_offset[cxi]) < 2 for cxi, cx in enumerate(cx)])
+                
+                lsdi = (range(lsd[0]), range(lsd[1]), range(lsd[2]))
+
+                for lsx in product(*lsdi):
+                    # get the original fmm cell in the primary image
+                    cellx = (self.cell_indices[0][lsx[0]], self.cell_indices[1][lsx[1]], 
+                        self.cell_indices[2][lsx[2]])
+                    
+                    # check if the original fmm cell was well separated
+                    if old_cell_well_separated(cellx) and \
+                        abs(self.periodic_factors[0][lsx[0]]) == 0 and \
+                        abs(self.periodic_factors[1][lsx[1]]) == 0 and \
+                        abs(self.periodic_factors[2][lsx[2]]) == 0:
+
+                        cind = tuple(list(lsx) + [None])
+                        # original cell centre
+                        cell_centre = self.orig_cell_centres[cind][0]
+                        disp = spherical(tuple(old_position + offset_pos - cell_centre))
+                        self._lee.local_exp(disp, -1.0 * charge, self.local_expansions[cind])
+
+                def new_cell_well_separated(cx):
+                    return not all([abs(cx - new_tuple_s2f[cxi] - fmm_cell_offset[cxi]) < 2 for cxi, cx in enumerate(cx)])
+
+                for lsx in product(*lsdi):
+                    # get the original fmm cell in the primary image
+                    cellx = (self.cell_indices[0][lsx[0]], self.cell_indices[1][lsx[1]], 
+                        self.cell_indices[2][lsx[2]])
+                    
+                    # check if the original fmm cell was well separated
+                    if new_cell_well_separated(cellx) and \
+                        abs(self.periodic_factors[0][lsx[0]]) == 0 and \
+                        abs(self.periodic_factors[1][lsx[1]]) == 0 and \
+                        abs(self.periodic_factors[2][lsx[2]]) == 0:
+
+                        cind = tuple(list(lsx) + [None])
+                        # original cell centre
+                        cell_centre = self.orig_cell_centres[cind][0]
+                        disp = spherical(tuple(new_position + offset_pos - cell_centre))
+                        self._lee.local_exp(disp, charge, self.local_expansions[cind])
+
+
         else:
-            raise RuntimeError()
+            raise NotImplementedError()
 
     def propose(self, total_movs, num_particles, host_data, cuda_data):
 
@@ -182,6 +236,9 @@ class LocalCellExpansions(LocalOctalBase):
         starts = [ -0.5*ex + 0.5*wx for wx, ex in zip(widths, extent_s2f)]
         centres = [[starts[dimi] + cx * widths[dimi] for cx in dimx] for \
             dimi, dimx in enumerate(self.cell_offsets)]
+        orig_centres = [[starts[dimi] + cx * widths[dimi] for cx in dimx] for \
+            dimi, dimx in enumerate(self.cell_indices)]
+
 
         # store the centres as xyz 
         for lcellx in product(range(lsd[0]), range(lsd[1]), range(lsd[2])):
@@ -191,7 +248,12 @@ class LocalCellExpansions(LocalOctalBase):
                     centres[1][lcellx[1]], 
                     centres[0][lcellx[0]]
                 )
-
+            self.orig_cell_centres[lcellx[0], lcellx[1], lcellx[2], :] = \
+                (
+                    orig_centres[2][lcellx[2]],
+                    orig_centres[1][lcellx[1]], 
+                    orig_centres[0][lcellx[0]]
+                )
     
     def _get_local_expansions(self):
         # copy/get the local expansions required from the fmm instance

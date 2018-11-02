@@ -185,6 +185,8 @@ class LocalParticleData(LocalOctalBase):
                 di, dims in enumerate(self.cell_indices)]
             new_locs = [[cxi for cxi, cx in enumerate(dims) if (cx == new_tuple_s2f[di])] for \
                 di, dims in enumerate(self.cell_indices)]
+        else:
+            raise RuntimeError("Bad/not implemented boundary condition")
 
         # add the new data if the new position is on this rank
         if (len(new_locs[0]) > 0) and (len(new_locs[1]) > 0) and (len(new_locs[2]) > 0):
@@ -205,13 +207,26 @@ class LocalParticleData(LocalOctalBase):
                 dtype=INT64)
             intview[:] = gid
 
+            # apply periodic boundary conditions to the newly inserted positions
+            if self.boundary_condition in (BCType.PBC, BCType.NEAREST):
+                extent = self.domain.extent
+                for cellx in product(*new_locs):
+                    xshift = self.periodic_factors[2][cellx[2]] * extent[0]
+                    yshift = self.periodic_factors[1][cellx[1]] * extent[1]
+                    zshift = self.periodic_factors[0][cellx[0]] * extent[2]
+                    self.local_particle_store[cellx[0], cellx[1], cellx[2], old_occupancy, 0] += xshift
+                    self.local_particle_store[cellx[0], cellx[1], cellx[2], old_occupancy, 1] += yshift
+                    self.local_particle_store[cellx[0], cellx[1], cellx[2], old_occupancy, 2] += zshift
+
 
         # check this rank has relevevant cells for the old location
         if (len(old_locs[0]) > 0) and (len(old_locs[1]) > 0) and (len(old_locs[2]) > 0):
             # need to find the old location in the store
             old_occupancy = self.local_cell_occupancy[old_locs[0][0], old_locs[1][0], old_locs[2][0], 0]
 
-            index = self.local_particle_store_ids[old_locs[0][0], old_locs[1][0], old_locs[2][0], :old_occupancy] == gid
+            index = self.local_particle_store_ids[
+                old_locs[0][0], old_locs[1][0], old_locs[2][0], :old_occupancy] == gid
+
             index = np.where(index)
 
             # this index should be unique, if not something else failed
@@ -227,7 +242,7 @@ class LocalParticleData(LocalOctalBase):
             # set new occupancy
             self.local_cell_occupancy[old_locs[0], old_locs[1], old_locs[2], 0] -= 1
             
-            # get the old data
+            # get the end data
             pos0 = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy-1, 0]
             pos1 = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy-1, 1]
             pos2 = self.local_particle_store[old_locs[0][0], old_locs[1][0], old_locs[2][0], old_occupancy-1, 2]
