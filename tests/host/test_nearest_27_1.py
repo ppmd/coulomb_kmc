@@ -402,7 +402,7 @@ def test_kmc_fmm_nearest_27_accept_2():
             for pai, pbi in zip(pa, pb):
                 rel = abs(pai) if abs(pai) > 1.0 else 1.0
                 err = abs(pai - pbi) / rel
-                #print("--", err)
+                print("--", err)
                 assert err < 10.**-5
 
 
@@ -427,7 +427,7 @@ def test_kmc_fmm_nearest_27_accept_2():
         reeng = abs(kmc_fmmA.energy)
         rel = 1.0 if reeng < 1.0 else reeng
         err = abs(kmc_fmmA.energy - kmc_fmmB.energy) / rel
-        #print("==========>", err)
+        print("==========>", err)
         assert err < 10.**-5
 
 

@@ -187,9 +187,10 @@ class LocalCellExpansions(LocalOctalBase):
                         disp = spherical(tuple(new_position + offset_pos - cell_centre))
                         self._lee.local_exp(disp, charge, self.local_expansions[cind])
 
-
         else:
             raise NotImplementedError()
+
+
 
     def propose(self, total_movs, num_particles, host_data, cuda_data):
 

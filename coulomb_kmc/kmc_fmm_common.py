@@ -143,7 +143,7 @@ class LongRangeCorrection:
             self._prop_space = np.zeros((nc, self.ncomp), dtype=REAL)
             self._prop_matmul = np.zeros((self.ncomp, nc), dtype=REAL)
 
-    def compute_corrections(self, total_movs, num_particles, host_data, cuda_data, arr):
+    def compute_corrections(self, total_movs, num_particles, host_data, cuda_data, lr_correction, arr):
 
         es = host_data['exclusive_sum']
         old_pos = host_data['old_positions']
@@ -168,9 +168,9 @@ class LongRangeCorrection:
             
             disp = spherical(tuple(opos))
 
-            self._orig_space[:] = 0.0
+            self._orig_space[:] = lr_correction[:].copy()
+            # self._orig_space[:] = 0.0
             self._lee.multipole_exp(disp, -1.0 * charge, self._orig_space)
-
             self._resize_if_needed(num_prop)
 
             prop_pos = new_pos[es[px, 0]:es[px+1, 0]:, :]
@@ -180,7 +180,7 @@ class LongRangeCorrection:
 
             for movxi in range(num_prop):
                 self._lee.multipole_exp(prop_sph[movxi, :], charge, self._prop_space[movxi, :])
-                self._prop_space[movxi, :] += self._orig_space
+                self._prop_space[movxi, :] += self._orig_space[:].copy()
             
             self._prop_matmul[:half_ncomp ,:num_prop] = \
                 self.sparse_linop.matmat(np.transpose(self._prop_space[:num_prop,:half_ncomp]))
@@ -201,6 +201,11 @@ class FMMSelfInteraction:
         self._lee = local_exp_eval
         self._bc = boundary_condition
         self.fmm = fmm
+
+        self._ncomp = (self.fmm.L**2)*2
+        self._half_ncomp = self.fmm.L**2
+        self._lr_correction = np.zeros(self._ncomp, dtype=REAL)
+        self._lr_correction_local = np.zeros_like(self._lr_correction)
 
         if self._bc is BCType.PBC:
             self.lrc = LongRangeCorrection(fmm, domain, local_exp_eval)
@@ -316,6 +321,27 @@ class FMMSelfInteraction:
 
         self.lib = simple_lib_creator(header_code=header, src_code=src)['self_interaction']
 
+    def initialise(self):
+        self._lr_correction[:] = 0.0
+        self._lr_correction_local[:] = 0.0
+
+
+    def accept(self, movedata):
+
+        realdata = movedata[:7].view(dtype=REAL)
+
+        old_position = realdata[0:3:]
+        new_position = realdata[3:6:]
+        charge       = realdata[6]
+        if self._bc is BCType.PBC:
+            # compute the long-range corrections to the mutlipole expansion for further proposals
+            self._lee.multipole_exp(spherical(tuple(old_position)), -1.0*charge, self._lr_correction)
+            self._lee.multipole_exp(spherical(tuple(new_position)), charge, self._lr_correction)
+
+            self._lr_correction_local[:self._half_ncomp] = \
+                self.lrc.sparse_linop(self._lr_correction[:self._half_ncomp]).copy()
+            self._lr_correction_local[self._half_ncomp:] = \
+                self.lrc.sparse_linop(self._lr_correction[self._half_ncomp:]).copy()
 
 
     def propose(self, total_movs, num_particles, host_data, cuda_data, arr, use_python=False):
@@ -341,11 +367,21 @@ class FMMSelfInteraction:
             new_pos.ctypes.get_as_parameter(),
             arr.ctypes.get_as_parameter()           
         )
-        
 
         if self._bc is BCType.PBC:
+            for px in  range(num_particles):
+                # assumed charge doesn't change
+                charge = old_chr[px]
+                opos = old_pos[px, :]
+                nprop = es[px+1, 0] - es[px, 0]
+                if nprop > 0:
+                    existing_correction = self._lee.compute_phi_local(self._lr_correction_local,
+                        spherical(tuple(opos)))[0] * charge
+                    arr[px, :nprop] += existing_correction
+
             if not use_python:
-                self.lrc.compute_corrections(total_movs, num_particles, host_data, cuda_data, arr)
+                self.lrc.compute_corrections(total_movs, num_particles, host_data, cuda_data,
+                    self._lr_correction, arr)
             else:
                 for px in range(num_particles):
                     # assumed charge doesn't change
@@ -417,7 +453,8 @@ class FMMSelfInteraction:
         l2 = self.fmm.L * self.fmm.L * 2
         arr = np.zeros(l2)
         arr_out = np.zeros(l2)
-        
+
+        arr[:] = self._lr_correction[:].copy()
         self._multipole_diff(old_pos, prop_pos, q, arr)
         
         # use the really long range part of the fmm instance (extract this into a matrix)
@@ -722,5 +759,6 @@ class LocalOctalBase:
         """get global cell index from xyz tuple"""
         gcs = self.global_cell_size
         return tcx[0] + gcs[0] * ( tcx[1] + gcs[1] * tcx[2] )
+
 
 

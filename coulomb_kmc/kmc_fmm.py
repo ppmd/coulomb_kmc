@@ -143,7 +143,7 @@ class KMCFMM(object):
 
         self._accept(move)
 
-        self.test_accept_reinit(move)
+        # self.test_accept_reinit(move)
 
     def _accept(self, move):
         
@@ -179,6 +179,8 @@ class KMCFMM(object):
         # update the fmm cell
         self.group._fmm_cell[move[0]] = new_fmm_cell
 
+
+        self._si.accept(movedata)
         self.kmcl.accept(movedata)
         self.kmco.accept(movedata)
 
@@ -219,7 +221,7 @@ class KMCFMM(object):
             fmm_cells=self.group._fmm_cell,
             ids=self.group._kmc_fmm_order
         )
-
+        self._si.initialise()
         self._cell_map = {}
         cell_occ = 1
 
