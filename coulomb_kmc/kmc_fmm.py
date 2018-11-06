@@ -388,9 +388,10 @@ class KMCFMM(object):
 
             for mxi, mx in enumerate(movs):
                 if np.linalg.norm(self.positions.data[pid, :] - mx) < 10.**-14:
-                    pid_prop_energy[mxi] = self.energy
+                    pid_prop_energy[mxi] = self.energy * self.energy_unit
                 else:
-                    pid_prop_energy[mxi] = self.energy + self._tmp_energies[_ENERGY.U_DIFF][movxi, mxi]
+                    pid_prop_energy[mxi] = (self.energy + self._tmp_energies[_ENERGY.U_DIFF][movxi, mxi]) * \
+                        self.energy_unit
 
             prop_energy.append(pid_prop_energy)
 
@@ -404,7 +405,7 @@ class KMCFMM(object):
         e_tmp = 0.0
         extent = self.domain.extent
         # print("HST: prop", prop_pos)
-        q = self.charges.data[ix, 0] * self.energy_unit
+        q = self.charges.data[ix, 0]
         
         ncount = 0
         _tva = self._dsa
@@ -454,7 +455,7 @@ class KMCFMM(object):
         e_tmp = 0.0
         extent = self.domain.extent
 
-        q = self.charges.data[ix, 0] * self.energy_unit
+        q = self.charges.data[ix, 0]
         pos = self.positions.data[ix, :]
         for ox in cell_offsets:
             jcell = (icx + ox[0], icy + ox[1], icz + ox[2])
