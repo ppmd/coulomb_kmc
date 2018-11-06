@@ -752,8 +752,6 @@ class LocalCellExpansions(LocalOctalBase):
             LOCAL_EXP_SRC=self._lee.create_local_exp_src
         )
 
-        print(src)
-
         self._accept_lib = build.simple_lib_creator(header_code=' ', src_code=src)['accept_local_exp']
 
 

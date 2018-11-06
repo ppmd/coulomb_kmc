@@ -621,7 +621,7 @@ def test_kmc_fmm_free_space_accept_1_5():
     
     # print("\n arggggg")
 
-    for stepx in range(20):
+    for stepx in range(3):
         # make  some random proposed moves
         order = rng.permutation(range(N))
         prop = []
@@ -681,8 +681,6 @@ def test_kmc_fmm_free_space_accept_1_5():
             err = np.linalg.norm(py - cc, np.inf) / rel
 
             assert err<10.**-14
-
-
 
 
 
