@@ -306,7 +306,7 @@ class LocalParticleData(LocalOctalBase):
             stride = self.local_particle_store.shape[3] * self.local_particle_store.shape[4]
             self._cuda_direct_new(
                 np.int64(total_movs),
-                cuda_data['new_positions'],
+                cuda_data['new_shifted_positions'],
                 cuda_data['new_charges'],
                 cuda_data['new_ids'],
                 cuda_data['new_fmm_cells'],
@@ -342,7 +342,7 @@ class LocalParticleData(LocalOctalBase):
                 INT64(total_movs),
                 self.local_store_dims_arr.ctypes.get_as_parameter(),
                 self.offsets_arr.ctypes.get_as_parameter(),
-                host_data['new_positions'].ctypes.get_as_parameter(),
+                host_data['new_shifted_positions'].ctypes.get_as_parameter(),
                 host_data['new_charges'].ctypes.get_as_parameter(),
                 host_data['new_ids'].ctypes.get_as_parameter(),
                 host_data['new_fmm_cells'].ctypes.get_as_parameter(),

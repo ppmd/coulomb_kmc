@@ -627,8 +627,8 @@ def test_kmc_fmm_free_space_accept_1_5():
         prop = []
         
         nmov = 0
-        # for px in range(N):
-        for px in range(1):
+        for px in range(N):
+        #for px in range(1):
 
             propn = rng.randint(1, 8)
             # propn = 1
@@ -772,11 +772,11 @@ def test_kmc_fmm_free_space_accept_2():
                 )
             )
         
-        print("====")
-        print(A.P[prop[0][0], :])
-        print("~~~")
-        print(prop)
-        print("====")
+        #print("====")
+        #print(A.P[prop[0][0], :])
+        #print("~~~")
+        #print(prop)
+        #print("====")
 
         prop_energyA  = kmc_fmmA.propose(moves=prop)
         prop_energyB  = kmc_fmmB.propose(moves=prop)
@@ -786,7 +786,7 @@ def test_kmc_fmm_free_space_accept_2():
             for pai, pbi in zip(pa, pb):
                 rel = abs(pai) if abs(pai) > 1.0 else 1.0
                 err = abs(pai - pbi) / rel
-                print(err)
+                #print(err)
                 assert err < 10.**-6
 
 
@@ -811,7 +811,7 @@ def test_kmc_fmm_free_space_accept_2():
         reeng = abs(kmc_fmmA.energy)
         rel = 1.0 if reeng < 1.0 else reeng
         err = abs(kmc_fmmA.energy - kmc_fmmB.energy) / rel
-        print("---", err)
+        #print("---", err)
         assert err < 10.**-6
 
 

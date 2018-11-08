@@ -274,7 +274,7 @@ class LocalCellExpansions(LocalOctalBase):
             INT64(total_movs),
             host_data['new_fmm_cells'].ctypes.get_as_parameter(),
             self.cell_centres.ctypes.get_as_parameter(),
-            host_data['new_positions'].ctypes.get_as_parameter(),
+            host_data['new_shifted_positions'].ctypes.get_as_parameter(),
             host_data['new_charges'].ctypes.get_as_parameter(),
             self.local_expansions.ctypes.get_as_parameter(),
             host_data['new_energy_i'].ctypes.get_as_parameter()

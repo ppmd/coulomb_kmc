@@ -892,8 +892,8 @@ def test_kmc_fmm_pbc_accept_1_5():
         prop = []
         
         nmov = 0
-        # for px in range(N):
-        for px in range(1):
+        for px in range(N):
+        #for px in range(1):
 
             propn = rng.randint(1, 8)
             # propn = 1
