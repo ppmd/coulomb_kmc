@@ -271,10 +271,15 @@ def test_kmc_lr_2():
     si.propose(*tuple(processed_movs + [correct, True]))
     si.propose(*tuple(processed_movs + [matmulv, False]))
     
-    for px in range(1):
+    for px in range(N):
+        #print(correct[px, :])
+        #print("--------")
+        #print(matmulv[px, :])
+        #print("========")
         for mv in range(prop[px][1].shape[0]):
             c = correct[px, mv]
             m = matmulv[px, mv]
+            
             rel = 1.0 if abs(c) < 1.0 else abs(c)
             err = abs(c - m)/rel
             assert err < 10.**-15
@@ -951,7 +956,7 @@ def test_kmc_fmm_pbc_accept_1_5():
             rel = 1.0 if rel < 1.0 else rel
             err = np.linalg.norm(py - cc, np.inf) / rel
 
-            assert err<10.**-14
+            assert err<10.**-13
 
 
 

@@ -132,23 +132,71 @@ class LongRangeCorrection:
         self.sparse_rmat = csr_matrix(self.rmat)
         self.linop = aslinearoperator(self.rmat)
         self.sparse_linop = aslinearoperator(self.sparse_rmat)
+        self._linop_data = np.array(self.sparse_rmat.data, dtype=REAL)
+        self._linop_indptr = np.array(self.sparse_rmat.indptr, dtype=INT64)
+        self._linop_indices = np.array(self.sparse_rmat.indices, dtype=INT64)
 
         self._orig_space = np.zeros((self.ncomp), dtype=REAL)
 
         self._prop_space = np.zeros((100, self.ncomp), dtype=REAL)
         self._prop_matmul = np.zeros((self.ncomp, 100), dtype=REAL)
-    
-    def _resize_if_needed(self, nc):
+
+        self._host_lib = self._init_host_lib()
+        self._nthread = ppmd.runtime.NUM_THREADS
+        assert self._nthread > 0
+
+        self._thread_space = [np.zeros(4000, dtype=REAL) for tx in range(self._nthread)]
+        self._thread_ptrs = np.array([tx.ctypes.get_as_parameter().value for tx in self._thread_space],
+            dtype=ctypes.c_void_p)
+
+    def _resize_if_needed_py(self, nc):
         if self._prop_space.shape[0] < nc:
             self._prop_space = np.zeros((nc, self.ncomp), dtype=REAL)
             self._prop_matmul = np.zeros((self.ncomp, nc), dtype=REAL)
+    
+    def _resize_if_needed(self, max_nprop):
+        ncomp = (self.fmm.L**2)*2
+        needed_space = max_nprop * (ncomp*3 + 3)
+        if self._thread_space[0].shape[0] < needed_space:
+            self._thread_space = [np.zeros(needed_space, dtype=REAL) for tx in range(self._nthread)]
+            self._thread_ptrs = np.array([tx.ctypes.get_as_parameter().value for tx in self._thread_space],
+                dtype=ctypes.c_void_p)
 
     def compute_corrections(self, total_movs, num_particles, host_data, cuda_data, lr_correction, arr):
 
         es = host_data['exclusive_sum']
         old_pos = host_data['old_positions']
         new_pos = host_data['new_positions']
+        old_chr = host_data['old_charges']
+        
+        L = self.fmm.L
+        ncomp = (L**2)*2
+        half_ncomp = (L**2)
 
+        shift_left = es[1:num_particles+1:]
+        max_nprop = np.max(shift_left - es[0:num_particles:])
+        self._resize_if_needed(max_nprop)
+
+        self._host_lib(
+            INT64(arr.shape[1]),
+            INT64(num_particles),
+            es.ctypes.get_as_parameter(),
+            old_pos.ctypes.get_as_parameter(),
+            old_chr.ctypes.get_as_parameter(),
+            new_pos.ctypes.get_as_parameter(),
+            lr_correction.ctypes.get_as_parameter(),
+            self._linop_data.ctypes.get_as_parameter(),
+            self._linop_indptr.ctypes.get_as_parameter(),
+            self._linop_indices.ctypes.get_as_parameter(),
+            self._thread_ptrs.ctypes.get_as_parameter(),
+            arr.ctypes.get_as_parameter()
+        )
+
+    def compute_corrections_py(self, total_movs, num_particles, host_data, cuda_data, lr_correction, arr):
+
+        es = host_data['exclusive_sum']
+        old_pos = host_data['old_positions']
+        new_pos = host_data['new_positions']
         old_chr = host_data['old_charges']
         
         L = self.fmm.L
@@ -171,7 +219,7 @@ class LongRangeCorrection:
             self._orig_space[:] = lr_correction[:].copy()
             # self._orig_space[:] = 0.0
             self._lee.multipole_exp(disp, -1.0 * charge, self._orig_space)
-            self._resize_if_needed(num_prop)
+            self._resize_if_needed_py(num_prop)
 
             prop_pos = new_pos[es[px, 0]:es[px+1, 0]:, :]
             prop_sph = spherical(prop_pos)
@@ -194,6 +242,172 @@ class LongRangeCorrection:
                     self._prop_space[movxi, :], prop_sph[movxi, :]
                 )[0]
 
+
+    def _init_host_lib(self):
+        ncomp = (self.fmm.L**2)*2
+        half_ncomp = self.fmm.L**2
+
+        src = r'''
+        
+        {MULTIPOLE_HEADER}
+        {MULTIPOLE_SRC}
+
+        {LOCAL_EVAL_HEADER}
+        {LOCAL_EVAL_SRC}
+
+        static inline void spherical(
+            const REAL dx, const REAL dy, const REAL dz,
+            REAL *radius, REAL *theta, REAL *phi
+        ){{
+            const REAL dx2 = dx*dx;
+            const REAL dx2_p_dy2 = dx2 + dy*dy;
+            const REAL d2 = dx2_p_dy2 + dz*dz;
+            *radius = sqrt(d2);
+            *theta = atan2(sqrt(dx2_p_dy2), dz);
+            *phi = atan2(dy, dx);       
+            return;
+        }}
+
+        static inline void linop_csr(
+            const REAL * RESTRICT linop_data,
+            const INT64 * RESTRICT linop_indptr,
+            const INT64 * RESTRICT linop_indices,
+            const REAL * RESTRICT x,
+            REAL * RESTRICT b
+        ){{
+            
+            INT64 data_ind = 0;
+            for(INT64 row=0 ; row<HALF_NCOMP ; row++){{
+                REAL row_tmp = 0.0;
+                for(INT64 col_ind=linop_indptr[row] ; col_ind<linop_indptr[row+1] ; col_ind++){{
+                    const INT64 col = linop_indices[data_ind];
+                    const REAL data = linop_data[data_ind];
+                    data_ind++;
+                    row_tmp += data * x[col];
+                }}
+                b[row] = row_tmp;
+            }}
+            return;
+        }}
+
+
+        extern "C" int long_range_self_interaction(
+            const INT64 store_stride,
+            const INT64 num_particles,
+            const INT64 * RESTRICT exclusive_sum,
+            const REAL * RESTRICT old_positions,
+            const REAL * RESTRICT old_charges,
+            const REAL * RESTRICT new_positions,
+            const REAL * RESTRICT lr_correction,
+            const REAL * RESTRICT linop_data,
+            const INT64 * RESTRICT linop_indptr,
+            const INT64 * RESTRICT linop_indices,
+            REAL * RESTRICT * RESTRICT tmp_space,
+            REAL * RESTRICT out
+        )
+        {{
+
+            #pragma omp parallel for schedule(dynamic)
+            for(INT64 px=0 ; px<num_particles ; px++){{
+
+                const REAL charge = old_charges[px];
+                const REAL opx = old_positions[3*px + 0];
+                const REAL opy = old_positions[3*px + 1];
+                const REAL opz = old_positions[3*px + 2];
+
+                const INT64 nprop = exclusive_sum[px+1] - exclusive_sum[px];
+ 
+                const int threadid =  omp_get_thread_num();
+
+                REAL * RESTRICT old_moments = tmp_space[threadid];
+                REAL * RESTRICT sph_vectors = old_moments + NCOMP;
+                REAL * RESTRICT new_moments = sph_vectors + nprop*3;
+                REAL * RESTRICT new_local_moments = new_moments + nprop*NCOMP;
+
+                // copy the existing correction
+                for(int nx=0 ; nx<NCOMP ; nx++){{ old_moments[nx] = lr_correction[nx]; }}
+ 
+                //printf("clr lr correct %f %f %f %f\n", old_moments[0], old_moments[1], old_moments[2], old_moments[3]);
+
+                // add on the multipole expansion for the old position
+                REAL oradius, otheta, ophi;
+                spherical(opx, opy, opz, &oradius, &otheta, &ophi);
+                multipole_exp(-1.0 * charge, oradius, otheta, ophi, old_moments);
+
+                // loop over the proposed new positions and copy old positions and compute spherical coordinate
+                // vectors
+                #pragma omp simd simdlen(8)
+                for(INT64 movii=0 ; movii<nprop ; movii++){{
+                    const INT64 movi = movii + exclusive_sum[px];
+                    const REAL npx = new_positions[3*movi + 0];
+                    const REAL npy = new_positions[3*movi + 1];
+                    const REAL npz = new_positions[3*movi + 2];
+
+                    REAL nradius, ntheta, nphi;
+                    spherical(npx, npy, npz, &nradius, &ntheta, &nphi);
+                    sph_vectors[movii*3 + 0] = nradius;
+                    sph_vectors[movii*3 + 1] = ntheta;
+                    sph_vectors[movii*3 + 2] = nphi;
+
+                    // copy the old position moments
+                    for(int nx=0 ; nx<NCOMP ; nx++){{ new_moments[movii*NCOMP + nx] = old_moments[nx]; }}
+
+                    // add on the new moments
+                    multipole_exp(charge, nradius, ntheta, nphi, &new_moments[movii*NCOMP]);
+                }}
+
+                //printf("clr multi exp %f %f %f %f\n", new_moments[0], new_moments[1], new_moments[2], new_moments[3]);
+                #pragma omp simd simdlen(8)
+                for(INT64 movii=0 ; movii<nprop ; movii++){{
+
+                    // apply the lin op to the real part
+                    linop_csr(linop_data, linop_indptr, linop_indices,
+                        &new_moments[movii*NCOMP], &new_local_moments[movii*NCOMP]);
+
+                    // then the imaginary part
+                    linop_csr(linop_data, linop_indptr, linop_indices,
+                        &new_moments[movii*NCOMP + HALF_NCOMP], &new_local_moments[movii*NCOMP + HALF_NCOMP]);
+
+                }}
+
+                //printf("clr local exp %f %f %f %f\n", new_local_moments[0], new_local_moments[1], new_local_moments[2], new_local_moments[3]);
+
+                #pragma omp simd simdlen(8)
+                for(INT64 movii=0 ; movii<nprop ; movii++){{
+                    REAL outdouble = 0.0;
+                    const REAL nradius = sph_vectors[movii*3 + 0];
+                    const REAL ntheta  = sph_vectors[movii*3 + 1];
+                    const REAL nphi    = sph_vectors[movii*3 + 2];
+
+                    local_eval(nradius, ntheta, nphi, &new_local_moments[movii*NCOMP], &outdouble);
+                    out[px*store_stride + movii] -= charge * outdouble;
+                }}
+
+
+            }}
+
+            return 0;
+        }}
+        '''.format(
+            MULTIPOLE_HEADER=self._lee.create_multipole_header,
+            MULTIPOLE_SRC=self._lee.create_multipole_src,
+            LOCAL_EVAL_HEADER=self._lee.create_local_eval_header,
+            LOCAL_EVAL_SRC=self._lee.create_local_eval_src
+        )
+
+        header = str(
+            Module((
+                Include('omp.h'),
+                Include('stdio.h'),
+                Include('math.h'),
+                Define('INT64', 'int64_t'),
+                Define('REAL', 'double'),
+                Define('NCOMP', str(ncomp)),
+                Define('HALF_NCOMP', str(half_ncomp)),
+            ))
+        )
+        
+        return simple_lib_creator(header_code=header, src_code=src)['long_range_self_interaction']
 
 class FMMSelfInteraction:
     def __init__(self, fmm, domain, boundary_condition, local_exp_eval):
@@ -455,8 +669,13 @@ class FMMSelfInteraction:
         arr_out = np.zeros(l2)
 
         arr[:] = self._lr_correction[:].copy()
+
+        #print("plr lr correct", arr[:4])
+
         self._multipole_diff(old_pos, prop_pos, q, arr)
         
+        #print("plr multi exp", arr[:4])
+
         # use the really long range part of the fmm instance (extract this into a matrix)
         self.fmm._translate_mtl_lib['mtl_test_wrapper'](
             INT64(self.fmm.L),
@@ -470,6 +689,7 @@ class FMMSelfInteraction:
             arr_out.ctypes.get_as_parameter()
         )
 
+        # print("plr local exp", arr_out[:4])
         return arr_out
 
 
@@ -512,7 +732,7 @@ class LocalExpEval(object):
         src = """
         #define IM_OFFSET ({IM_OFFSET})
 
-        extern "C" int multipole_exp(
+        {DECLARE} int multipole_exp(
             const double charge,
             const double radius,
             const double theta,
@@ -523,12 +743,25 @@ class LocalExpEval(object):
             {ASSIGN_GEN}
             return 0;
         }}
-        """.format(
+        """
+        header = str(sph_gen.header)
+        
+        src_lib = src.format(
             SPH_GEN=str(sph_gen.module),
             ASSIGN_GEN=str(assign_gen),
             IM_OFFSET=(self.L**2),
+            DECLARE=r'static inline'
         )
-        header = str(sph_gen.header)
+
+        src = src.format(
+            SPH_GEN=str(sph_gen.module),
+            ASSIGN_GEN=str(assign_gen),
+            IM_OFFSET=(self.L**2),
+            DECLARE=r'extern "C"'
+        )
+
+        self.create_multipole_header = header
+        self.create_multipole_src = src_lib
 
         self._multipole_lib = simple_lib_creator(header_code=header, src_code=src)['multipole_exp']
 
@@ -548,7 +781,7 @@ class LocalExpEval(object):
         src = """
         #define IM_OFFSET ({IM_OFFSET})
 
-        extern "C" int local_eval(
+        {DECLARE} int local_eval(
             const double radius,
             const double theta,
             const double phi,
@@ -563,12 +796,26 @@ class LocalExpEval(object):
             out[0] = tmp_energy;
             return 0;
         }}
-        """.format(
+        """
+        
+        src_lib = src.format(
             SPH_GEN=str(sph_gen.module),
             ASSIGN_GEN=str(assign_gen),
             IM_OFFSET=(self.L**2),
+            DECLARE=r'static inline'
+        )
+
+        src = src.format(
+            SPH_GEN=str(sph_gen.module),
+            ASSIGN_GEN=str(assign_gen),
+            IM_OFFSET=(self.L**2),
+            DECLARE=r'extern "C"'
         )
         header = str(sph_gen.header)
+
+
+        self.create_local_eval_header = header
+        self.create_local_eval_src = src_lib
 
         self._local_eval_lib = simple_lib_creator(header_code=header, src_code=src)['local_eval']
 

@@ -442,7 +442,7 @@ def test_kmc_fmm_nearest_27_accept_1_5():
             rel = 1.0 if rel < 1.0 else rel
             err = np.linalg.norm(py - cc, np.inf) / rel
 
-            assert err<10.**-14
+            assert err<10.**-13
 
 
 
