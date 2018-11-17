@@ -119,6 +119,23 @@ class KMCFMM(object):
             comm=self.comm
         )
 
+    def propose_with_dats(self, site_max_counts, current_sites,
+            prop_positions, prop_masks, prop_energy_diffs):
+        """
+        site_max_counts:    ScalarArray, dtype=c_int64      Input
+        current_sites:      ParticleDat, dtype=c_int64      Input
+        prop_positions:     ParticleDat, dtype=c_double     Input
+        prop_masks:         ParticleDat, dtype=c_int64      Input
+        prop_energy_diffs:  ParticleDat, dtype=c_double     Output
+        """
+        assert site_max_counts.dtype == INT64
+        assert current_sites.dtype == INT64
+        assert prop_positions.dtype == REAL
+        assert prop_masks.dtype == INT64
+        assert prop_energy_diffs == REAL
+
+
+
 
     # these should be the names of the final propose and accept methods.
     def propose(self, moves):

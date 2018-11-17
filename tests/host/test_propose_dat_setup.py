@@ -1,0 +1,198 @@
+from __future__ import print_function, division
+
+__author__ = "W.R.Saunders"
+__copyright__ = "Copyright 2016, W.R.Saunders"
+
+import pytest, ctypes, math
+from mpi4py import MPI
+import numpy as np
+from itertools import product
+
+np.set_printoptions(linewidth=200)
+
+
+from ppmd import *
+from ppmd.coulomb.fmm import *
+from ppmd.coulomb.ewald_half import *
+from scipy.special import sph_harm, lpmv
+import time
+
+from math import *
+
+MPISIZE = MPI.COMM_WORLD.Get_size()
+MPIRANK = MPI.COMM_WORLD.Get_rank()
+MPIBARRIER = MPI.COMM_WORLD.Barrier
+DEBUG = True
+SHARED_MEMORY = 'omp'
+
+from coulomb_kmc import *
+
+c_double = ctypes.c_double
+
+
+def test_kmc_fmm_dat_setup_prop_1():
+
+    eps = 10.**-5
+    L = 4
+    R = 3
+
+    N = 200
+    E = 4.
+    rc = E/4
+    M = 6
+
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    A.npart = N
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+    A.prop_masks = data.ParticleDat(ncomp=M, dtype=INT64)
+    A.prop_positions = data.ParticleDat(ncomp=M*3)
+    A.prop_diffs = data.ParticleDat(ncomp=M)
+
+    B = state.State()
+    B.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    B.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    B.npart = N
+    B.P = data.PositionDat(ncomp=3)
+    B.Q = data.ParticleDat(ncomp=1)
+
+    rng  = np.random.RandomState(seed=8657)
+
+    if N == 4:
+        ra = 0.25 * E
+        nra = -0.25 * E
+
+        A.P[0,:] = ( 1.6,  1.6, 0.0)
+        A.P[1,:] = (-1.500001,  1.499999, 0.0)
+        A.P[2,:] = (-1.500001, -1.500001, 0.0)
+        A.P[3,:] = ( 0.0,  0.0, 0.0)
+
+        A.Q[0,0] = -1.
+        A.Q[1,0] = 1.
+        A.Q[2,0] = -1.
+        A.Q[3,0] = 0.
+    else:
+        A.P[:] = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
+        for px in range(N):
+            A.Q[px,0] = (-1.0)**(px+1)
+        bias = np.sum(A.Q[:N:, 0])/N
+        A.Q[:, 0] -= bias
+    
+    B.P[:] = A.P.data.copy()
+    B.Q[:] = A.Q.data.copy()
+
+    A.scatter_data_from(0)
+    B.scatter_data_from(0)
+
+    # create a kmc instance
+    kmc_fmmA = KMCFMM(positions=A.P, charges=A.Q, 
+        domain=A.domain, r=R, l=L, boundary_condition='free_space')
+    kmc_fmmA.initialise()
+    
+    kmc_fmmB = KMCFMM(positions=B.P, charges=B.Q, 
+        domain=B.domain, r=R, l=L, boundary_condition='free_space')
+    kmc_fmmB.initialise() 
+    
+    # print("\n arggggg")
+
+    # for stepx in range(20):
+    prop = []
+    
+    nmov = 0
+    # for px in range(N):
+    for px in range(N):
+        tmp = []
+        for propx in range(M):
+            mask = rng.randint(0, 2)
+            prop_pos = rng.uniform(low=-0.5*E, high=0.5*E, size=3)
+            A.prop_masks[px, propx] = mask
+            A.prop_positions[px, propx*3:propx*3+3:] = prop_pos
+            
+            if mask > 0:
+                tmp.append(list(prop_pos))
+                nmov += 1
+        if len(tmp) > 0:
+            prop.append((px, np.array(tmp)))
+
+    t0 = time.time()
+    correct = kmc_fmmB.md.setup_propose(prop)
+    t1= time.time()
+    to_test =  kmc_fmmA.md.setup_propose_with_dats(None, None,
+        A.prop_positions, A.prop_masks, A.prop_diffs)
+    t2 = time.time()
+    
+    # print(t1-t0, t2-t1)
+
+    assert to_test[0] == correct[0]
+    assert to_test[1] == correct[1]
+    
+    total_movs = correct[0]
+    num_particles = correct[1]
+
+    err = np.linalg.norm(
+        correct[2]['exclusive_sum'][:num_particles:, :].ravel() - \
+        to_test[2]['exclusive_sum'][:num_particles:, :].ravel(),
+        np.inf
+    )
+    assert err < 10.**-15
+
+    
+   
+    err = np.linalg.norm(
+        correct[2]['old_positions'][:num_particles:, :].ravel() - \
+        to_test[2]['old_positions'][:num_particles:, :].ravel(),
+        np.inf
+    )
+    assert err < 10.**-15
+
+    err = np.linalg.norm(
+        correct[2]['old_charges'][:num_particles:, :].ravel() - \
+        to_test[2]['old_charges'][:num_particles:, :].ravel(),
+        np.inf
+    )
+    assert err < 10.**-15
+
+    err = np.linalg.norm(
+        correct[2]['old_ids'][:num_particles:, :].ravel() - \
+        to_test[2]['old_ids'][:num_particles:, :].ravel(),
+        np.inf
+    )
+    assert err < 10.**-15
+
+    err = np.linalg.norm(
+        correct[2]['new_positions'][:total_movs:, :].ravel() - \
+        to_test[2]['new_positions'][:total_movs:, :].ravel(),
+        np.inf
+    )
+    assert err < 10.**-15
+
+    err = np.linalg.norm(
+        correct[2]['new_charges'][:total_movs:, :].ravel() - \
+        to_test[2]['new_charges'][:total_movs:, :].ravel(),
+        np.inf
+    )
+    assert err < 10.**-15
+
+    err = np.linalg.norm(
+        correct[2]['new_ids'][:total_movs:, :].ravel() - \
+        to_test[2]['new_ids'][:total_movs:, :].ravel(),
+        np.inf
+    )
+    assert err < 10.**-15
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
