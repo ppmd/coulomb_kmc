@@ -131,14 +131,20 @@ def test_kmc_fmm_dat_setup_prop_1():
     total_movs = correct[0]
     num_particles = correct[1]
 
+    tind = 0
+    for px in range(A.npart_local):
+        for prop_pos in range(M):
+            if A.prop_masks[px, prop_pos] > 0:
+                assert to_test[2]['rate_location'][tind, 0] == px*M+prop_pos
+                tind += 1
+
+
     err = np.linalg.norm(
         correct[2]['exclusive_sum'][:num_particles:, :].ravel() - \
         to_test[2]['exclusive_sum'][:num_particles:, :].ravel(),
         np.inf
     )
     assert err < 10.**-15
-
-    
    
     err = np.linalg.norm(
         correct[2]['old_positions'][:num_particles:, :].ravel() - \
