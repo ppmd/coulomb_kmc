@@ -50,6 +50,7 @@ def test_kmc_fmm_dat_setup_prop_1():
     A.prop_masks = data.ParticleDat(ncomp=M, dtype=INT64)
     A.prop_positions = data.ParticleDat(ncomp=M*3)
     A.prop_diffs = data.ParticleDat(ncomp=M)
+    A.sites = data.ParticleDat(ncomp=1, dtype=INT64)
 
     B = state.State()
     B.domain = domain.BaseDomainHalo(extent=(E,E,E))
@@ -60,25 +61,16 @@ def test_kmc_fmm_dat_setup_prop_1():
 
     rng  = np.random.RandomState(seed=8657)
 
-    if N == 4:
-        ra = 0.25 * E
-        nra = -0.25 * E
+    site_max_counts = data.ScalarArray(ncomp=8, dtype=INT64)
+    site_max_counts[:] = rng.randint(0, 10, size=8)
 
-        A.P[0,:] = ( 1.6,  1.6, 0.0)
-        A.P[1,:] = (-1.500001,  1.499999, 0.0)
-        A.P[2,:] = (-1.500001, -1.500001, 0.0)
-        A.P[3,:] = ( 0.0,  0.0, 0.0)
+    A.P[:] = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
+    for px in range(N):
+        A.Q[px,0] = (-1.0)**(px+1)
+    bias = np.sum(A.Q[:N:, 0])/N
+    A.Q[:, 0] -= bias
+    A.sites[:, 0] = rng.randint(0, 8, size=N)
 
-        A.Q[0,0] = -1.
-        A.Q[1,0] = 1.
-        A.Q[2,0] = -1.
-        A.Q[3,0] = 0.
-    else:
-        A.P[:] = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
-        for px in range(N):
-            A.Q[px,0] = (-1.0)**(px+1)
-        bias = np.sum(A.Q[:N:, 0])/N
-        A.Q[:, 0] -= bias
     
     B.P[:] = A.P.data.copy()
     B.Q[:] = A.Q.data.copy()
@@ -104,8 +96,12 @@ def test_kmc_fmm_dat_setup_prop_1():
     # for px in range(N):
     for px in range(N):
         tmp = []
+        masks = np.zeros(M)
+        masks[:site_max_counts[A.sites[px,0]]:] = 1
+        masks = rng.permutation(masks)
+
         for propx in range(M):
-            mask = rng.randint(0, 2)
+            mask = masks[propx]
             prop_pos = rng.uniform(low=-0.5*E, high=0.5*E, size=3)
             A.prop_masks[px, propx] = mask
             A.prop_positions[px, propx*3:propx*3+3:] = prop_pos
@@ -119,7 +115,7 @@ def test_kmc_fmm_dat_setup_prop_1():
     t0 = time.time()
     correct = kmc_fmmB.md.setup_propose(prop)
     t1= time.time()
-    to_test =  kmc_fmmA.md.setup_propose_with_dats(None, None,
+    to_test =  kmc_fmmA.md.setup_propose_with_dats(site_max_counts, A.sites,
         A.prop_positions, A.prop_masks, A.prop_diffs)
     t2 = time.time()
     
