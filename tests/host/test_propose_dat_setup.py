@@ -30,9 +30,9 @@ from coulomb_kmc import *
 c_double = ctypes.c_double
 
 
-def test_kmc_fmm_dat_setup_prop_1():
+@pytest.mark.parametrize("param_boundary", ('free_space', 'pbc', '27'))
+def test_kmc_fmm_dat_setup_prop_1(param_boundary):
 
-    eps = 10.**-5
     L = 4
     R = 3
 
@@ -80,11 +80,11 @@ def test_kmc_fmm_dat_setup_prop_1():
 
     # create a kmc instance
     kmc_fmmA = KMCFMM(positions=A.P, charges=A.Q, 
-        domain=A.domain, r=R, l=L, boundary_condition='free_space')
+        domain=A.domain, r=R, l=L, boundary_condition=param_boundary)
     kmc_fmmA.initialise()
     
     kmc_fmmB = KMCFMM(positions=B.P, charges=B.Q, 
-        domain=B.domain, r=R, l=L, boundary_condition='free_space')
+        domain=B.domain, r=R, l=L, boundary_condition=param_boundary)
     kmc_fmmB.initialise() 
     
     # print("\n arggggg")
@@ -185,13 +185,28 @@ def test_kmc_fmm_dat_setup_prop_1():
     assert err < 10.**-15
 
     
+    err = np.linalg.norm(
+        correct[2]['old_fmm_cells'][:total_movs:, :].ravel() - \
+        to_test[2]['old_fmm_cells'][:total_movs:, :].ravel(),
+        np.inf
+    )
+    assert err < 10.**-15
 
 
+    err = np.linalg.norm(
+        correct[2]['new_fmm_cells'][:total_movs:, :].ravel() - \
+        to_test[2]['new_fmm_cells'][:total_movs:, :].ravel(),
+        np.inf
+    )
+    assert err < 10.**-15
 
 
-
-
-
+    err = np.linalg.norm(
+        correct[2]['new_shifted_positions'][:total_movs:, :].ravel() - \
+        to_test[2]['new_shifted_positions'][:total_movs:, :].ravel(),
+        np.inf
+    )
+    assert err < 10.**-15
 
 
 

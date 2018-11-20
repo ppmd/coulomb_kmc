@@ -128,13 +128,17 @@ class KMCFMM(object):
         prop_masks:         ParticleDat, dtype=c_int64      Input
         prop_energy_diffs:  ParticleDat, dtype=c_double     Output
         """
-        assert site_max_counts.dtype == INT64
-        assert current_sites.dtype == INT64
-        assert prop_positions.dtype == REAL
-        assert prop_masks.dtype == INT64
-        assert prop_energy_diffs == REAL
 
+        cmove_data = self.md.setup_propose_with_dats(site_max_counts, current_sites,
+            prop_positions, prop_masks, prop_energy_diffs)
 
+        num_particles = cmove_data[1]
+        max_num_moves = np.max(site_max_counts[:])
+        self._tmp_energy_check((num_particles, max_num_moves))
+
+        du0, du1 = self.kmcl.propose(*cmove_data)
+        iu0, iu1 = self.kmco.propose(*cmove_data)
+        self._si.propose(*tuple(list(cmove_data) + [self._tmp_energies[_ENERGY.U01_SELF]]))
 
 
     # these should be the names of the final propose and accept methods.
@@ -269,7 +273,7 @@ class KMCFMM(object):
         td1 = 0.0
         ti0 = 0.0
         ti1 = 0.0
-
+        
         cmove_data = self.md.setup_propose(moves)
 
         if not use_python:
@@ -286,17 +290,15 @@ class KMCFMM(object):
 
         tpd0 = time.time()
 
-        num_particles = len(moves)
+        num_particles = cmove_data[1]
         max_num_moves = 0
-        num_proposed = 0
         for movx in moves:
             movs = np.atleast_2d(movx[1])
             num_movs = movs.shape[0]
             max_num_moves = max(max_num_moves, num_movs)
-            num_proposed += num_movs
         
         # check tmp energy arrays are large enough
-        tmp_eng_stride = self._tmp_energy_check((num_particles, max_num_moves))
+        self._tmp_energy_check((num_particles, max_num_moves))
         
         tmp_index = 0
         # direct differences
