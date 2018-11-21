@@ -149,7 +149,6 @@ class FMMMPIDecomp(LocalOctalBase):
         self.kmcl = kmc_local.LocalParticleData(self)
 
         self._dat_lib = self._create_dat_lib()
-        self._diff_lib = self._create_diff_lib()
 
     def initialise(self, positions, charges, fmm_cells, ids):
         self.positions = positions
@@ -215,9 +214,6 @@ class FMMMPIDecomp(LocalOctalBase):
             self._copy_to_device()
         return total_movs, num_particles, self._cuda_h, self._cuda_d
 
-
-    def _create_diff_lib(self):
-        pass
 
 
     def _create_dat_lib(self):

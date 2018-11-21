@@ -119,8 +119,56 @@ class KMCFMM(object):
             comm=self.comm
         )
 
+        self._diff_lib = self._create_diff_lib()
+
+
+    def _create_diff_lib(self):
+        src = r'''
+        #define REAL double
+        #define INT64 int64_t
+        #define ENERGY_UNIT ({ENERGY_UNIT})
+
+        extern "C" int diff_lib(
+            const INT64 num_particles,
+            const INT64 stride_si,
+            const INT64 * RESTRICT exclusive_sum,
+            const INT64 * RESTRICT rate_location,
+            const REAL  * RESTRICT U0D,
+            const REAL  * RESTRICT U0I,
+            const REAL  * RESTRICT U1D,
+            const REAL  * RESTRICT U1I,
+            const REAL  * RESTRICT USI,
+            REAL * RESTRICT UDIFF
+        ){{
+            #pragma omp parallel for schedule(dynamic)
+            for(INT64 px=0 ; px<num_particles ; px++){{
+                const INT64 es_start = exclusive_sum[px];
+                const INT64 es_end   = exclusive_sum[px+1];
+                const INT64 es_count = es_end - es_start;
+                for(INT64 movx=0 ; movx<es_count ; movx++){{
+                    const INT64 u1loc = es_start + movx;
+                    UDIFF[rate_location[u1loc]] = (ENERGY_UNIT) * (
+                        U1D[u1loc] + U1I[u1loc] - U0D[px] - U0I[px] - USI[px*stride_si + movx]
+                    );
+
+                }}
+            }}
+            return 0;
+        }}
+        '''.format(
+            ENERGY_UNIT=str(self.energy_unit)
+        )
+
+        header = r'''
+        #include <stdint.h>
+        #include <stdio.h>
+        '''
+
+        return simple_lib_creator(header, src)['diff_lib']
+
+
     def propose_with_dats(self, site_max_counts, current_sites,
-            prop_positions, prop_masks, prop_energy_diffs):
+            prop_positions, prop_masks, prop_energy_diffs, diff=True):
         """
         site_max_counts:    ScalarArray, dtype=c_int64      Input
         current_sites:      ParticleDat, dtype=c_int64      Input
@@ -128,6 +176,14 @@ class KMCFMM(object):
         prop_masks:         ParticleDat, dtype=c_int64      Input
         prop_energy_diffs:  ParticleDat, dtype=c_double     Output
         """
+
+        if not diff:
+            raise NotImplementedError()
+        
+        # we store an index computed using the mask dat for use in the rate dat, hence 
+        # they need the same stride
+        assert prop_energy_diffs.ncomp == prop_masks.ncomp
+        assert prop_energy_diffs.dtype == REAL
 
         cmove_data = self.md.setup_propose_with_dats(site_max_counts, current_sites,
             prop_positions, prop_masks, prop_energy_diffs)
@@ -139,6 +195,19 @@ class KMCFMM(object):
         du0, du1 = self.kmcl.propose(*cmove_data)
         iu0, iu1 = self.kmco.propose(*cmove_data)
         self._si.propose(*tuple(list(cmove_data) + [self._tmp_energies[_ENERGY.U01_SELF]]))
+
+        self._diff_lib(
+            INT64(num_particles),
+            INT64(self._tmp_energies[_ENERGY.U01_SELF].shape[1]),
+            cmove_data[2]['exclusive_sum'].ctypes.get_as_parameter(),
+            cmove_data[2]['rate_location'].ctypes.get_as_parameter(),
+            du0.ctypes.get_as_parameter(),
+            iu0.ctypes.get_as_parameter(),
+            du1.ctypes.get_as_parameter(),
+            iu1.ctypes.get_as_parameter(),
+            self._tmp_energies[_ENERGY.U01_SELF].ctypes.get_as_parameter(),
+            prop_energy_diffs.ctypes_data
+        )
 
 
     # these should be the names of the final propose and accept methods.
