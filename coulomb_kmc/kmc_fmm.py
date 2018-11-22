@@ -6,7 +6,7 @@ from enum import Enum
 from math import log, ceil, factorial, sqrt, cos, sin
 import ctypes
 from functools import lru_cache
-import time
+from time import time
 
 # pip package imports
 import numpy as np
@@ -176,7 +176,7 @@ class KMCFMM(object):
         prop_masks:         ParticleDat, dtype=c_int64      Input
         prop_energy_diffs:  ParticleDat, dtype=c_double     Output
         """
-
+        t0 = time()
         if not diff:
             raise NotImplementedError()
         
@@ -209,6 +209,9 @@ class KMCFMM(object):
             prop_energy_diffs.ctypes_data
         )
 
+        t1 = time()
+        self._profile_inc('propose_with_dats', t1 - t0)
+
 
     # these should be the names of the final propose and accept methods.
     def propose(self, moves):
@@ -218,7 +221,10 @@ class KMCFMM(object):
         e.g. moves = ((0, np.array(((1, 0, 0), (0, 1, 0), (0, 0, 1)))), )
         should return (np.array((0.1, 0.2, 0.3)), )
         """
-        return self.test_propose(moves, use_python=False)
+        t0 = time()
+        r = self.test_propose(moves, use_python=False)
+        self._profile_inc('propose', time() - t0)
+        return r
 
     def accept(self, move=None):
         """
@@ -236,6 +242,8 @@ class KMCFMM(object):
         # self.test_accept_reinit(move)
 
     def _accept(self, move):
+
+        t0 = time()
         
         data = np.zeros(10 , dtype=INT64)
         realdata = data[:7].view(dtype=REAL)
@@ -269,12 +277,21 @@ class KMCFMM(object):
         # update the fmm cell
         self.group._fmm_cell[move[0]] = new_fmm_cell
 
-
-        self._si.accept(movedata)
-        self.kmcl.accept(movedata)
-        self.kmco.accept(movedata)
-
+        self._profile_inc('propose_setup', time() - t0)
         
+        t0 = time()
+        self._si.accept(movedata)
+        self._profile_inc('self_interaction_accept', time() - t0)
+        
+        t0 = time()
+        self.kmcl.accept(movedata)
+        self._profile_inc('local_accept', time() - t0)
+        
+        t0 = time()
+        self.kmco.accept(movedata)
+        self._profile_inc('octal_accept', time() - t0)
+        
+
     def test_accept_reinit(self, move):
         # perform the move by setting the new position and reinitialising the instance
         self.positions[move[0], :] = move[1]
@@ -301,7 +318,8 @@ class KMCFMM(object):
         self.group._kmc_fmm_order[:nlocal:, 0] = np.arange(rbuf[0], rbuf[0] + nlocal)        
 
     def initialise(self):
-        
+        t0 = time()
+
         # get the current energy, also bins particles into cells
         self.energy = self.fmm(positions=self.positions, charges=self.charges)
         self._check_ordering_dats()
@@ -327,6 +345,8 @@ class KMCFMM(object):
         self._dsb = np.zeros(27 * cell_occ)
         self._dsc = np.zeros(27 * cell_occ)
 
+        self._profile_inc('initialise', time() - t0)
+
     
     def _assert_init(self):
         if self._cell_map is None:
@@ -346,18 +366,18 @@ class KMCFMM(object):
         cmove_data = self.md.setup_propose(moves)
 
         if not use_python:
-            td0 = time.time()
+            td0 = time()
             du0, du1 = self.kmcl.propose(*cmove_data)
-            td1 = time.time()
+            td1 = time()
             
-            ti0 = time.time()
+            ti0 = time()
             iu0, iu1 = self.kmco.propose(*cmove_data)
-            ti1 = time.time()
+            ti1 = time()
         
         self._profile_inc('c-direct', td1 - td0)
         self._profile_inc('c-indirect', ti1 - ti0)
 
-        tpd0 = time.time()
+        tpd0 = time()
 
         num_particles = cmove_data[1]
         max_num_moves = 0
@@ -395,8 +415,8 @@ class KMCFMM(object):
                 self._tmp_energies[_ENERGY.U1_DIRECT][movxi, mxi] = \
                     new_direct_energy
         
-        tpd1 = time.time()
-        tpi0 = time.time()
+        tpd1 = time()
+        tpi0 = time()
 
         tmp_index = 0
         
@@ -428,7 +448,7 @@ class KMCFMM(object):
                 self._tmp_energies[_ENERGY.U1_INDIRECT][movxi, mxi] = \
                     new_indirect_energy
 
-        tpi1 = time.time()
+        tpi1 = time()
         
         self._profile_inc('py-direct', tpd1 - tpd0)
         self._profile_inc('py-indirect', tpi1 - tpi0)
@@ -487,7 +507,7 @@ class KMCFMM(object):
 
 
     def _direct_contrib_new(self, ix, prop_pos):
-        t0 = time.time()
+        t0 = time()
 
         icx, icy, icz = self._get_cell(prop_pos)
         e_tmp = 0.0
@@ -532,13 +552,13 @@ class KMCFMM(object):
         np.reciprocal(_tvc[:ncount:], out=_tva[:ncount:])
         e_tmp += np.dot(_tva[:ncount:], _tvb[:ncount:])
         
-        self._profile_inc('py_direct_new', time.time() - t0)
+        self._profile_inc('py_direct_new', time() - t0)
 
         return e_tmp * q
 
 
     def _direct_contrib_old(self, ix):
-        t0 = time.time()
+        t0 = time()
         icx, icy, icz = self._get_fmm_cell(ix)
         e_tmp = 0.0
         extent = self.domain.extent
@@ -578,7 +598,7 @@ class KMCFMM(object):
                 _tva = 1.0/np.sqrt(_tva)
                 e_tmp += np.dot(_tva, _tvb)
 
-        self._profile_inc('py_direct_old', time.time() - t0)
+        self._profile_inc('py_direct_old', time() - t0)
 
         return e_tmp * q
 

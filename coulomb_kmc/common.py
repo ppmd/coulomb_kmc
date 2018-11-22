@@ -1,4 +1,8 @@
 from enum import Enum
+from ppmd import opt
+
+PROFILE = opt.PROFILE
+
 
 class BCType(Enum):
     PBC = 'pbc'
@@ -6,20 +10,3 @@ class BCType(Enum):
     NEAREST = '27'
 
 
-PROFILE = {}
-"""
-Dict available module wide for profiling. Recommended format along lines of:
-
-{
-    'description'
-:
-    (
-        total_time_taken
-    )
-}
-"""
-
-def print_profile():
-    for key, value in sorted(PROFILE.items()):
-        print(key)
-        print('\t', value)

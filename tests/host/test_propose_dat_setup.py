@@ -301,7 +301,8 @@ def test_kmc_fmm_dat_setup_prop_2(param_boundary):
         to_test =  kmc_fmmA.propose_with_dats(site_max_counts, A.sites,
             A.prop_positions, A.prop_masks, A.prop_diffs, diff=True)
         t2 = time.time()
-        
+
+
         for propi, propx in enumerate(prop):
             pid = propx[0]
             movs = propx[1]
@@ -319,7 +320,7 @@ def test_kmc_fmm_dat_setup_prop_2(param_boundary):
                     found_movs += 1
             
 
-
+    # opt.print_profile()
 
 
 
