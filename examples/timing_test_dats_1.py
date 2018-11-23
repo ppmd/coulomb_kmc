@@ -26,6 +26,7 @@ SHARED_MEMORY = 'omp'
 
 from coulomb_kmc import *
 import time
+import cProfile
 
 
 def time_test_dats_1(N=100, nprop=2, nsample=100):
@@ -77,23 +78,28 @@ def time_test_dats_1(N=100, nprop=2, nsample=100):
     for px in range(nsample):
         mp = site_max_counts[A.sites[px,0]]
         for propx in range(mp):
-            nm += mp
+            nm += 1
             prop_pos = rng.uniform(low=-0.5*E, high=0.5*E, size=3)
             A.prop_masks[px, propx] = 1
             A.prop_positions[px, propx*3:propx*3+3:] = prop_pos
 
 
-
+    pr = cProfile.Profile()
+    pr.enable()
     t0 = time.time()
     to_test =  kmc_fmm.propose_with_dats(site_max_counts, A.sites,
         A.prop_positions, A.prop_masks, A.prop_diffs, diff=True)
     t1 = time.time()
+    pr.disable()
+    pr.dump_stats('/tmp/propose.prof')
+ 
+    pr = cProfile.Profile()
+    pr.enable()   
 
-    
     naccept = 0
     nsample2 = 10
     t2 = time.time()
-    
+
     for px in range(N):
         if naccept == nsample2:
             break
@@ -104,12 +110,14 @@ def time_test_dats_1(N=100, nprop=2, nsample=100):
                 break
 
     t3 = time.time()
+    pr.disable()
+    pr.dump_stats('/tmp/accept.prof')
 
     return (t1-t0, nm, kmc_fmm.fmm.R, t3 - t2, nsample2)
 
 if __name__ == '__main__':
     nset = np.logspace(3, log(1000001, 10), 30)
-    # nset = (1000,)
+    nset = (1000,)
     
     top_bar = '{: ^10} {: ^12} {: ^12} {: ^4}' .format('N', 'T_prop', 'T_accept', 'R')
     print(top_bar)
