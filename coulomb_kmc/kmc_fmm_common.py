@@ -431,6 +431,8 @@ class FMMSelfInteraction:
             dox = np.array((ex[0] * ox[0], ex[1] * ox[1], ex[2] * ox[2]))
             if ox != (0,0,0):
                 self._new27direct -= 1.0 / np.linalg.norm(dox)
+
+        self._existing_correction = _SILocalEvaluator(self._lee)
         
 
         preloop = ''
@@ -583,20 +585,24 @@ class FMMSelfInteraction:
         )
 
         if self._bc is BCType.PBC:
-            for px in  range(num_particles):
-                # assumed charge doesn't change
-                charge = old_chr[px]
-                opos = old_pos[px, :]
-                nprop = es[px+1, 0] - es[px, 0]
-                if nprop > 0:
-                    existing_correction = self._lee.compute_phi_local(self._lr_correction_local,
-                        spherical(tuple(opos)))[0] * charge
-                    arr[px, :nprop] += existing_correction
+
 
             if not use_python:
+                self._existing_correction(num_particles, es, old_pos, old_chr, self._lr_correction_local, arr)
                 self.lrc.compute_corrections(total_movs, num_particles, host_data, cuda_data,
                     self._lr_correction, arr)
             else:
+                for px in  range(num_particles):
+                    # assumed charge doesn't change
+                    charge = old_chr[px]
+                    opos = old_pos[px, :]
+                    nprop = es[px+1, 0] - es[px, 0]
+                    if nprop > 0:
+                        existing_correction = self._lee.compute_phi_local(self._lr_correction_local,
+                            spherical(tuple(opos)))[0] * charge
+                        arr[px, :nprop] += existing_correction
+
+                
                 for px in range(num_particles):
                     # assumed charge doesn't change
                     charge = old_chr[px]
@@ -691,6 +697,95 @@ class FMMSelfInteraction:
 
         # print("plr local exp", arr_out[:4])
         return arr_out
+
+
+
+class _SILocalEvaluator:
+    def __init__(self, local_exp_eval):
+        lee = local_exp_eval
+
+        src = r'''
+        #define REAL double
+        #define INT64 int64_t
+
+        {LEE_SRC}
+
+        static inline void spherical(
+            const REAL dx, const REAL dy, const REAL dz,
+            REAL *radius, REAL *theta, REAL *phi
+        ){{
+            const REAL dx2 = dx*dx;
+            const REAL dx2_p_dy2 = dx2 + dy*dy;
+            const REAL d2 = dx2_p_dy2 + dz*dz;
+            *radius = sqrt(d2);
+            *theta = atan2(sqrt(dx2_p_dy2), dz);
+            *phi = atan2(dy, dx);       
+            return;
+        }}
+
+        extern "C" int si_local_eval(
+            const INT64 num_particles,
+            const INT64 out_stride,
+            const INT64 * RESTRICT exclusive_sum,
+            const REAL  * RESTRICT old_positions,
+            const REAL  * RESTRICT old_charges,
+            const REAL  * RESTRICT local_expansion,
+            REAL * RESTRICT out
+        ){{
+            #pragma omp parallel for schedule(dynamic)
+            for(INT64 px=0 ; px<num_particles ; px++){{
+
+                REAL radius, theta, phi;
+                spherical(
+                    old_positions[px*3 + 0],
+                    old_positions[px*3 + 1],
+                    old_positions[px*3 + 2],
+                    &radius, &theta, &phi
+                );
+
+                // assume local_eval does a += on energy
+                REAL energy = 0.0;
+
+                local_eval(radius, theta, phi, local_expansion, &energy);
+                energy *= old_charges[px];
+
+                const INT64 es_start = exclusive_sum[px];
+                const INT64 es_end = exclusive_sum[px+1];
+                const INT64 es_count = es_end - es_start;
+                for(INT64 ex=0 ; ex<es_count ; ex++){{
+                    out[px*out_stride + ex] += energy;
+                }}
+            }}
+            return 0;
+        }}
+
+        '''.format(
+            LEE_SRC=lee.create_local_eval_src
+        )
+
+        header = lee.create_local_eval_header
+
+        self._lib = simple_lib_creator(header, src)['si_local_eval']
+
+
+    def __call__(self, num_particles, exclusive_sum, old_positions, old_charges,
+            local_expansion, out):
+        
+        assert out.dtype == ctypes.c_double
+        assert exclusive_sum.dtype == INT64
+        assert old_positions.dtype == ctypes.c_double
+        assert old_charges.dtype == ctypes.c_double
+        assert local_expansion.dtype == ctypes.c_double
+
+        return self._lib(
+            INT64(num_particles),
+            INT64(out.shape[1]),
+            exclusive_sum.ctypes.get_as_parameter(),
+            old_positions.ctypes.get_as_parameter(),
+            old_charges.ctypes.get_as_parameter(),
+            local_expansion.ctypes.get_as_parameter(),
+            out.ctypes.get_as_parameter()
+        )
 
 
 
