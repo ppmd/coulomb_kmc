@@ -112,14 +112,10 @@ def test_kmc_fmm_dat_setup_prop_1(param_boundary):
         if len(tmp) > 0:
             prop.append((px, np.array(tmp)))
 
-    t0 = time.time()
     correct = kmc_fmmB.md.setup_propose(prop)
-    t1= time.time()
     to_test =  kmc_fmmA.md.setup_propose_with_dats(site_max_counts, A.sites,
         A.prop_positions, A.prop_masks, A.prop_diffs)
-    t2 = time.time()
     
-    # print(t1-t0, t2-t1)
 
     assert to_test[0] == correct[0]
     assert to_test[1] == correct[1]

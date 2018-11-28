@@ -117,7 +117,7 @@ def time_test_dats_1(N=100, nprop=2, nsample=100):
 
 if __name__ == '__main__':
     nset = np.logspace(3, log(1000001, 10), 30)
-    nset = (1000,)
+    #nset = (1000,)
     
     top_bar = '{: ^10} {: ^12} {: ^12} {: ^4}' .format('N', 'T_prop', 'T_accept', 'R')
     print(top_bar)
