@@ -31,13 +31,14 @@ def test_init_1(direction):
 
     s.p = data.PositionDat()
     s.q = data.ParticleDat(ncomp=1)
-    s.i = data.ParticleDat(ncomp=4, dtype=ctypes.c_int)
+    s.gid = data.ParticleDat(ncomp=1, dtype=ctypes.c_int64)
 
     for dimx in range(3):
         s.p[:N:, dimx] = rng.uniform(low=-halfmeps*extent[dimx], high=halfmeps*extent[dimx], size=(N))
     s.q[:] = rng.uniform(low=-2, high=2, size=(N, 1))
+    s.gid[:, 0] = np.arange(0, N)
 
-    mcs = kmc_dirichlet_boundary.MirrorChargeSystem(direction, s, 'p', 'q')
+    mcs = kmc_dirichlet_boundary.MirrorChargeSystem(direction, s, 'p', 'q', 'gid')
     ms = mcs.mirror_state
     
     # check copy of charges
@@ -55,5 +56,23 @@ def test_init_1(direction):
         else:
             assert np.linalg.norm(ms.p[:N:,dimx] - ms.p[N:2*N:, dimx], np.inf) < 10.**-15
             assert np.linalg.norm(ms.p[:N:,dimx] - s.p[:N:, dimx], np.inf) < 10.**-15
+ 
+    if direction[0] == True:
+        flag = kmc_dirichlet_boundary.MIRROR_X_REFLECT
+    if direction[1] == True:
+        flag = kmc_dirichlet_boundary.MIRROR_Y_REFLECT
+    if direction[2] == True:
+        flag = kmc_dirichlet_boundary.MIRROR_Z_REFLECT             
 
-        
+    for px in range(N):
+        assert ms.gid[px, 0] == s.gid[px, 0]
+        assert ms.gid[px + N, 0] == s.gid[px, 0] + N
+
+        assert ms.mirror_map[px + N, 0] == s.gid[px, 0]
+        assert ms.mirror_map[px, 0] == s.gid[px, 0]
+        assert ms.mirror_map[px + N, 1] == flag
+        assert ms.mirror_map[px, 1] == kmc_dirichlet_boundary.MIRROR_ORIG
+
+
+
+
