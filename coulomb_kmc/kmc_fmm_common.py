@@ -1,4 +1,4 @@
-
+__author__ = "W.R.Saunders"
 
 
 import ctypes
