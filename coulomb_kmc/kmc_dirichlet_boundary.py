@@ -51,7 +51,7 @@ class MirrorChargeSystem:
         
         self.mirror_state.npart = self.state.npart * (2**nzero)
 
-        for datx in self.state.particle_dats:
+        for datx in (position_name, charge_name):
             dat = getattr(state, datx)
             setattr(self.mirror_state, datx, type(dat)(ncomp=dat.ncomp, dtype=dat.dtype))
 
@@ -61,16 +61,15 @@ class MirrorChargeSystem:
         # original data is translated and copied into 0:npart:
         offset = np.array([-0.5*(mx-ex) for mx, ex in zip(mirror_extent, state.domain.extent)])
         
-        for datx in (position_name, charge_name):
-            dat = getattr(state, datx)
-            if type(dat) == md.data.PositionDat:
-                for dimx in range(3):
-                    getattr(self.mirror_state, datx)[:state.npart:, dimx] = \
-                        getattr(state, datx)[:state.npart:, dimx] + offset[dimx]
-            else:
-                getattr(self.mirror_state, datx)[:state.npart:, :] = \
-                    getattr(state, datx)[:state.npart:, :]
- 
+        # copy and shift the positions
+        for dimx in range(3):
+            getattr(self.mirror_state, position_name)[:state.npart:, dimx] = \
+                getattr(state, position_name)[:state.npart:, dimx] + offset[dimx]
+        
+        # copy and shift the charges
+        getattr(self.mirror_state, charge_name)[:state.npart:, 0] = \
+            getattr(state, charge_name)[:state.npart:, 0]
+
         # now need to reflect charges in sign ( assuming one direction is DBC )
         getattr(self.mirror_state, charge_name)[state.npart:self.mirror_state.npart:, 0] = -1.0 * \
             getattr(self.state, charge_name)[:state.npart:, 0]
@@ -80,9 +79,8 @@ class MirrorChargeSystem:
                 pf = -1.0
             else:
                 pf = 1.0
-
             getattr(self.mirror_state, position_name)[state.npart:self.mirror_state.npart:, dx] = pf * \
-                getattr(self.state, position_name)[:state.npart:, dx]
+                getattr(self.mirror_state, position_name)[:state.npart:, dx]
 
 
 
