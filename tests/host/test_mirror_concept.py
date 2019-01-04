@@ -193,3 +193,152 @@ def test_kmc_fmm_eval_field_2(direction):
 
 
 
+direction_bools = (
+    (True, False, False),
+    (False, True, False),
+    (False, False, True)
+)
+
+@pytest.mark.parametrize("direction", direction_bools)
+@pytest.mark.skipif('MPISIZE > 1')
+def test_kmc_fmm_eval_field_3(direction):
+    """
+    Test the field is zero in the "middle" plane in the pbc case
+    """
+
+    L = 16
+    R = 3
+
+    N2 = 4
+    E = 4.
+    rc = E/4
+
+
+    rng = np.random.RandomState(seed=5621)
+    
+    N = 20
+    E = 4.0
+
+    s = state.State()
+    s.npart = N
+    
+    extent = [E/2 if bx else E for bx in direction]
+
+    s.domain = domain.BaseDomainHalo(extent=extent)
+    s.domain.boundary_condition = domain.BoundaryTypePeriodic()
+
+    s.p = data.PositionDat()
+    s.q = data.ParticleDat(ncomp=1)
+    s.gid = data.ParticleDat(ncomp=1, dtype=ctypes.c_int64)
+
+    for dimx in range(3):
+        s.p[:N:, dimx] = rng.uniform(low=-halfmeps*extent[dimx], high=halfmeps*extent[dimx], size=(N))
+    s.q[:] = rng.uniform(low=-2, high=2, size=(N, 1))
+    bias = np.sum(s.q[:N:]) / N
+    s.q[:] -= bias
+
+
+    s.gid[:, 0] = np.arange(0, N)
+
+    mcs = kmc_dirichlet_boundary.MirrorChargeSystem(direction, s, 'p', 'q', 'gid')
+    ms = mcs.mirror_state
+
+
+    ms.scatter_data_from(0)
+    
+    bcs = 'pbc'
+ 
+    kmc_fmm = KMCFMM(positions=ms.p, charges=ms.q, 
+        domain=ms.domain, r=R, l=L, boundary_condition=bcs)
+    kmc_fmm.initialise()
+
+    
+    if direction[0]: 
+        plane_vector_1 = (0,1,0)
+        plane_vector_2 = (0,0,1)
+        plane_vector_3 = (1,0,0)
+    elif direction[1]: 
+        plane_vector_1 = (1,0,0)
+        plane_vector_2 = (0,0,1)
+        plane_vector_3 = (0,1,0)
+    elif direction[2]: 
+        plane_vector_1 = (1,0,0)
+        plane_vector_2 = (0,1,0)
+        plane_vector_3 = (0,0,1)
+    else:
+        raise RuntimeError('failed to set plane vectors')
+    
+    plane_vector_1 = np.array(plane_vector_1, dtype=REAL)
+    plane_vector_2 = np.array(plane_vector_2, dtype=REAL)
+    plane_vector_3 = np.array(plane_vector_3, dtype=REAL)
+
+    X,Y = np.meshgrid(
+        np.linspace(-0.49999*E, 0.49999*E, N2),
+        np.linspace(-0.49999*E, 0.49999*E, N2),
+    )
+    X = X.ravel()
+    Y = Y.ravel()
+
+    eval_points = np.zeros((3*N2*N2, 3), dtype=REAL)
+    
+    for px in range(N2*N2):
+        tmp = X[px] * plane_vector_1 + Y[px] * plane_vector_2
+        eval_points[px, :] = tmp
+        eval_points[px + N2*N2, :] = tmp + halfmeps * E * plane_vector_3
+        eval_points[px + 2*N2*N2, :] = tmp - halfmeps * E * plane_vector_3
+
+
+    
+
+    kmc_field = kmc_fmm.eval_field(eval_points)
+    
+    for px in range(kmc_field.shape[0]):
+        print(eval_points[px, :], kmc_field[px])
+
+
+    
+
+    
+    N2 = 50
+    
+
+    X,Y = np.meshgrid(
+        np.linspace(-0.49999*E, 0.49999*E, N2),
+        np.linspace(-0.49999*E, 0.49999*E, N2),
+    )
+    X = X.ravel()
+    Y = Y.ravel()
+
+    eval_points = np.zeros((N2*N2, 3), dtype=REAL)
+    
+    for px in range(N2*N2):
+        tmp = X[px] * plane_vector_3 + Y[px] * plane_vector_2
+        eval_points[px, :] = tmp
+
+    kmc_field = kmc_fmm.eval_field(eval_points)
+
+    import pyevtk.hl
+    pyevtk.hl.pointsToVTK('/tmp/foo', X, Y, kmc_field, None)
+
+    
+    print("done")
+
+
+
+
+
+
+
+
+
+    return
+    err = np.linalg.norm(kmc_field, np.inf)
+    assert err < 3*10.**-5
+
+
+
+
+
+
+
+
