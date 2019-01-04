@@ -28,14 +28,14 @@ SHARED_MEMORY = 'omp'
 from coulomb_kmc import *
 
 REAL = ctypes.c_double
+halfmeps = 0.5 - 10.0**-15
 
 
 
 @pytest.mark.skipif('MPISIZE > 1')
 def test_kmc_fmm_eval_field_1():
     """
-    Tests proposed moves one by one against direct calculation.
-    Considers the primary image and the nearest 27 neighbours.
+    Tests that KMCFMM.eval_field agrees with a direct calculation
     """
 
     L = 12
@@ -53,8 +53,6 @@ def test_kmc_fmm_eval_field_1():
 
     A.P = data.PositionDat(ncomp=3)
     A.Q = data.ParticleDat(ncomp=1)
-
-
 
     rng = np.random.RandomState(seed=1234)
 
@@ -92,6 +90,104 @@ def test_kmc_fmm_eval_field_1():
 
 
 
+direction_bools = (
+    (True, False, False),
+    (False, True, False),
+    (False, False, True)
+)
+
+@pytest.mark.parametrize("direction", direction_bools)
+@pytest.mark.skipif('MPISIZE > 1')
+def test_kmc_fmm_eval_field_2(direction):
+    """
+    Test the field is zero in the "middle" plane in the free space case.
+    """
+
+    L = 16
+    R = 3
+
+    N2 = 5
+    E = 4.
+    rc = E/4
+
+
+    rng = np.random.RandomState(seed=562321)
+    
+    N = 20
+    E = 4.0
+
+    s = state.State()
+    s.npart = N
+    
+    extent = [E/2 if bx else E for bx in direction]
+
+    s.domain = domain.BaseDomainHalo(extent=extent)
+    s.domain.boundary_condition = domain.BoundaryTypePeriodic()
+
+    s.p = data.PositionDat()
+    s.q = data.ParticleDat(ncomp=1)
+    s.gid = data.ParticleDat(ncomp=1, dtype=ctypes.c_int64)
+
+    for dimx in range(3):
+        s.p[:N:, dimx] = rng.uniform(low=-halfmeps*extent[dimx], high=halfmeps*extent[dimx], size=(N))
+    s.q[:] = rng.uniform(low=-2, high=2, size=(N, 1))
+    s.gid[:, 0] = np.arange(0, N)
+
+    mcs = kmc_dirichlet_boundary.MirrorChargeSystem(direction, s, 'p', 'q', 'gid')
+    ms = mcs.mirror_state
+
+
+    ms.scatter_data_from(0)
+    
+    bcs = 'free_space'
+ 
+    kmc_fmm = KMCFMM(positions=ms.p, charges=ms.q, 
+        domain=ms.domain, r=R, l=L, boundary_condition=bcs)
+    kmc_fmm.initialise()
+
+    
+    if direction[0]: 
+        plane_vector_1 = (0,1,0)
+        plane_vector_2 = (0,0,1)
+    elif direction[1]: 
+        plane_vector_1 = (1,0,0)
+        plane_vector_2 = (0,0,1)
+    elif direction[2]: 
+        plane_vector_1 = (1,0,0)
+        plane_vector_2 = (0,1,0)
+    else:
+        raise RuntimeError('failed to set plane vectors')
+    
+    plane_vector_1 = np.array(plane_vector_1, dtype=REAL)
+    plane_vector_2 = np.array(plane_vector_2, dtype=REAL)
+    X,Y = np.meshgrid(
+        np.linspace(-0.49999*E, 0.49999*E, N2),
+        np.linspace(-0.49999*E, 0.49999*E, N2),
+    )
+    X = X.ravel()
+    Y = Y.ravel()
+
+    eval_points = np.zeros((N2*N2, 3), dtype=REAL)
+    
+    for px in range(N2*N2):
+        eval_points[px, :] = X[px] * plane_vector_1 + Y[px] * plane_vector_2
+
+    correct_field = np.zeros(eval_points.shape[0], dtype=REAL)
+    for fx in range(eval_points.shape[0]):
+        tmp = 0.0
+        ptmp = eval_points[fx, :]
+        for px in range(ms.npart):
+            q = ms.q[px, 0]
+            tmp += q / np.linalg.norm(ptmp - ms.p[px, :])
+        correct_field[fx] = tmp
+    
+    kmc_field = kmc_fmm.eval_field(eval_points)
+
+    err = np.linalg.norm(correct_field - kmc_field, np.inf)
+    assert err < 10.**-5
+
+    err = np.linalg.norm(kmc_field, np.inf)
+    assert err < 10.**-5
 
 
 
