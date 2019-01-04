@@ -69,7 +69,7 @@ def test_init_1(direction):
         assert ms.gid[px + N, 0] == s.gid[px, 0] + N
 
         assert ms.mirror_map[px + N, 0] == s.gid[px, 0]
-        assert ms.mirror_map[px, 0] == s.gid[px, 0]
+        assert ms.mirror_map[px, 0] == s.gid[px, 0] + N
         assert ms.mirror_map[px + N, 1] == flag
         assert ms.mirror_map[px, 1] == kmc_dirichlet_boundary.MIRROR_ORIG
 

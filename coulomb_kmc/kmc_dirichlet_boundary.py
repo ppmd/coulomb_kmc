@@ -84,7 +84,7 @@ class MirrorChargeSystem:
             getattr(self.mirror_state, position_name)[:N:, dimx] = \
                 getattr(state, position_name)[:N:, dimx] + offset[dimx]
         
-        # copy and shift the charges
+        # copy the charges
         getattr(self.mirror_state, charge_name)[:N:, 0] = \
             getattr(state, charge_name)[:N:, 0]
 
@@ -112,16 +112,20 @@ class MirrorChargeSystem:
         # set the mapping ints
         mirror_maps = getattr(self.mirror_state, map_name)
         orig_ids = getattr(state, id_name)
+        new_ids = getattr(self.mirror_state, id_name)
         
-        mirror_maps[:N:, 0] = orig_ids[:N:, 0]
-        mirror_maps[N:2*N:, 0] = orig_ids[:N:, 0]
-
+        # the 0-th component points to the new mirror for the original positions
+        mirror_maps[:N:, 0] = new_ids[N:2*N:, 0]
+        # and to the original id for the mirrors
+        mirror_maps[N:2*N:, 0] = new_ids[:N:, 0]
+        
+        # indicate if the charge is a mirror or an original
         mirror_maps[:N:, 1] = MIRROR_ORIG
         if   dims_to_zero[0]: flag = MIRROR_X_REFLECT
         elif dims_to_zero[1]: flag = MIRROR_Y_REFLECT
         elif dims_to_zero[2]: flag = MIRROR_Z_REFLECT
         mirror_maps[N:2*N:, 1] = flag
-
+    
 
 
 

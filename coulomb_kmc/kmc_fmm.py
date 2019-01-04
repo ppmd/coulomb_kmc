@@ -354,6 +354,23 @@ class KMCFMM(object):
         if self.energy is None:
             raise RuntimeError('Run initialise before this call')
     
+
+    def eval_field(self, points):
+        self._assert_init()
+        npoints = points.shape[0]
+        out = np.zeros(npoints, dtype=REAL)
+
+        for px in range(npoints):
+            pointx = points[px, :]
+            assert len(pointx) == 3
+
+            direct_field = self._direct_contrib_new(None, pointx)
+            indirect_field = self._charge_indirect_energy_new(None, pointx)
+            out[px] = direct_field + indirect_field
+        
+        return out
+
+
     def test_propose(self, moves, use_python=True):
 
         self._assert_init()
@@ -513,7 +530,10 @@ class KMCFMM(object):
         e_tmp = 0.0
         extent = self.domain.extent
         # print("HST: prop", prop_pos)
-        q = self.charges.data[ix, 0]
+        if ix is not None:
+            q = self.charges.data[ix, 0]
+        else:
+            q = 1.0
         
         ncount = 0
         _tva = self._dsa
@@ -637,8 +657,12 @@ class KMCFMM(object):
         lexp = self._get_local_expansion(cell)
         disp = self._get_cell_disp(cell, prop_pos)
 
-        return self.charges.data[ix, 0] * \
-            self._lee.compute_phi_local(lexp, disp)[0]
+        if ix is not None:
+            q = self.charges.data[ix, 0]
+        else:
+            q = 1.0
+
+        return q * self._lee.compute_phi_local(lexp, disp)[0]
 
 
     def _charge_indirect_energy_old(self, ix):
