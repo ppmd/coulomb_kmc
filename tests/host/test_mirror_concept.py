@@ -210,14 +210,13 @@ def test_kmc_fmm_eval_field_3(direction):
     R = 3
 
     N2 = 4
-    E = 4.
+    E = 1.
     rc = E/4
 
 
     rng = np.random.RandomState(seed=5621)
     
-    N = 20
-    E = 4.0
+    N = 1
 
     s = state.State()
     s.npart = N
@@ -230,12 +229,16 @@ def test_kmc_fmm_eval_field_3(direction):
     s.p = data.PositionDat()
     s.q = data.ParticleDat(ncomp=1)
     s.gid = data.ParticleDat(ncomp=1, dtype=ctypes.c_int64)
-
-    for dimx in range(3):
-        s.p[:N:, dimx] = rng.uniform(low=-halfmeps*extent[dimx], high=halfmeps*extent[dimx], size=(N))
-    s.q[:] = rng.uniform(low=-2, high=2, size=(N, 1))
-    bias = np.sum(s.q[:N:]) / N
-    s.q[:] -= bias
+    
+    if N == 1:
+        s.p[0,:] = (halfmeps-0.2,0,0)
+        s.q[0,0] = 1.0
+    else:
+        for dimx in range(3):
+            s.p[:N:, dimx] = rng.uniform(low=-halfmeps*extent[dimx], high=halfmeps*extent[dimx], size=(N))
+        s.q[:] = rng.uniform(low=-2, high=2, size=(N, 1))
+        bias = np.sum(s.q[:N:]) / N
+        s.q[:] -= bias
 
 
     s.gid[:, 0] = np.arange(0, N)
@@ -273,8 +276,8 @@ def test_kmc_fmm_eval_field_3(direction):
     plane_vector_3 = np.array(plane_vector_3, dtype=REAL)
 
     X,Y = np.meshgrid(
-        np.linspace(-0.49999*E, 0.49999*E, N2),
-        np.linspace(-0.49999*E, 0.49999*E, N2),
+        np.linspace(-halfmeps*E, halfmeps*E, N2),
+        np.linspace(-halfmeps*E, halfmeps*E, N2),
     )
     X = X.ravel()
     Y = Y.ravel()
@@ -299,12 +302,12 @@ def test_kmc_fmm_eval_field_3(direction):
     
 
     
-    N2 = 50
+    N2 = 30
     
 
     X,Y = np.meshgrid(
-        np.linspace(-0.49999*E, 0.49999*E, N2),
-        np.linspace(-0.49999*E, 0.49999*E, N2),
+        np.linspace(-halfmeps*E, halfmeps*E, N2),
+        np.linspace(-halfmeps*E, halfmeps*E, N2),
     )
     X = X.ravel()
     Y = Y.ravel()
