@@ -216,7 +216,7 @@ def test_kmc_fmm_eval_field_3(direction):
 
     rng = np.random.RandomState(seed=5621)
     
-    N = 1
+    N = 10
 
     s = state.State()
     s.npart = N
@@ -231,21 +231,40 @@ def test_kmc_fmm_eval_field_3(direction):
     s.gid = data.ParticleDat(ncomp=1, dtype=ctypes.c_int64)
     
     if N == 1:
-        s.p[0,:] = (halfmeps-0.2,0,0)
+        s.p[0,:] = (halfmeps-0.5,0,0)
         s.q[0,0] = 1.0
+    elif N == 2:
+        s.p[0,:] = (halfmeps-0.5, 0.45 * E, 0)
+        s.q[0,0] = 1.0
+        s.p[1,:] = (halfmeps-0.5, -0.45 * E, 0)
+        s.q[1,0] = -1.0       
     else:
-        for dimx in range(3):
-            s.p[:N:, dimx] = rng.uniform(low=-halfmeps*extent[dimx], high=halfmeps*extent[dimx], size=(N))
-        s.q[:] = rng.uniform(low=-2, high=2, size=(N, 1))
+        for px in range(N):
+            for dimx in range(3):
+                if direction[dimx]:
+                    tpos = rng.uniform(low=-0.25, high=0.25)
+                else:
+                    tpos = rng.uniform(low=-0.5, high=0.5)
+
+                s.p[px, dimx] = tpos
+
+        s.q[:] = rng.uniform(low=-0.5, high=0.5, size=(N, 1))
         bias = np.sum(s.q[:N:]) / N
         s.q[:] -= bias
+    
 
+    print("\n")
+    print(s.p[:N:,:])
+    print("total charge", np.sum(s.q[:N:, 0]))
+    print("----")
 
     s.gid[:, 0] = np.arange(0, N)
 
     mcs = kmc_dirichlet_boundary.MirrorChargeSystem(direction, s, 'p', 'q', 'gid')
     ms = mcs.mirror_state
 
+    print(ms.p[:2*N:, :])
+    print(ms.q[:2*N:, 0])
 
     ms.scatter_data_from(0)
     
@@ -254,6 +273,12 @@ def test_kmc_fmm_eval_field_3(direction):
     kmc_fmm = KMCFMM(positions=ms.p, charges=ms.q, 
         domain=ms.domain, r=R, l=L, boundary_condition=bcs)
     kmc_fmm.initialise()
+    
+    dipole_mag = np.zeros(3)
+    for px in range(N*2):
+        dipole_mag[:] += ms.p[px, :] * ms.q[px, 0]
+
+    print("computed dipole magnitude", dipole_mag)
 
     
     if direction[0]: 
@@ -302,7 +327,7 @@ def test_kmc_fmm_eval_field_3(direction):
     
 
     
-    N2 = 30
+    N2 = 50
     
 
     X,Y = np.meshgrid(
@@ -315,7 +340,7 @@ def test_kmc_fmm_eval_field_3(direction):
     eval_points = np.zeros((N2*N2, 3), dtype=REAL)
     
     for px in range(N2*N2):
-        tmp = X[px] * plane_vector_3 + Y[px] * plane_vector_2
+        tmp = X[px] * plane_vector_3 + Y[px] * plane_vector_1
         eval_points[px, :] = tmp
 
     kmc_field = kmc_fmm.eval_field(eval_points)
@@ -324,8 +349,27 @@ def test_kmc_fmm_eval_field_3(direction):
     pyevtk.hl.pointsToVTK('/tmp/foo', X, Y, kmc_field, None)
 
     
-    print("done")
+    print("done plane 0")
 
+    X,Y = np.meshgrid(
+        np.linspace(-halfmeps*E, halfmeps*E, N2),
+        np.linspace(-halfmeps*E, halfmeps*E, N2),
+    )
+    X = X.ravel()
+    Y = Y.ravel()
+
+    eval_points = np.zeros((N2*N2, 3), dtype=REAL)
+    
+    for px in range(N2*N2):
+        tmp = X[px] * plane_vector_2 + Y[px] * plane_vector_1
+        eval_points[px, :] = tmp + halfmeps * E * plane_vector_3
+
+    kmc_field = kmc_fmm.eval_field(eval_points)
+
+
+    print("done plane 1")
+
+    pyevtk.hl.pointsToVTK('/tmp/foo2', kmc_field, Y, X, None)
 
 
 
