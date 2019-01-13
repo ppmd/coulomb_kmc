@@ -19,6 +19,8 @@ import time
 
 from math import *
 
+from ppmd.coulomb.fmm_pbc import DipoleCorrector
+
 MPISIZE = MPI.COMM_WORLD.Get_size()
 MPIRANK = MPI.COMM_WORLD.Get_rank()
 MPIBARRIER = MPI.COMM_WORLD.Barrier
@@ -207,6 +209,10 @@ def test_kmc_fmm_eval_field_3(direction):
     """
 
     L = 16
+
+    def re_lm(l, m): return l**2 + l + m
+    def im_lm(l, m): return L*L + re_lm(l,m)
+
     R = 3
 
     N2 = 4
@@ -216,7 +222,7 @@ def test_kmc_fmm_eval_field_3(direction):
 
     rng = np.random.RandomState(seed=5621)
     
-    N = 10
+    N = 1
 
     s = state.State()
     s.npart = N
@@ -231,13 +237,13 @@ def test_kmc_fmm_eval_field_3(direction):
     s.gid = data.ParticleDat(ncomp=1, dtype=ctypes.c_int64)
     
     if N == 1:
-        s.p[0,:] = (halfmeps-0.5,0,0)
+        s.p[0,:] = (0.000000,0,0)
         s.q[0,0] = 1.0
     elif N == 2:
         s.p[0,:] = (halfmeps-0.5, 0.45 * E, 0)
-        s.q[0,0] = 1.0
+        s.q[0,0] = 0.5
         s.p[1,:] = (halfmeps-0.5, -0.45 * E, 0)
-        s.q[1,0] = -1.0       
+        s.q[1,0] = -0.5       
     else:
         for px in range(N):
             for dimx in range(3):
@@ -274,6 +280,8 @@ def test_kmc_fmm_eval_field_3(direction):
         domain=ms.domain, r=R, l=L, boundary_condition=bcs)
     kmc_fmm.initialise()
     
+    print("Multipole moments", kmc_fmm.fmm.tree_halo[0][2,2,2,:4])
+
     dipole_mag = np.zeros(3)
     for px in range(N*2):
         dipole_mag[:] += ms.p[px, :] * ms.q[px, 0]
@@ -281,6 +289,94 @@ def test_kmc_fmm_eval_field_3(direction):
     print("computed dipole magnitude", dipole_mag)
 
     
+    from coulomb_kmc.kmc_fmm_common import LocalExpEval, spherical
+
+
+    eval_point = np.array([-0.5*E if dirx else 0.0 for dirx in direction])
+
+
+    disp = spherical(tuple(eval_point))
+    
+
+    
+    lee = LocalExpEval(kmc_fmm.fmm.L)
+    phi_lr_1 = lee.compute_phi_local(kmc_fmm.fmm.tree_parent[1][0,0,0,:],
+        disp)[0]
+    
+
+    print("eval_point", eval_point, disp, "lr_phi", phi_lr_1)
+    L_linear = np.zeros_like(kmc_fmm.fmm.tree_parent[1][0,0,0,:])
+    L_linear[re_lm(0, 0)] = 0.0
+    L_linear[re_lm(1, -1)] = 0.5235979870675666 * (-1 * (2. ** 0.5))
+    L_linear[re_lm(1,  1)] = 0.5235979870675666 * (-1 * (2. ** 0.5))
+    phi_lr_m = lee.compute_phi_local(L_linear, disp)[0]
+    print("phi_lr_manual", phi_lr_m, "lmoment", 0.5235979870675666 * (-1 * (2. ** 0.5)))
+    
+
+    L_linear[:] = 0.0
+    leval_point_lr = (
+        (-0.5*E, 0.0, 0.0),
+        (0.0, -0.5*E, 0.0),
+        (0.0, 0.0, -0.5*E)
+    )
+    reval_point_lr = (
+        (0.5*E, 0.0, 0.0),
+        (0.0, 0.5*E, 0.0),
+        (0.0, 0.0, 0.5*E)
+    )
+
+    print("--------")
+    lr_correction = [0.0, 0.0, 0.0]
+    for dx in range(3):
+        px = leval_point_lr[dx]
+        dpx = spherical(tuple(px))
+        lr_correction[dx] -= lee.compute_phi_local(kmc_fmm.fmm.tree_parent[1][0,0,0,:], dpx)[0]
+        print(px)
+        print(dpx)
+        print(lr_correction[dx])
+        px = reval_point_lr[dx]
+        dpx = spherical(tuple(px))
+        lr_correction[dx] += lee.compute_phi_local(kmc_fmm.fmm.tree_parent[1][0,0,0,:], dpx)[0]
+        lr_correction[dx] *= 0.5
+    
+    print("lr_correction", lr_correction)
+    print("--------")
+
+    #dc = DipoleCorrector(kmc_fmm.fmm.L, (E,E,E), L_linear)
+    #dc(ms.p, ms.q)
+
+    print(L_linear[:4])
+    phi_lr = lee.compute_phi_local(L_linear, disp)[0]
+    
+    print("phi_lr_lst", phi_lr)
+    
+    print(abs(phi_lr_m - phi_lr), phi_lr_m, phi_lr)
+
+
+    ox_range = tuple(range(-1, 2))
+    cell_offsets = product(ox_range, ox_range, ox_range)
+
+
+    phi_sr = 0.0
+    for ox in cell_offsets:
+        offset = E * np.array(ox)
+        for px in range(2*N):
+            phi_sr += ms.q[px, 0] / np.linalg.norm(eval_point - (ms.p[px,:] + offset))
+    
+    phi = phi_lr + phi_lr_1 + phi_sr
+    print("phi", phi, "phi_sr", phi_sr, "phi_correction", phi_lr, "phi_lr", phi_lr_1)
+
+    tphi = 0.0
+    for ox in product((1,), (-1, 0, 1), (-1, 0, 1)):
+        offset = E * np.array(ox)
+        for px in range(2*N):
+            tphi += ms.q[px, 0] / np.linalg.norm(eval_point - (ms.p[px,:] + offset))
+
+    print("tphi", tphi)
+    
+
+    print("=" * 60)
+
     if direction[0]: 
         plane_vector_1 = (0,1,0)
         plane_vector_2 = (0,0,1)
@@ -316,15 +412,20 @@ def test_kmc_fmm_eval_field_3(direction):
         eval_points[px + 2*N2*N2, :] = tmp - halfmeps * E * plane_vector_3
 
 
-    
-
     kmc_field = kmc_fmm.eval_field(eval_points)
-    
+
     for px in range(kmc_field.shape[0]):
         print(eval_points[px, :], kmc_field[px])
-
-
     
+    print('~' * 80)
+    
+    # linear correction
+    for px in range(eval_points.shape[0]):
+        sph_disp = spherical(tuple(eval_points[px, :]))
+        kmc_field[px] += lee.compute_phi_local(L_linear, sph_disp)[0]
+
+    for px in range(kmc_field.shape[0]):
+        print(eval_points[px, :], kmc_field[px])
 
     
     N2 = 50
@@ -344,6 +445,14 @@ def test_kmc_fmm_eval_field_3(direction):
         eval_points[px, :] = tmp
 
     kmc_field = kmc_fmm.eval_field(eval_points)
+    
+
+    # linear correction
+    for px in range(eval_points.shape[0]):
+        sph_disp = spherical(tuple(eval_points[px, :]))
+        kmc_field[px] += lee.compute_phi_local(L_linear, sph_disp)[0]
+
+
 
     import pyevtk.hl
     pyevtk.hl.pointsToVTK('/tmp/foo', X, Y, kmc_field, None)

@@ -366,6 +366,7 @@ class KMCFMM(object):
 
             direct_field = self._direct_contrib_new(None, pointx)
             indirect_field = self._charge_indirect_energy_new(None, pointx)
+            # indirect_field = 0
             out[px] = direct_field + indirect_field
         
         return out
@@ -527,6 +528,9 @@ class KMCFMM(object):
         t0 = time()
 
         icx, icy, icz = self._get_cell(prop_pos)
+        
+        #print(prop_pos, icx, icy, icz)
+
         e_tmp = 0.0
         extent = self.domain.extent
         # print("HST: prop", prop_pos)
