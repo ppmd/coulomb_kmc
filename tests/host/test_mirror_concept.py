@@ -19,7 +19,7 @@ import time
 
 from math import *
 
-from ppmd.coulomb.fmm_pbc import DipoleCorrector
+from ppmd.coulomb.fmm_pbc import *
 
 MPISIZE = MPI.COMM_WORLD.Get_size()
 MPIRANK = MPI.COMM_WORLD.Get_rank()
@@ -259,18 +259,12 @@ def test_kmc_fmm_eval_field_3(direction):
         s.q[:] -= bias
     
 
-    print("\n")
-    print(s.p[:N:,:])
-    print("total charge", np.sum(s.q[:N:, 0]))
-    print("----")
 
     s.gid[:, 0] = np.arange(0, N)
 
     mcs = kmc_dirichlet_boundary.MirrorChargeSystem(direction, s, 'p', 'q', 'gid')
     ms = mcs.mirror_state
 
-    print(ms.p[:2*N:, :])
-    print(ms.q[:2*N:, 0])
 
     ms.scatter_data_from(0)
     
@@ -280,8 +274,7 @@ def test_kmc_fmm_eval_field_3(direction):
         domain=ms.domain, r=R, l=L, boundary_condition=bcs)
     kmc_fmm.initialise()
     
-    print("Multipole moments", kmc_fmm.fmm.tree_halo[0][2,2,2,:4])
-
+    """
     dipole_mag = np.zeros(3)
     for px in range(N*2):
         dipole_mag[:] += ms.p[px, :] * ms.q[px, 0]
@@ -345,6 +338,9 @@ def test_kmc_fmm_eval_field_3(direction):
     #dc = DipoleCorrector(kmc_fmm.fmm.L, (E,E,E), L_linear)
     #dc(ms.p, ms.q)
 
+    dc2 = DipoleCorrector(kmc_fmm.fmm.L, (E, E, E), kmc_fmm.fmm._lr_mtl_func)
+
+
     print(L_linear[:4])
     phi_lr = lee.compute_phi_local(L_linear, disp)[0]
     
@@ -365,17 +361,8 @@ def test_kmc_fmm_eval_field_3(direction):
     
     phi = phi_lr + phi_lr_1 + phi_sr
     print("phi", phi, "phi_sr", phi_sr, "phi_correction", phi_lr, "phi_lr", phi_lr_1)
+    """
 
-    tphi = 0.0
-    for ox in product((1,), (-1, 0, 1), (-1, 0, 1)):
-        offset = E * np.array(ox)
-        for px in range(2*N):
-            tphi += ms.q[px, 0] / np.linalg.norm(eval_point - (ms.p[px,:] + offset))
-
-    print("tphi", tphi)
-    
-
-    print("=" * 60)
 
     if direction[0]: 
         plane_vector_1 = (0,1,0)
@@ -413,7 +400,10 @@ def test_kmc_fmm_eval_field_3(direction):
 
 
     kmc_field = kmc_fmm.eval_field(eval_points)
-
+    
+    err = np.linalg.norm(kmc_field, np.inf)
+    assert err < 10.**-4
+    return 
     for px in range(kmc_field.shape[0]):
         print(eval_points[px, :], kmc_field[px])
     
@@ -487,9 +477,6 @@ def test_kmc_fmm_eval_field_3(direction):
 
 
 
-    return
-    err = np.linalg.norm(kmc_field, np.inf)
-    assert err < 3*10.**-5
 
 
 
