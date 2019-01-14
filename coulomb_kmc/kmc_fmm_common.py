@@ -21,6 +21,8 @@ import ppmd
 import ppmd.cuda
 from ppmd.coulomb.sph_harm import *
 from ppmd.lib.build import simple_lib_creator
+from ppmd.coulomb.fmm_pbc import DipoleCorrector
+
 
 if ppmd.cuda.CUDA_IMPORT:
     cudadrv = ppmd.cuda.cuda_runtime.cudadrv
@@ -148,6 +150,9 @@ class LongRangeCorrection:
         self._thread_space = [np.zeros(4000, dtype=REAL) for tx in range(self._nthread)]
         self._thread_ptrs = np.array([tx.ctypes.get_as_parameter().value for tx in self._thread_space],
             dtype=ctypes.c_void_p)
+
+        # dipole correction vars
+        self._dpc = DipoleCorrector(L, self.domain.extent, self.fmm._lr_mtl_func)
 
     def _resize_if_needed_py(self, nc):
         if self._prop_space.shape[0] < nc:
