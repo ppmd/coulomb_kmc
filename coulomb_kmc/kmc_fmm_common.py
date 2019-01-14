@@ -213,7 +213,7 @@ class FullLongRangeEnergy:
                 # compute long range energy contribution
                 new_energy = 0.5 * np.dot(L_tmp, dot_vec)
 
-                arr[px, movxi] += new_energy - old_energy
+                arr[px, movxi] += old_energy - new_energy
                 print("new lr contrib", new_energy - old_energy)
 
 
