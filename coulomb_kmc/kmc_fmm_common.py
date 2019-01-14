@@ -21,7 +21,7 @@ import ppmd
 import ppmd.cuda
 from ppmd.coulomb.sph_harm import *
 from ppmd.lib.build import simple_lib_creator
-from ppmd.coulomb.fmm_pbc import DipoleCorrector
+#from ppmd.coulomb.fmm_pbc import DipoleCorrector
 
 
 if ppmd.cuda.CUDA_IMPORT:
@@ -104,6 +104,121 @@ def _h(j,k,n,m):
 def _re_lm(l, m): return l**2 + l + m
 
 
+class FullLongRangeEnergy:
+    def __init__(self, fmm, local_exp_eval):
+        # this should be a full PBC fmm instance
+        self.fmm = fmm
+        self.domain = fmm.domain
+        self._lee = local_exp_eval
+        L = self.fmm.L
+        self.ncomp = 2*(L**2)
+        self.half_ncomp = L**2
+        self.lrc = LongRangeCorrection(fmm, fmm.domain, local_exp_eval)
+
+        self.multipole_exp = np.zeros(self.ncomp, dtype=REAL)
+        self.local_dot_coeffs = np.zeros(self.ncomp, dtype=REAL)
+
+    def initialise(self, positions, charges):
+        assert self.domain.comm.size == 1, "need to MPI reduce coefficients"
+
+        self.multipole_exp.fill(0)
+        self.local_dot_coeffs.fill(0)
+
+        for px in range(positions.npart_local):
+            # multipole expansion for the whole cell
+            self._lee.multipole_exp(
+                spherical(tuple(positions[px,:])),
+                charges[px, 0],
+                self.multipole_exp
+            )
+            # dot product for the local expansion for the cell
+            self._lee.dot_vec(
+                spherical(tuple(positions[px,:])),
+                charges[px, 0],
+                self.local_dot_coeffs
+            )
+        
+        L_tmp = np.zeros_like(self.local_dot_coeffs)
+        self.lrc.apply_lr_mtl(self.multipole_exp, L_tmp)
+        return 0.5 * np.dot(L_tmp, self.local_dot_coeffs)
+
+    def propose(self, total_movs, num_particles, host_data, cuda_data, arr, use_python=True):
+        es = host_data['exclusive_sum']
+        old_pos = host_data['old_positions']
+        new_pos = host_data['new_positions']
+        old_chr = host_data['old_charges']
+        
+        assert es.dtype == INT64
+        assert old_pos.dtype == REAL
+        assert old_chr.dtype == REAL
+        assert new_pos.dtype == REAL
+        assert arr.dtype == REAL
+
+        assert use_python
+        
+        # tmp vars
+
+        to_remove = np.zeros(self.ncomp, dtype=REAL)
+        prop_mexp = np.zeros_like(to_remove)
+
+        to_remove_dot_vec = np.zeros_like(to_remove)
+        dot_vec = np.zeros_like(to_remove)
+
+        L_tmp = np.zeros_like(to_remove)
+
+
+        # get current long range energy
+        self.lrc.apply_lr_mtl(self.multipole_exp, L_tmp)
+        old_energy = 0.5 * np.dot(L_tmp, self.local_dot_coeffs)
+
+        print("old_energy", old_energy)
+        
+
+        for px in  range(num_particles):
+            # assumed charge doesn't change
+            charge = old_chr[px]
+            opos = old_pos[px, :]
+
+            nprop = es[px+1, 0] - es[px, 0]
+
+            # remove old multipole expansion coeffs
+            to_remove.fill(0)
+            self._lee.multipole_exp(spherical(tuple(opos)), -charge, to_remove)
+            
+            # remove dot product coeffs
+            to_remove_dot_vec.fill(0)
+            self._lee.dot_vec(spherical(tuple(opos)), -charge, to_remove_dot_vec)
+
+
+            for movxi, movx in enumerate(range(es[px, 0], es[px+1, 0])):
+                prop_mexp[:] = self.multipole_exp[:].copy()
+                npos = new_pos[movx, :]
+
+                # compute the mutipole expansion of the proposed config
+                self._lee.multipole_exp(spherical(tuple(npos)), charge, prop_mexp)
+                # remove the old pos
+                prop_mexp[:] += to_remove
+
+                # do the same for the dot product vector
+                dot_vec[:] = self.local_dot_coeffs.copy()
+                dot_vec[:] += to_remove_dot_vec[:]
+
+                # add on the proposed position
+                self._lee.dot_vec(spherical(tuple(npos)), charge, dot_vec)
+                
+                # apply long range mtl
+                L_tmp.fill(0)
+                self.lrc.apply_lr_mtl(prop_mexp, L_tmp)
+                
+                # compute long range energy contribution
+                new_energy = 0.5 * np.dot(L_tmp, dot_vec)
+
+                arr[px, movxi] += new_energy - old_energy
+                print("new lr contrib", new_energy - old_energy)
+
+
+
+
 class LongRangeCorrection:
     def __init__(self, fmm, domain, local_exp_eval):
 
@@ -117,6 +232,7 @@ class LongRangeCorrection:
         self.half_ncomp = L**2
         self.rmat = np.zeros((self.half_ncomp, self.half_ncomp), dtype=REAL)
         #self.rmat = csr_matrix((self.half_ncomp, self.half_ncomp), dtype=REAL)
+
         row = 0
         for jx in range(L):
             for kx in range(-jx, jx+1):
@@ -126,11 +242,11 @@ class LongRangeCorrection:
                         if (not abs(mx-kx) > jx+nx) and \
                             (not (abs(mx-kx) % 2 == 1)) and \
                             (not (abs(jx+nx) % 2 == 1)):
-
+                            
                             self.rmat[row, col] = _h(jx, kx, nx, mx) * self._rvec[_re_lm(jx+nx, mx-kx)]
                         col += 1
                 row += 1
-        
+
         self.sparse_rmat = csr_matrix(self.rmat)
         self.linop = aslinearoperator(self.rmat)
         self.sparse_linop = aslinearoperator(self.sparse_rmat)
@@ -152,7 +268,7 @@ class LongRangeCorrection:
             dtype=ctypes.c_void_p)
 
         # dipole correction vars
-        self._dpc = DipoleCorrector(L, self.domain.extent, self.fmm._lr_mtl_func)
+        # self._dpc = DipoleCorrector(L, self.domain.extent, self.fmm._lr_mtl_func)
 
     def _resize_if_needed_py(self, nc):
         if self._prop_space.shape[0] < nc:
@@ -166,6 +282,12 @@ class LongRangeCorrection:
             self._thread_space = [np.zeros(needed_space, dtype=REAL) for tx in range(self._nthread)]
             self._thread_ptrs = np.array([tx.ctypes.get_as_parameter().value for tx in self._thread_space],
                 dtype=ctypes.c_void_p)
+
+    def apply_lr_mtl(self, M, L):
+        L[:self.half_ncomp] = self.sparse_linop.dot(M[:self.half_ncomp])
+        L[self.half_ncomp:] = self.sparse_linop.dot(M[self.half_ncomp:])
+        self.fmm.dipole_corrector(M, L)
+
 
     def compute_corrections(self, total_movs, num_particles, host_data, cuda_data, lr_correction, arr):
 
@@ -570,7 +692,6 @@ class FMMSelfInteraction:
         es = host_data['exclusive_sum']
         old_pos = host_data['old_positions']
         new_pos = host_data['new_positions']
-
         old_chr = host_data['old_charges']
         
         assert es.dtype == INT64
@@ -590,6 +711,8 @@ class FMMSelfInteraction:
         )
 
         if self._bc is BCType.PBC:
+            print("warning always using python")
+            use_python = True
 
 
             if not use_python:
@@ -614,7 +737,10 @@ class FMMSelfInteraction:
                     opos = old_pos[px, :]
 
                     for movxi, movx in enumerate(range(es[px, 0], es[px+1, 0])):
-                        arr[px, movxi] -= self.py_self_interaction_indirect(opos, new_pos[movx, :], charge)
+                        tmp = self.py_self_interaction_indirect(opos, new_pos[movx, :], charge)
+                        arr[px, movxi] -= tmp
+                        print("old lr diff contrib", tmp)
+
 
 
     def py_self_interaction_direct(self, old_pos, prop_pos, q):
@@ -680,7 +806,6 @@ class FMMSelfInteraction:
         arr_out = np.zeros(l2)
 
         arr[:] = self._lr_correction[:].copy()
-
         #print("plr lr correct", arr[:4])
 
         self._multipole_diff(old_pos, prop_pos, q, arr)
@@ -699,6 +824,8 @@ class FMMSelfInteraction:
             self.fmm._ipower_mtl.ctypes.get_as_parameter(),
             arr_out.ctypes.get_as_parameter()
         )
+        
+        #self.fmm.dipole_corrector(arr, arr_out)
 
         # print("plr local exp", arr_out[:4])
         return arr_out
@@ -864,6 +991,59 @@ class LocalExpEval(object):
         self.create_multipole_src = src_lib
 
         self._multipole_lib = simple_lib_creator(header_code=header, src_code=src)['multipole_exp']
+
+
+        # --- lib to create vector to dot product with local expansions --- 
+
+        assign_gen = 'double rhol = 1.0;\n'
+        for lx in range(self.L):
+            for mx in range(-lx, lx+1):
+                assign_gen += 'out[{ind}] += {ylmm} * rhol * charge;\n'.format(
+                        ind=cube_ind(lx, mx),
+                        ylmm=str(sph_gen.get_y_sym(lx, mx)[0])
+                    )
+                assign_gen += 'out[IM_OFFSET + {ind}] += (-1.0) * {ylmm} * rhol * charge;\n'.format(
+                        ind=cube_ind(lx, mx),
+                        ylmm=str(sph_gen.get_y_sym(lx, mx)[1])
+                    )
+            assign_gen += 'rhol *= radius;\n'
+
+        src = """
+        #define IM_OFFSET ({IM_OFFSET})
+
+        {DECLARE} int local_dot_vec(
+            const double charge,
+            const double radius,
+            const double theta,
+            const double phi,
+            double * RESTRICT out
+        ){{
+            {SPH_GEN}
+            {ASSIGN_GEN}
+            return 0;
+        }}
+        """
+        header = str(sph_gen.header)
+        
+        src_lib = src.format(
+            SPH_GEN=str(sph_gen.module),
+            ASSIGN_GEN=str(assign_gen),
+            IM_OFFSET=(self.L**2),
+            DECLARE=r'static inline'
+        )
+
+        src = src.format(
+            SPH_GEN=str(sph_gen.module),
+            ASSIGN_GEN=str(assign_gen),
+            IM_OFFSET=(self.L**2),
+            DECLARE=r'extern "C"'
+        )
+
+        self.create_dot_vec_header = header
+        self.create_dot_vec_src = src_lib
+
+        self._dot_vec_lib = simple_lib_creator(header_code=header, src_code=src)['local_dot_vec']
+
 
         # --- lib to evaluate local expansions --- 
 
@@ -1060,6 +1240,24 @@ class LocalExpEval(object):
             REAL(sph[2]),
             arr.ctypes.get_as_parameter()
         )
+
+
+    def dot_vec(self, sph, charge, arr):
+        """
+        For a charge at the point sph computes the coefficients at the origin
+        and appends them onto arr that can be used in a dot product to compute
+        the energy.
+        """
+        assert arr.dtype == REAL
+        self._dot_vec_lib(
+            REAL(charge),
+            REAL(sph[0]),
+            REAL(sph[1]),
+            REAL(sph[2]),
+            arr.ctypes.get_as_parameter()
+        )
+
+
 
     def py_multipole_exp(self, sph, charge, arr):
         """

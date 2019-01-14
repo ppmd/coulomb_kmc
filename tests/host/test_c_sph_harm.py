@@ -119,3 +119,72 @@ def test_c_sph_harm_2():
         
         assert err < 10.**-14
 
+
+def compute_phi_local(llimit, moments, disp_sph):
+
+    phi_sph_re = 0.
+    phi_sph_im = 0.
+    def re_lm(l,m): return (l**2) + l + m
+    def im_lm(l,m): return (l**2) + l +  m + llimit**2
+
+    for lx in range(llimit):
+        mrange = list(range(lx, -1, -1)) + list(range(1, lx+1))
+        mrange2 = list(range(-1*lx, 1)) + list(range(1, lx+1))
+        scipy_p = lpmv(mrange, lx, np.cos(disp_sph[1]))
+
+        #print('lx', lx, '-------------')
+
+        for mxi, mx in enumerate(mrange2):
+
+            re_exp = np.cos(mx*disp_sph[2])
+            im_exp = np.sin(mx*disp_sph[2])
+
+            #print('mx', mx, im_exp)
+
+            val = math.sqrt(math.factorial(
+                lx - abs(mx))/math.factorial(lx + abs(mx)))
+            val *= scipy_p[mxi]
+
+            irad = disp_sph[0] ** (lx)
+
+            scipy_real = re_exp * val * irad
+            scipy_imag = im_exp * val * irad
+
+            ppmd_mom_re = moments[re_lm(lx, mx)]
+            ppmd_mom_im = moments[im_lm(lx, mx)]
+
+            phi_sph_re += scipy_real*ppmd_mom_re - scipy_imag*ppmd_mom_im
+            phi_sph_im += scipy_real*ppmd_mom_im + ppmd_mom_re*scipy_imag
+
+    return phi_sph_re, phi_sph_im
+
+
+def test_c_local_dot_eval():
+    L = 2
+    lee = LocalExpEval(L)
+    rng = np.random.RandomState(9476213)
+
+    ncomp = (L**2)*2
+
+    for tx in range(50):
+        L_exp = np.array(rng.uniform(size=ncomp), dtype=REAL)
+        L_coe = np.zeros_like(L_exp)
+        
+        pos = (tuple(rng.uniform(size=3)))
+        sph_pos = spherical(pos)
+        lee.dot_vec(sph_pos, 1, L_coe)
+
+        eng_c = np.dot(L_coe, L_exp)
+
+        eng_p, _ = compute_phi_local(L, L_exp, sph_pos)
+
+        err = abs(eng_c - eng_p) / abs(eng_c)
+        assert err < 10.**-14
+
+
+
+
+
+
+
+

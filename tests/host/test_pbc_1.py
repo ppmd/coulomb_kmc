@@ -30,6 +30,7 @@ from coulomb_kmc import *
 c_double = ctypes.c_double
 
 
+from coulomb_kmc.kmc_fmm_common import spherical
 
 
 
@@ -84,6 +85,60 @@ def test_c_local_expansion_eval():
         err = abs(py_phi - c_phi) / rel
         assert err < 10.**-12
         
+
+
+def test_split_concept_1():
+    L = 12
+    R = 3
+
+    N = 200
+    E = 1.
+    rc = E/4
+
+    rng = np.random.RandomState(seed=12415)
+
+    ncomp = (L**2)*2
+    half_ncomp = (L**2)
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    A.npart = N
+
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+
+    A.P[:] = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
+    for px in range(N):
+        A.Q[px,0] = (-1.0)**(px+1)
+    bias = np.sum(A.Q[:N:, 0])/N
+    A.Q[:, 0] -= bias
+
+
+    A.scatter_data_from(0)
+
+
+    fmm_pbc = PyFMM(A.domain, N=N, free_space=False, r=R, l=L)
+    fmm_27 = PyFMM(A.domain, N=N, free_space='27', r=R, l=L)
+
+    energy_pbc = fmm_pbc(A.P, A.Q)
+    energy_27 = fmm_27(A.P, A.Q)
+    
+    lee = kmc_fmm_common.LocalExpEval(L)
+    local_dot_coeffs = np.zeros(ncomp, dtype=REAL)
+    for px in range(N):
+        lee.dot_vec(spherical(tuple(A.P[px, :])), A.Q[px, :], local_dot_coeffs)
+    
+    L_exp = np.zeros_like(fmm_pbc.tree_parent[1][0, 0, 0, :])
+    
+    fmm_pbc._lr_mtl_func(fmm_pbc.tree_halo[0][2,2,2,:], L_exp)
+    fmm_pbc.dipole_corrector(fmm_pbc.tree_halo[0][2,2,2,:], L_exp)
+
+    lr_energy = 0.5 * np.dot(L_exp, local_dot_coeffs)
+    
+    err = abs(energy_pbc - (energy_27 + lr_energy)) / abs(energy_pbc)
+
+    assert err < 10.**-14
+
 
 def test_kmc_lr_1():
     """
@@ -364,6 +419,8 @@ def test_kmc_fmm_pbc_1():
         domain=A.domain, r=R, l=L, boundary_condition=bcs[1])
     kmc_fmm.initialise()
 
+    #fmm = PyFMM(B.domain, N=N, free_space='27', r=kmc_fmm.fmm.R, l=kmc_fmm.fmm.L)
+    #print("WRONG FMM")
     fmm = PyFMM(B.domain, N=N, free_space=bcs[0], r=kmc_fmm.fmm.R, l=kmc_fmm.fmm.L)
     #ewald = EwaldOrthoganalHalf(domain=B.domain, real_cutoff=rc, shared_memory='omp', eps=10.**-8)
 
@@ -377,7 +434,8 @@ def test_kmc_fmm_pbc_1():
         return _phi_direct
     
     phi_direct = _direct()
-
+    
+    print("correct initial", phi_direct)
 
     for rx in range(N):
         #pid = 0

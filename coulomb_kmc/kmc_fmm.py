@@ -59,12 +59,20 @@ class KMCFMM(object):
             '27': '27'
         }[boundary_condition]
 
-
-        self.fmm = PyFMM(domain, N=N, free_space=_bc, r=r,
+        print("warning fmm init in debug mode")
+        self.fmm = PyFMM(domain, N=N, free_space='27', r=r,
             shell_width=shell_width, cuda=False, cuda_levels=1,
             force_unit=1.0, energy_unit=energy_unit,
             _debug=_debug, l=l, cuda_local=False)
-        
+
+        self.fmm_pbc = PyFMM(domain, N=N, free_space=False, r=r,
+            shell_width=shell_width, cuda=False, cuda_levels=1,
+            force_unit=1.0, energy_unit=energy_unit,
+            _debug=_debug, l=l, cuda_local=False)
+
+
+
+
         self.cuda_direct = cuda_direct
 
         self.domain = domain
@@ -96,7 +104,15 @@ class KMCFMM(object):
             boundary_condition=self._bc, cuda=self.cuda_direct)
 
         # self interaction handling class
-        self._si = FMMSelfInteraction(self.fmm, domain, self._bc, self._lee) 
+
+        print("DEBUG SI INIT")
+        # self._si = FMMSelfInteraction(self.fmm_pbc, domain, self._bc, self._lee) 
+        self._si = FMMSelfInteraction(self.fmm, domain, BCType.NEAREST, self._lee) 
+
+        # long range calculation
+        if self._bc == BCType.PBC:
+            self._lr_energy = FullLongRangeEnergy(self.fmm_pbc, self._lee)
+
 
         # class to collect required local expansions
         self.kmco = self.md.kmco
@@ -345,6 +361,13 @@ class KMCFMM(object):
         self._dsb = np.zeros(27 * cell_occ)
         self._dsc = np.zeros(27 * cell_occ)
 
+        # long range calculation
+        if self._bc == BCType.PBC:
+            lr_energy = self._lr_energy.initialise(positions=self.positions, charges=self.charges)
+            self.energy += lr_energy
+        
+        print("initial energy", self.energy, lr_energy)
+
         self._profile_inc('initialise', time() - t0)
 
     
@@ -485,7 +508,11 @@ class KMCFMM(object):
 
         self._si.propose(*tuple(list(cmove_data) + [self._tmp_energies[_ENERGY.U01_SELF]]))
 
-
+        # long range calculation
+        print(self._bc)
+        if self._bc == BCType.PBC:
+            #print("LR DISABLED")
+            self._lr_energy.propose(*tuple(list(cmove_data) + [self._tmp_energies[_ENERGY.U01_SELF]]))
 
         # compute differences
         self._tmp_energies[_ENERGY.U_DIFF] = \
