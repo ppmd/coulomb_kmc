@@ -188,12 +188,11 @@ def test_kmc_lr_1():
 
     A.scatter_data_from(0)
 
-    # create a kmc instance
-    kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
-        domain=A.domain, r=R, l=L, boundary_condition='pbc')
+    
+    pbc_fmm = PyFMM(A.domain, free_space=False, l=L, r=R)
 
     ExpInst = kmc_fmm_common.LocalExpEval(L)
-    lrc = kmc_fmm_common.LongRangeCorrection(kmc_fmm.fmm, A.domain, ExpInst)
+    lrc = kmc_fmm_common.LongRangeCorrection(L, A.domain, ExpInst)
     
     '''
     for nx in range(1,100):
@@ -210,15 +209,15 @@ def test_kmc_lr_1():
     prop = np.zeros_like(in_mom)
     
     t0 = time.time()
-    kmc_fmm.fmm._translate_mtl_lib['mtl_test_wrapper'](
+    pbc_fmm._translate_mtl_lib['mtl_test_wrapper'](
         INT64(L),
         REAL(1.),
         in_mom.ctypes.get_as_parameter(),
-        kmc_fmm.fmm._boundary_ident.ctypes.get_as_parameter(),
-        kmc_fmm.fmm._boundary_terms.ctypes.get_as_parameter(),
-        kmc_fmm.fmm._a.ctypes.get_as_parameter(),
-        kmc_fmm.fmm._ar.ctypes.get_as_parameter(),
-        kmc_fmm.fmm._ipower_mtl.ctypes.get_as_parameter(),
+        pbc_fmm._boundary_ident.ctypes.get_as_parameter(),
+        pbc_fmm._boundary_terms.ctypes.get_as_parameter(),
+        pbc_fmm._a.ctypes.get_as_parameter(),
+        pbc_fmm._ar.ctypes.get_as_parameter(),
+        pbc_fmm._ipower_mtl.ctypes.get_as_parameter(),
         correct.ctypes.get_as_parameter()
     )
     t1 = time.time()
@@ -434,8 +433,6 @@ def test_kmc_fmm_pbc_1():
         return _phi_direct
     
     phi_direct = _direct()
-    
-    print("correct initial", phi_direct)
 
     for rx in range(N):
         #pid = 0

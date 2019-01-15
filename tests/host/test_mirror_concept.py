@@ -402,8 +402,14 @@ def test_kmc_fmm_eval_field_3(direction):
     kmc_field = kmc_fmm.eval_field(eval_points)
     
     err = np.linalg.norm(kmc_field, np.inf)
+    
+    #for px in range(eval_points.shape[0]):
+    #    print(eval_points[px, :], kmc_field[px])
+    
     assert err < 10.**-4
+
     return 
+
     for px in range(kmc_field.shape[0]):
         print(eval_points[px, :], kmc_field[px])
     

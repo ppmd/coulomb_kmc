@@ -21,7 +21,7 @@ import ppmd
 import ppmd.cuda
 from ppmd.coulomb.sph_harm import *
 from ppmd.lib.build import simple_lib_creator
-#from ppmd.coulomb.fmm_pbc import DipoleCorrector
+from ppmd.coulomb.fmm_pbc import DipoleCorrector, FMMPbc
 
 
 if ppmd.cuda.CUDA_IMPORT:
@@ -105,15 +105,14 @@ def _re_lm(l, m): return l**2 + l + m
 
 
 class FullLongRangeEnergy:
-    def __init__(self, fmm, local_exp_eval):
+    def __init__(self, L, domain, local_exp_eval):
         # this should be a full PBC fmm instance
-        self.fmm = fmm
-        self.domain = fmm.domain
+        self.domain = domain
         self._lee = local_exp_eval
-        L = self.fmm.L
         self.ncomp = 2*(L**2)
         self.half_ncomp = L**2
-        self.lrc = LongRangeCorrection(fmm, fmm.domain, local_exp_eval)
+
+        self.lrc = LongRangeCorrection(L, domain, local_exp_eval)
 
         self.multipole_exp = np.zeros(self.ncomp, dtype=REAL)
         self.local_dot_coeffs = np.zeros(self.ncomp, dtype=REAL)
@@ -171,9 +170,6 @@ class FullLongRangeEnergy:
         self.lrc.apply_lr_mtl(self.multipole_exp, L_tmp)
         old_energy = 0.5 * np.dot(L_tmp, self.local_dot_coeffs)
 
-        print("old_energy", old_energy)
-        
-
         for px in  range(num_particles):
             # assumed charge doesn't change
             charge = old_chr[px]
@@ -214,20 +210,46 @@ class FullLongRangeEnergy:
                 new_energy = 0.5 * np.dot(L_tmp, dot_vec)
 
                 arr[px, movxi] += old_energy - new_energy
-                print("new lr contrib", new_energy - old_energy)
+    
+
+    def accept(self, movedata):
+
+        realdata = movedata[:7].view(dtype=REAL)
+
+        old_position = realdata[0:3:]
+        new_position = realdata[3:6:]
+        charge       = realdata[6]
+
+        # modify the multipole expansion for the coarest level
+        self._lee.multipole_exp(spherical(tuple(old_position)), -charge, self.multipole_exp)
+        self._lee.multipole_exp(spherical(tuple(new_position)),  charge, self.multipole_exp)
+
+        # modify the dot product coefficients
+        self._lee.dot_vec(spherical(tuple(old_position)), -charge, self.local_dot_coeffs)
+        self._lee.dot_vec(spherical(tuple(new_position)),  charge, self.local_dot_coeffs)
 
 
+    def eval_field(self, points, out):
+        npoints = points.shape[0]
+        lexp = np.zeros(self.ncomp, REAL)
+        self.lrc.apply_lr_mtl(self.multipole_exp, lexp)
 
+        for px in range(npoints):
+            pointx = points[px, :]
+            lr_tmp = self._lee.compute_phi_local(lexp, spherical(tuple(pointx)))[0]
+            out[px] += lr_tmp
 
 class LongRangeCorrection:
-    def __init__(self, fmm, domain, local_exp_eval):
-
-        self.fmm = fmm
+    def __init__(self, L, domain, local_exp_eval):
+        
+        self.L = L
         self.domain = domain
         self._lee = local_exp_eval
-        self._rvec = self.fmm._boundary_terms
 
-        L = self.fmm.L
+        _pbc_tool = FMMPbc(self.L, 10.**-10, domain, REAL)
+        self._rvec = _pbc_tool.compute_f() + _pbc_tool.compute_g()
+
+        L = self.L
         self.ncomp = 2*(L**2)
         self.half_ncomp = L**2
         self.rmat = np.zeros((self.half_ncomp, self.half_ncomp), dtype=REAL)
@@ -268,7 +290,11 @@ class LongRangeCorrection:
             dtype=ctypes.c_void_p)
 
         # dipole correction vars
-        # self._dpc = DipoleCorrector(L, self.domain.extent, self.fmm._lr_mtl_func)
+        self._dpc = DipoleCorrector(L, self.domain.extent, self._apply_operator)
+
+    def _apply_operator(self, M, L):
+        L[:self.half_ncomp] = self.sparse_linop.dot(M[:self.half_ncomp])
+        L[self.half_ncomp:] = self.sparse_linop.dot(M[self.half_ncomp:])
 
     def _resize_if_needed_py(self, nc):
         if self._prop_space.shape[0] < nc:
@@ -284,9 +310,8 @@ class LongRangeCorrection:
                 dtype=ctypes.c_void_p)
 
     def apply_lr_mtl(self, M, L):
-        L[:self.half_ncomp] = self.sparse_linop.dot(M[:self.half_ncomp])
-        L[self.half_ncomp:] = self.sparse_linop.dot(M[self.half_ncomp:])
-        self.fmm.dipole_corrector(M, L)
+        self._apply_operator(M, L)
+        self._dpc(M, L)
 
 
     def compute_corrections(self, total_movs, num_particles, host_data, cuda_data, lr_correction, arr):
@@ -296,7 +321,7 @@ class LongRangeCorrection:
         new_pos = host_data['new_positions']
         old_chr = host_data['old_charges']
         
-        L = self.fmm.L
+        L = self.L
         ncomp = (L**2)*2
         half_ncomp = (L**2)
 
@@ -326,7 +351,7 @@ class LongRangeCorrection:
         new_pos = host_data['new_positions']
         old_chr = host_data['old_charges']
         
-        L = self.fmm.L
+        L = self.L
         ncomp = (L**2)*2
         half_ncomp = (L**2)
         
@@ -371,8 +396,8 @@ class LongRangeCorrection:
 
 
     def _init_host_lib(self):
-        ncomp = (self.fmm.L**2)*2
-        half_ncomp = self.fmm.L**2
+        ncomp = (self.L**2)*2
+        half_ncomp = self.L**2
 
         src = r'''
         
@@ -549,7 +574,7 @@ class FMMSelfInteraction:
         self._lr_correction_local = np.zeros_like(self._lr_correction)
 
         if self._bc is BCType.PBC:
-            self.lrc = LongRangeCorrection(fmm, domain, local_exp_eval)
+            self.lrc = LongRangeCorrection(self.fmm.L, domain, local_exp_eval)
 
         self._new27direct = 0.0
         ex = self.domain.extent
@@ -670,6 +695,9 @@ class FMMSelfInteraction:
 
 
     def accept(self, movedata):
+        
+        # not needed with "full" long-range
+        return
 
         realdata = movedata[:7].view(dtype=REAL)
 
@@ -710,6 +738,8 @@ class FMMSelfInteraction:
             arr.ctypes.get_as_parameter()           
         )
 
+        # this code is redundant if using the "full" approach to long-range energy
+        return
         if self._bc is BCType.PBC:
             print("warning always using python")
             use_python = True
@@ -825,6 +855,7 @@ class FMMSelfInteraction:
             arr_out.ctypes.get_as_parameter()
         )
         
+        # this probably breaks equal-and-opposite somehow
         #self.fmm.dipole_corrector(arr, arr_out)
 
         # print("plr local exp", arr_out[:4])

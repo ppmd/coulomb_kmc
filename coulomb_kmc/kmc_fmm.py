@@ -53,25 +53,17 @@ class KMCFMM(object):
 
         # horrible workaround to convert sensible boundary condition
         # parameter format to what exists for PyFMM
+
         _bc = {
-            'pbc': False,
+            'pbc': '27',        # PBC are handled separately now
             'free_space': True,
             '27': '27'
         }[boundary_condition]
 
-        print("warning fmm init in debug mode")
-        self.fmm = PyFMM(domain, N=N, free_space='27', r=r,
+        self.fmm = PyFMM(domain, N=N, free_space=_bc, r=r,
             shell_width=shell_width, cuda=False, cuda_levels=1,
             force_unit=1.0, energy_unit=energy_unit,
             _debug=_debug, l=l, cuda_local=False)
-
-        self.fmm_pbc = PyFMM(domain, N=N, free_space=False, r=r,
-            shell_width=shell_width, cuda=False, cuda_levels=1,
-            force_unit=1.0, energy_unit=energy_unit,
-            _debug=_debug, l=l, cuda_local=False)
-
-
-
 
         self.cuda_direct = cuda_direct
 
@@ -105,13 +97,11 @@ class KMCFMM(object):
 
         # self interaction handling class
 
-        print("DEBUG SI INIT")
-        # self._si = FMMSelfInteraction(self.fmm_pbc, domain, self._bc, self._lee) 
-        self._si = FMMSelfInteraction(self.fmm, domain, BCType.NEAREST, self._lee) 
+        self._si = FMMSelfInteraction(self.fmm, domain, self._bc, self._lee) 
 
         # long range calculation
         if self._bc == BCType.PBC:
-            self._lr_energy = FullLongRangeEnergy(self.fmm_pbc, self._lee)
+            self._lr_energy = FullLongRangeEnergy(self.fmm.L, self.fmm.domain, self._lee)
 
 
         # class to collect required local expansions
@@ -212,6 +202,10 @@ class KMCFMM(object):
         iu0, iu1 = self.kmco.propose(*cmove_data)
         self._si.propose(*tuple(list(cmove_data) + [self._tmp_energies[_ENERGY.U01_SELF]]))
 
+        # long range calculation
+        if self._bc == BCType.PBC:
+            self._lr_energy.propose(*tuple(list(cmove_data) + [self._tmp_energies[_ENERGY.U01_SELF]]))
+
         self._diff_lib(
             INT64(num_particles),
             INT64(self._tmp_energies[_ENERGY.U01_SELF].shape[1]),
@@ -307,6 +301,12 @@ class KMCFMM(object):
         self.kmco.accept(movedata)
         self._profile_inc('octal_accept', time() - t0)
         
+        if self._bc == BCType.PBC:
+            t0 = time()
+            self._lr_energy.accept(movedata)
+            self._profile_inc('lr_energy_accept', time() - t0)
+
+        
 
     def test_accept_reinit(self, move):
         # perform the move by setting the new position and reinitialising the instance
@@ -365,8 +365,6 @@ class KMCFMM(object):
         if self._bc == BCType.PBC:
             lr_energy = self._lr_energy.initialise(positions=self.positions, charges=self.charges)
             self.energy += lr_energy
-        
-        print("initial energy", self.energy, lr_energy)
 
         self._profile_inc('initialise', time() - t0)
 
@@ -391,7 +389,10 @@ class KMCFMM(object):
             indirect_field = self._charge_indirect_energy_new(None, pointx)
             # indirect_field = 0
             out[px] = direct_field + indirect_field
-        
+
+        if self._bc == BCType.PBC:
+            self._lr_energy.eval_field(points, out)
+
         return out
 
 
@@ -509,7 +510,6 @@ class KMCFMM(object):
         self._si.propose(*tuple(list(cmove_data) + [self._tmp_energies[_ENERGY.U01_SELF]]))
 
         # long range calculation
-        print(self._bc)
         if self._bc == BCType.PBC:
             #print("LR DISABLED")
             self._lr_energy.propose(*tuple(list(cmove_data) + [self._tmp_energies[_ENERGY.U01_SELF]]))
