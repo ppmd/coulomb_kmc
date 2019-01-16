@@ -2,7 +2,9 @@ from enum import Enum
 from ppmd import opt
 import numpy as np
 
+
 PROFILE = opt.PROFILE
+
 
 def spherical(xyz):
     """
@@ -36,8 +38,6 @@ class BCType(Enum):
     PBC = 'pbc'
     FREE_SPACE = 'free_space'
     NEAREST = '27'
-
-
 
 
 cell_offsets = (

@@ -21,7 +21,7 @@ import ppmd
 import ppmd.cuda
 from ppmd.coulomb.sph_harm import *
 from ppmd.lib.build import simple_lib_creator
-from ppmd.coulomb.fmm_pbc import DipoleCorrector, FMMPbc
+from ppmd.coulomb.fmm_pbc import DipoleCorrector, FMMPbc, LongRangeMTL
 
 from coulomb_kmc.kmc_expansion_tools import LocalExpEval
 
@@ -46,55 +46,6 @@ def _h(j,k,n,m):
 def _re_lm(l, m): return l**2 + l + m
 
 
-class LongRangeMTL:
-    def __init__(self, L, domain):
-        self.L = L
-        self.domain = domain
-
-        _pbc_tool = FMMPbc(self.L, 10.**-10, domain, REAL)
-        _rvec = _pbc_tool.compute_f() + _pbc_tool.compute_g()
-
-        self.ncomp = 2*(L**2)
-        self.half_ncomp = L**2
-        self.rmat = np.zeros((self.half_ncomp, self.half_ncomp), dtype=REAL)
-        #self.rmat = csr_matrix((self.half_ncomp, self.half_ncomp), dtype=REAL)
-
-        row = 0
-        for jx in range(L):
-            for kx in range(-jx, jx+1):
-                col = 0
-                for nx in range(L):
-                    for mx in range(-nx, nx+1):
-                        if (not abs(mx-kx) > jx+nx) and \
-                            (not (abs(mx-kx) % 2 == 1)) and \
-                            (not (abs(jx+nx) % 2 == 1)):
-                            
-                            self.rmat[row, col] = _h(jx, kx, nx, mx) * _rvec[_re_lm(jx+nx, mx-kx)]
-                        col += 1
-                row += 1
-
-        self.sparse_rmat = csr_matrix(self.rmat)
-        self.linop = aslinearoperator(self.rmat)
-        self.sparse_linop = aslinearoperator(self.sparse_rmat)
-        self._linop_data = np.array(self.sparse_rmat.data, dtype=REAL)
-        self._linop_indptr = np.array(self.sparse_rmat.indptr, dtype=INT64)
-        self._linop_indices = np.array(self.sparse_rmat.indices, dtype=INT64)
-
-        # dipole correction vars
-        self._dpc = DipoleCorrector(L, self.domain.extent, self._apply_operator)
-
-    def _apply_operator(self, M, L):
-        L[:self.half_ncomp] = self.sparse_linop.dot(M[:self.half_ncomp])
-        L[self.half_ncomp:] = self.sparse_linop.dot(M[self.half_ncomp:])
-
-    def apply_lr_mtl(self, M, L):
-        self._apply_operator(M, L)
-        self._dpc(M, L)
-
-    def __call__(self, M, L):
-        return self.apply_lr_mtl(M, L)
-
-
 class LongRangeCorrection:
     def __init__(self, L, domain, local_exp_eval):
         
@@ -112,15 +63,14 @@ class LongRangeCorrection:
         self._prop_matmul = np.zeros((self.ncomp, 100), dtype=REAL)
 
         self._host_lib = self._init_host_lib()
+
+
         self._nthread = ppmd.runtime.NUM_THREADS
         assert self._nthread > 0
-
+        # these get resized if needed
         self._thread_space = [np.zeros(4000, dtype=REAL) for tx in range(self._nthread)]
         self._thread_ptrs = np.array([tx.ctypes.get_as_parameter().value for tx in self._thread_space],
             dtype=ctypes.c_void_p)
-
-        self._lr_mtl = LongRangeMTL(L, domain)
-
 
     def _resize_if_needed_py(self, nc):
         if self._prop_space.shape[0] < nc:
@@ -159,9 +109,9 @@ class LongRangeCorrection:
             old_chr.ctypes.get_as_parameter(),
             new_pos.ctypes.get_as_parameter(),
             lr_correction.ctypes.get_as_parameter(),
-            self._linop_data.ctypes.get_as_parameter(),
-            self._linop_indptr.ctypes.get_as_parameter(),
-            self._linop_indices.ctypes.get_as_parameter(),
+            self.lr_mtl.linop_data.ctypes.get_as_parameter(),
+            self.lr_mtl.linop_indptr.ctypes.get_as_parameter(),
+            self.lr_mtl.linop_indices.ctypes.get_as_parameter(),
             self._thread_ptrs.ctypes.get_as_parameter(),
             arr.ctypes.get_as_parameter()
         )
@@ -310,7 +260,6 @@ class LongRangeCorrection:
 
                 // loop over the proposed new positions and copy old positions and compute spherical coordinate
                 // vectors
-                #pragma omp simd simdlen(8)
                 for(INT64 movii=0 ; movii<nprop ; movii++){{
                     const INT64 movi = movii + exclusive_sum[px];
                     const REAL npx = new_positions[3*movi + 0];
