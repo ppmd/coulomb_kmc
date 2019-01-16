@@ -25,6 +25,8 @@ DEBUG = True
 SHARED_MEMORY = 'omp'
 
 from coulomb_kmc import *
+from coulomb_kmc.common import spherical
+from coulomb_kmc.kmc_expansion_tools import LocalExpEval
 
 _PROFILE = common.PROFILE
 
@@ -82,28 +84,6 @@ def get_cell_disp(s, ix, R):
     
     return sph
 
-def spherical(xyz):
-    if type(xyz) is tuple:
-        sph = np.zeros(3)
-        xy = xyz[0]**2 + xyz[1]**2
-        # r
-        sph[0] = np.sqrt(xy + xyz[2]**2)
-        # polar angle
-        sph[1] = np.arctan2(np.sqrt(xy), xyz[2])
-        # longitude angle
-        sph[2] = np.arctan2(xyz[1], xyz[0])
-
-    else:
-        sph = np.zeros(xyz.shape)
-        xy = xyz[:,0]**2 + xyz[:,1]**2
-        # r
-        sph[:,0] = np.sqrt(xy + xyz[:,2]**2)
-        # polar angle
-        sph[:,1] = np.arctan2(np.sqrt(xy), xyz[:,2])
-        # longitude angle
-        sph[:,2] = np.arctan2(xyz[:,1], xyz[:,0])
-
-    return sph
 
 def get_local_expansion(fmm, cell):
     ls = fmm.tree[fmm.R-1].local_grid_cube_size

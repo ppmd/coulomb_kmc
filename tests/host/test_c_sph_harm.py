@@ -28,6 +28,8 @@ SHARED_MEMORY = 'omp'
 from coulomb_kmc import *
 from coulomb_kmc.common import BCType
 from coulomb_kmc.kmc_fmm_common import *
+from coulomb_kmc.kmc_expansion_tools import LocalExpEval
+from coulomb_kmc.common import spherical
 
 INT64 = kmc_octal.INT64
 REAL = kmc_octal.REAL

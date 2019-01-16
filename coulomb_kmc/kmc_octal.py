@@ -15,8 +15,9 @@ from ppmd import mpi
 from ppmd.coulomb.sph_harm import SphGen, SphSymbol, cmplx_mul
 from ppmd.lib import build
 
-from coulomb_kmc.common import BCType, PROFILE
-from coulomb_kmc.kmc_fmm_common import LocalOctalBase, LocalExpEval, spherical, cell_offsets
+from coulomb_kmc.common import BCType, PROFILE, spherical, cell_offsets
+from coulomb_kmc.kmc_fmm_common import LocalOctalBase
+from coulomb_kmc.kmc_expansion_tools import LocalExpEval
 
 MPI = mpi.MPI
 

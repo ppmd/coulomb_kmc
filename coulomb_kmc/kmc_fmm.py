@@ -21,9 +21,12 @@ from ppmd.data import ParticleDat
 
 # coulomb_kmc imports
 from coulomb_kmc import kmc_octal, kmc_local
-from coulomb_kmc.common import BCType, PROFILE
+from coulomb_kmc.common import BCType, PROFILE, cell_offsets, spherical
 from coulomb_kmc.kmc_fmm_common import *
 from coulomb_kmc.kmc_mpi_decomp import *
+from coulomb_kmc.kmc_full_long_range import FullLongRangeEnergy
+from coulomb_kmc.kmc_fmm_self_interaction import FMMSelfInteraction, LongRangeCorrection
+from coulomb_kmc.kmc_expansion_tools import LocalExpEval
 
 REAL = ctypes.c_double
 INT64 = ctypes.c_int64

@@ -34,7 +34,6 @@ if ppmd.cuda.CUDA_IMPORT:
 from coulomb_kmc.common import BCType, PROFILE
 from coulomb_kmc.kmc_fmm_common import LocalOctalBase
 
-
 _BUILD_DIR = runtime.BUILD_DIR
 
 _offsets = (

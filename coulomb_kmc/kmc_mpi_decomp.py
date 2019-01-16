@@ -11,8 +11,8 @@ REAL = ctypes.c_double
 INT64 = ctypes.c_int64
 
 from coulomb_kmc.common import BCType, PROFILE
-from coulomb_kmc import kmc_octal, kmc_local
 from coulomb_kmc.kmc_fmm_common import LocalOctalBase
+from coulomb_kmc import kmc_octal, kmc_local
 
 # cuda imports if possible
 import ppmd

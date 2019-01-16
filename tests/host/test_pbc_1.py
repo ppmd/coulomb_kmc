@@ -30,7 +30,8 @@ from coulomb_kmc import *
 c_double = ctypes.c_double
 
 
-from coulomb_kmc.kmc_fmm_common import spherical
+from coulomb_kmc.common import spherical
+from coulomb_kmc.kmc_expansion_tools import LocalExpEval
 
 
 
@@ -42,7 +43,7 @@ def test_c_multipole_expansion():
 
     rng = np.random.RandomState(235243095)
 
-    ExpInst = kmc_fmm_common.LocalExpEval(L)
+    ExpInst = LocalExpEval(L)
     
     radii = rng.uniform(0.1, 10, N)
     theta_set = rng.uniform(0.001, pi, N)
@@ -70,7 +71,7 @@ def test_c_local_expansion_eval():
 
     rng = np.random.RandomState(235243095)
 
-    ExpInst = kmc_fmm_common.LocalExpEval(L)
+    ExpInst = LocalExpEval(L)
     
     radii = rng.uniform(0.1, 10, N)
     theta_set = rng.uniform(0.001, pi, N)
@@ -123,7 +124,7 @@ def test_split_concept_1():
     energy_pbc = fmm_pbc(A.P, A.Q)
     energy_27 = fmm_27(A.P, A.Q)
     
-    lee = kmc_fmm_common.LocalExpEval(L)
+    lee = LocalExpEval(L)
     local_dot_coeffs = np.zeros(ncomp, dtype=REAL)
     for px in range(N):
         lee.dot_vec(spherical(tuple(A.P[px, :])), A.Q[px, :], local_dot_coeffs)
@@ -140,111 +141,8 @@ def test_split_concept_1():
     assert err < 10.**-14
 
 
+
 def test_kmc_lr_1():
-    """
-    Passes all proposed moves to kmc at once, then checks all outputs
-    """
-    L = 12
-    R = 3
-
-    N = 2000
-    E = 1.
-    rc = E/4
-
-    ncomp = (L**2)*2
-    half_ncomp = (L**2)
-    A = state.State()
-    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
-    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
-    A.npart = N
-
-    A.P = data.PositionDat(ncomp=3)
-    A.Q = data.ParticleDat(ncomp=1)
-    A.PP = data.ParticleDat(ncomp=3)
-
-    A.crr = data.ScalarArray(ncomp=1)
-
-    rng = np.random.RandomState(seed=8657)
-
-    if N == 4:
-        ra = 0.25 * E
-        nra = -0.25 * E
-
-        A.P[0,:] = ( 1.6,  1.6, 0.0)
-        A.P[1,:] = (-1.500001,  1.499999, 0.0)
-        A.P[2,:] = (-1.500001, -1.500001, 0.0)
-        A.P[3,:] = ( 0.0,  0.0, 0.0)
-
-        A.Q[0,0] = -1.
-        A.Q[1,0] = 1.
-        A.Q[2,0] = -1.
-        A.Q[3,0] = 0.
-    else:
-        A.P[:] = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
-        for px in range(N):
-            A.Q[px,0] = (-1.0)**(px+1)
-        bias = np.sum(A.Q[:N:, 0])/N
-        A.Q[:, 0] -= bias
-
-    A.scatter_data_from(0)
-
-    
-    pbc_fmm = PyFMM(A.domain, free_space=False, l=L, r=R)
-
-    ExpInst = kmc_fmm_common.LocalExpEval(L)
-    lrc = kmc_fmm_common.LongRangeCorrection(L, A.domain, ExpInst)
-    
-    '''
-    for nx in range(1,100):
-        x = rng.uniform(size=(ncomp, nx))
-        t0 = time.time()
-        b = lrc.sparse_linop.matmat(x[:half_ncomp, :])
-        b = lrc.sparse_linop.matmat(x[half_ncomp:, :])
-        t1 = time.time()
-        print(nx, '\t', (t1-t0)/nx)
-    '''
-
-    in_mom = np.array(rng.uniform(size=ncomp), dtype=c_double)
-    correct = np.zeros_like(in_mom)
-    prop = np.zeros_like(in_mom)
-    
-    t0 = time.time()
-    pbc_fmm._translate_mtl_lib['mtl_test_wrapper'](
-        INT64(L),
-        REAL(1.),
-        in_mom.ctypes.get_as_parameter(),
-        pbc_fmm._boundary_ident.ctypes.get_as_parameter(),
-        pbc_fmm._boundary_terms.ctypes.get_as_parameter(),
-        pbc_fmm._a.ctypes.get_as_parameter(),
-        pbc_fmm._ar.ctypes.get_as_parameter(),
-        pbc_fmm._ipower_mtl.ctypes.get_as_parameter(),
-        correct.ctypes.get_as_parameter()
-    )
-    t1 = time.time()
-    
-    prop[:half_ncomp] = np.matmul(lrc.rmat, in_mom[:half_ncomp])
-    prop[half_ncomp:] = np.matmul(lrc.rmat, in_mom[half_ncomp:])
-    
-    for cx in range(ncomp):
-        rel = 1.0 if abs(correct[cx]) < 1.0 else abs(correct[cx])
-        err = abs(prop[cx] - correct[cx]) / rel
-        assert err < 10.**-15
-    
-    t2 = time.time()
-    prop[:half_ncomp] = lrc.sparse_rmat.dot(in_mom[:half_ncomp])
-    prop[half_ncomp:] = lrc.sparse_rmat.dot(in_mom[half_ncomp:])
-    t3 = time.time()
- 
-    for cx in range(ncomp):
-        rel = 1.0 if abs(correct[cx]) < 1.0 else abs(correct[cx])
-        err = abs(prop[cx] - correct[cx]) / rel
-        assert err < 10.**-15
-
-
-
-
-
-def test_kmc_lr_2():
     """
     Passes all proposed moves to kmc at once, then checks all outputs
     """
@@ -297,9 +195,8 @@ def test_kmc_lr_2():
         domain=A.domain, r=R, l=L, boundary_condition='pbc')
     kmc_fmm.initialise()
     
-    ExpInst = kmc_fmm_common.LocalExpEval(L)
-    #lrc = kmc_fmm_common.LongRangeCorrection(kmc_fmm.fmm, A.domain, ExpInst)
-    si = kmc_fmm_common.FMMSelfInteraction(kmc_fmm.fmm, A.domain, kmc_fmm._bc, ExpInst)
+    ExpInst = LocalExpEval(L)
+    si = kmc_fmm_self_interaction.FMMSelfInteraction(kmc_fmm.fmm, A.domain, kmc_fmm._bc, ExpInst)
 
     # make  some random proposed moves
     order = rng.permutation(range(N))
@@ -338,8 +235,6 @@ def test_kmc_lr_2():
             err = abs(c - m)/rel
             assert err < 10.**-15
             
-    
-
 
 
 
