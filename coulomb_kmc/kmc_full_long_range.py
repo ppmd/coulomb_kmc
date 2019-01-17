@@ -319,7 +319,7 @@ class FullLongRangeEnergy:
         )
         {{
 
-            #pragma omp parallel for schedule(static, 1)
+            #pragma omp parallel for schedule(dynamic)
             for(INT64 px=0 ; px<num_particles ; px++){{
 
                 const REAL charge = old_charges[px];
