@@ -33,7 +33,9 @@ import cProfile
 class ErrorPropExp:
     def __init__(self, N, L=12):
         R = max(3, int(log(0.2*N, 8)))
-        E = 4.
+
+        
+        E = 2. * (N**(1./3))
         rc = E/4
 
         A = state.State()
@@ -42,6 +44,7 @@ class ErrorPropExp:
         A.npart = N
         A.P = data.PositionDat(ncomp=3)
         A.Q = data.ParticleDat(ncomp=1)
+        A.F = data.ParticleDat(ncomp=3)
 
         rng = np.random.RandomState(seed=1234)
 
@@ -65,10 +68,10 @@ class ErrorPropExp:
         self.kmc_fmm = kmc_fmm
         self.fmm = PyFMM(A.domain, r=R, l=L)
         self.rng = rng
-
+        
         self.U_kmc = kmc_fmm.energy
         self.U_fmm = self.fmm(A.P, A.Q)
-     
+
     def random_accept(self):
         pid = self.rng.randint(0, self.A.npart)
         pos = self.rng.uniform(low=-0.5*self.A.domain.extent[0], high=0.5*self.A.domain.extent[0], size=3)
@@ -80,22 +83,22 @@ class ErrorPropExp:
     def energy(self):
         self.U_kmc = self.kmc_fmm.energy
         self.U_fmm = self.fmm(self.A.P, self.A.Q)
-        rel = abs(self.U_fmm)
+        rel = abs(self.U_kmc)
+    
         return (self.U_fmm, self.U_kmc, abs(self.U_fmm - self.U_kmc) / rel)
-
-
 
 
 
 if __name__ == '__main__':
     
-    proposer = ErrorPropExp(1000, 12)
+    proposer = ErrorPropExp(10000, 12)
 
     niter = 10**8
     for tx in range(niter):
         proposer.random_accept()
-        if (tx % 100) == 0:
-            print("{: 12d} | {: 8.2e}".format(tx, proposer.energy[2]))
 
+        if (tx % 100) == 0:
+            e = proposer.energy
+            print("{: 12d} | {: 8.2e}".format(tx, e[2]))
 
 

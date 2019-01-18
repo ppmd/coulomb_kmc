@@ -336,7 +336,7 @@ class LongRangeCorrection:
 
 
 class FMMSelfInteraction:
-    def __init__(self, fmm, domain, boundary_condition, local_exp_eval):
+    def __init__(self, fmm, domain, boundary_condition, local_exp_eval, mirror_direction=None):
         self.domain = domain
         self._lee = local_exp_eval
         self._bc = boundary_condition
@@ -360,6 +360,72 @@ class FMMSelfInteraction:
 
         self._existing_correction = _SILocalEvaluator(self._lee)
         
+        mirror_block = ''
+        mirror_preloop = ''
+
+        if mirror_direction is not None:
+            # convert mirror directions to coefficients
+            mcoeff = dict()
+
+            mcoeff['mcoeffx'] = -1.0 if mirror_direction[0] else 1.0 
+            mcoeff['mcoeffy'] = -1.0 if mirror_direction[1] else 1.0 
+            mcoeff['mcoeffz'] = -1.0 if mirror_direction[2] else 1.0 
+
+            # compute position of old mirror charge
+            mirror_preloop += '''
+            const REAL mopx = opx * {mcoeffx};
+            const REAL mopy = opy * {mcoeffy};
+            const REAL mopz = opz * {mcoeffz};
+            PRINTF(mopx, mopy, mopz)
+            '''.format(**mcoeff)
+
+            mirror_block += '''
+            const REAL mnpx = npx * {mcoeffx};
+            const REAL mnpy = npy * {mcoeffy};
+            const REAL mnpz = npz * {mcoeffz};
+            PRINTF(mnpx, mnpy, mnpz)
+            '''.format(**mcoeff)
+
+            for oxi, ox in enumerate(cell_offsets):
+                oxv = {
+                    'oxi':str(oxi),
+                    'half_factor': str(1.0 if (ox[0]==0 and ox[1]==0 and ox[2]==0) else 1.0)
+                }
+                oxv.update(mcoeff)
+
+                mirror_block += '''
+
+                // offset of the old charge
+                const REAL mdpx{oxi} = dox{oxi} + mopx;
+                const REAL mdpy{oxi} = doy{oxi} + mopy;
+                const REAL mdpz{oxi} = doz{oxi} + mopz;
+                
+                // diff to the old mirror in offset
+                const REAL mddx{oxi} = mdpx{oxi} - npx;
+                const REAL mddy{oxi} = mdpy{oxi} - npy;
+                const REAL mddz{oxi} = mdpz{oxi} - npz;
+                
+                // remove old energy
+                energy27 -= {half_factor} / sqrt(mddx{oxi}*mddx{oxi} + mddy{oxi}*mddy{oxi} + mddz{oxi}*mddz{oxi});
+                
+                // offset of the new charge
+                const REAL mnpx{oxi} = dox{oxi} + mnpx;
+                const REAL mnpy{oxi} = doy{oxi} + mnpy;
+                const REAL mnpz{oxi} = doz{oxi} + mnpz;
+
+                // diff to the new mirror in the offset
+                const REAL mnddx{oxi} = mnpx{oxi} - npx;
+                const REAL mnddy{oxi} = mnpy{oxi} - npy;
+                const REAL mnddz{oxi} = mnpz{oxi} - npz;
+
+                PRINTF(mnddy{oxi}, mnpy{oxi}, npy)
+
+                // add on the new contrib
+                energy27 += {half_factor} / sqrt(mnddx{oxi}*mnddx{oxi} + mnddy{oxi}*mnddy{oxi} + mnddz{oxi}*mnddz{oxi});
+
+                '''.format(**oxv)
+
+
 
         preloop = ''
         bc27 = ''
@@ -415,6 +481,10 @@ class FMMSelfInteraction:
                 const REAL opx = old_positions[3*px + 0];
                 const REAL opy = old_positions[3*px + 1];
                 const REAL opz = old_positions[3*px + 2];
+                PRINTF(opx, opy, opz)
+
+                {mirror_preloop}
+
 
                 const INT64 nprop = exclusive_sum[px+1] - exclusive_sum[px];
 
@@ -425,6 +495,8 @@ class FMMSelfInteraction:
                     const REAL npy = new_positions[3*movi + 1];
                     const REAL npz = new_positions[3*movi + 2];
 
+                    PRINTF(npx, npy, npz)
+                    
                     const REAL dx = opx - npx;
                     const REAL dy = opy - npy;
                     const REAL dz = opz - npz;
@@ -433,8 +505,15 @@ class FMMSelfInteraction:
 
                     {bc27}
 
+                    {mirror_block}
+                    
+                    PRINTF(mnpx0, mnpy0, mnpz0)
+                    PRINTF(mnddx0, mnddy0, mnddz0)
+
                     REAL tmp_energy = energy27;
+
                     out[store_stride * px + movii] = coeff * tmp_energy;
+                    PRINTF(tmp_energy, tmp_energy, tmp_energy)
                     
                 }}
 
@@ -444,7 +523,9 @@ class FMMSelfInteraction:
         }}
         '''.format(
             bc27=bc27,
-            preloop=preloop
+            preloop=preloop,
+            mirror_block=mirror_block,
+            mirror_preloop=mirror_preloop
         )
 
         header = str(
@@ -457,10 +538,11 @@ class FMMSelfInteraction:
                 Define('EX', str(self.domain.extent[0])),
                 Define('EY', str(self.domain.extent[1])),
                 Define('EZ', str(self.domain.extent[2])),
+                Define('PRINTF(A,B,C)', r'printf("%s:\t%f,\t%s:\t%f,\t%s:\t%f\n", #A, A, #B, B, #C, C);'),
             ))
         )
         
-
+        print(src)
         self.lib = simple_lib_creator(header_code=header, src_code=src)['self_interaction']
 
     def initialise(self):

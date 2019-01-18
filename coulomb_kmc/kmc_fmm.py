@@ -52,7 +52,7 @@ class KMCFMM(object):
 
     def __init__(self, positions, charges, domain, N=None, boundary_condition='pbc',
         r=None, shell_width=0.0, energy_unit=1.0,
-        _debug=False, l=None, max_move=None, cuda_direct=False):
+        _debug=False, l=None, max_move=None, cuda_direct=False, mirror_direction=None):
 
         # horrible workaround to convert sensible boundary condition
         # parameter format to what exists for PyFMM
@@ -77,6 +77,7 @@ class KMCFMM(object):
         self.group = positions.group
         self.energy_unit = energy_unit
         self.comm = self.fmm.tree.cart_comm
+        self.mirror_direction = mirror_direction
 
         self._cell_map = None
         self._cell_occ = None
@@ -100,7 +101,7 @@ class KMCFMM(object):
 
         # self interaction handling class
 
-        self._si = FMMSelfInteraction(self.fmm, domain, self._bc, self._lee) 
+        self._si = FMMSelfInteraction(self.fmm, domain, self._bc, self._lee, self.mirror_direction) 
 
         # long range calculation
         if self._bc == BCType.PBC:
