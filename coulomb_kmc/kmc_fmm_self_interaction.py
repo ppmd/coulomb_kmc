@@ -363,6 +363,12 @@ class FMMSelfInteraction:
         mirror_block = ''
         mirror_preloop = ''
 
+        if self._bc == BCType.FREE_SPACE:
+            co = ((0,0,0),)
+        else:
+            co = cell_offsets
+
+
         if mirror_direction is not None:
             # convert mirror directions to coefficients
             mcoeff = dict()
@@ -384,12 +390,25 @@ class FMMSelfInteraction:
             const REAL mnpy = npy * {mcoeffy};
             const REAL mnpz = npz * {mcoeffz};
             PRINTF(mnpx, mnpy, mnpz)
+            
+            const REAL oodx = opx - mopx;
+            const REAL oody = opy - mopy;
+            const REAL oodz = opz - mopz;
+            const REAL oor2 = oodx*oodx + oody*oody + oodz*oodz;
+            const REAL BB = 0.5/sqrt(oor2);
+            energy27 += BB;
+            REAL BBP = 0.0;
+            REAL BPBP = 0.0;
+            PRINTF1(BB)
+
             '''.format(**mcoeff)
 
-            for oxi, ox in enumerate(cell_offsets):
+
+
+            for oxi, ox in enumerate(co):
                 oxv = {
                     'oxi':str(oxi),
-                    'half_factor': str(1.0 if (ox[0]==0 and ox[1]==0 and ox[2]==0) else 1.0)
+                    'half_factor': 1.0 if (ox[0]==0 and ox[1]==0 and ox[2]==0) else 1.0
                 }
                 oxv.update(mcoeff)
 
@@ -406,7 +425,12 @@ class FMMSelfInteraction:
                 const REAL mddz{oxi} = mdpz{oxi} - npz;
                 
                 // remove old energy
-                energy27 -= {half_factor} / sqrt(mddx{oxi}*mddx{oxi} + mddy{oxi}*mddy{oxi} + mddz{oxi}*mddz{oxi});
+                energy27 -= 1.0 / sqrt(mddx{oxi}*mddx{oxi} + mddy{oxi}*mddy{oxi} + mddz{oxi}*mddz{oxi});
+
+                BBP -= 1.0 / sqrt(mddx{oxi}*mddx{oxi} + mddy{oxi}*mddy{oxi} + mddz{oxi}*mddz{oxi});
+                PRINTF1(BBP)
+                PRINTF1(energy27)
+                
                 
                 // offset of the new charge
                 const REAL mnpx{oxi} = dox{oxi} + mnpx;
@@ -421,7 +445,12 @@ class FMMSelfInteraction:
                 PRINTF(mnddy{oxi}, mnpy{oxi}, npy)
 
                 // add on the new contrib
-                energy27 += {half_factor} / sqrt(mnddx{oxi}*mnddx{oxi} + mnddy{oxi}*mnddy{oxi} + mnddz{oxi}*mnddz{oxi});
+                energy27 += 0.5 / sqrt(mnddx{oxi}*mnddx{oxi} + mnddy{oxi}*mnddy{oxi} + mnddz{oxi}*mnddz{oxi});
+
+                BPBP += 0.5 / sqrt(mnddx{oxi}*mnddx{oxi} + mnddy{oxi}*mnddy{oxi} + mnddz{oxi}*mnddz{oxi});
+
+                PRINTF1(BPBP)
+
 
                 '''.format(**oxv)
 
@@ -429,22 +458,26 @@ class FMMSelfInteraction:
 
         preloop = ''
         bc27 = ''
+
+        for oxi, ox in enumerate(co):
+
+            preloop += '''
+            const REAL dox{oxi} = EX * {OX};
+            const REAL doy{oxi} = EY * {OY};
+            const REAL doz{oxi} = EZ * {OZ};
+            '''.format(
+                oxi=str(oxi),
+                OX=str(ox[0]),
+                OY=str(ox[1]),
+                OZ=str(ox[2]),
+            )
+
+
         if self._bc not in (BCType.NEAREST, BCType.PBC):
             pass
         else:
             bc27 = 'energy27 = (DOMAIN_27_ENERGY);\n'
             for oxi, ox in enumerate(cell_offsets):
-
-                preloop += '''
-                const REAL dox{oxi} = EX * {OX};
-                const REAL doy{oxi} = EY * {OY};
-                const REAL doz{oxi} = EZ * {OZ};
-                '''.format(
-                    oxi=str(oxi),
-                    OX=str(ox[0]),
-                    OY=str(ox[1]),
-                    OZ=str(ox[2]),
-                )
 
                 bc27 += '''
                 const REAL dpx{oxi} = dox{oxi} + opx;
@@ -478,6 +511,7 @@ class FMMSelfInteraction:
             for(INT64 px=0 ; px<num_particles ; px++){{
                 
                 const REAL coeff = old_charges[px] * old_charges[px];
+                PRINTF(coeff, coeff, coeff)
                 const REAL opx = old_positions[3*px + 0];
                 const REAL opy = old_positions[3*px + 1];
                 const REAL opz = old_positions[3*px + 2];
@@ -502,6 +536,9 @@ class FMMSelfInteraction:
                     const REAL dz = opz - npz;
                     
                     REAL energy27 = (1.0 / sqrt(dx*dx + dy*dy + dz*dz));
+                    PRINTF(dx, dy, dz)
+                    PRINTF1(energy27)
+                    REAL tmp;
 
                     {bc27}
 
@@ -539,10 +576,11 @@ class FMMSelfInteraction:
                 Define('EY', str(self.domain.extent[1])),
                 Define('EZ', str(self.domain.extent[2])),
                 Define('PRINTF(A,B,C)', r'printf("%s:\t%f,\t%s:\t%f,\t%s:\t%f\n", #A, A, #B, B, #C, C);'),
+                Define('PRINTF1(A)', r'printf("%s:\t%f\n", #A, A);'),
             ))
         )
         
-        print(src)
+        #print(src)
         self.lib = simple_lib_creator(header_code=header, src_code=src)['self_interaction']
 
     def initialise(self):

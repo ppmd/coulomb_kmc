@@ -340,8 +340,12 @@ class KMCFMM(object):
     def initialise(self):
         t0 = time()
 
-        # get the current energy, also bins particles into cells
-        self.energy = self.fmm(positions=self.positions, charges=self.charges)
+        tmp_potential = self.positions.group.TMP_POTENTIAL
+
+        self.energy = self.fmm(positions=self.positions, charges=self.charges, potential=tmp_potential)
+        
+        print("from kmc_fmm init", 0.5*sum(tmp_potential), tmp_potential[:4])
+
         self._check_ordering_dats()
         self.md.initialise(
             positions=self.positions,
@@ -525,6 +529,24 @@ class KMCFMM(object):
             - self._tmp_energies[_ENERGY.U0_DIRECT] \
             - self._tmp_energies[_ENERGY.U0_INDIRECT] \
             - self._tmp_energies[_ENERGY.U01_SELF]
+
+        energy =  self._tmp_energies[_ENERGY.U0_DIRECT] \
+            + self._tmp_energies[_ENERGY.U0_INDIRECT]
+
+        print("self.energy", self.energy)
+        U0 = (self._tmp_energies[_ENERGY.U0_DIRECT] + self._tmp_energies[_ENERGY.U0_INDIRECT])[0][0]
+        U1 = (self._tmp_energies[_ENERGY.U1_DIRECT] + self._tmp_energies[_ENERGY.U1_INDIRECT])[0][0]
+        print("U0", U0)
+        print("U1", U1)
+        print("SS", self._tmp_energies[_ENERGY.U01_SELF][0][0])
+        print("2*SS", 2*self._tmp_energies[_ENERGY.U01_SELF][0][0])
+
+
+        print("P0 - 2*U0 + 2*U1", self.energy - 2*U0 + 2*U1)
+        
+        print("(P0 - 2*U0 + BB) + 2*U1 - 2*SS)",
+            self.energy - U0*2 + 2*U1 - 2*self._tmp_energies[_ENERGY.U01_SELF][0][0])
+
 
         #print("="*60)
         #for kx in (_ENERGY.U_DIFF,
