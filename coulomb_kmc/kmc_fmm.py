@@ -536,26 +536,11 @@ class KMCFMM(object):
         print("self.energy", self.energy)
         U0 = (self._tmp_energies[_ENERGY.U0_DIRECT] + self._tmp_energies[_ENERGY.U0_INDIRECT])[0][0]
         U1 = (self._tmp_energies[_ENERGY.U1_DIRECT] + self._tmp_energies[_ENERGY.U1_INDIRECT])[0][0]
+        SS = self._tmp_energies[_ENERGY.U01_SELF]
         print("U0", U0)
         print("U1", U1)
         print("SS", self._tmp_energies[_ENERGY.U01_SELF][0][0])
-        print("2*SS", 2*self._tmp_energies[_ENERGY.U01_SELF][0][0])
-
-
-        print("P0 - 2*U0 + 2*U1", self.energy - 2*U0 + 2*U1)
-        
-        print("(P0 - 2*U0 + BB) + 2*U1 - 2*SS)",
-            self.energy - U0*2 + 2*U1 - 2*self._tmp_energies[_ENERGY.U01_SELF][0][0])
-
-
-        #print("="*60)
-        #for kx in (_ENERGY.U_DIFF,
-        #    _ENERGY.U1_DIRECT,
-        #    _ENERGY.U1_INDIRECT,
-        #    _ENERGY.U0_DIRECT,
-        #    _ENERGY.U0_INDIRECT,
-        #    _ENERGY.U01_SELF):
-        #    print(kx, self._tmp_energies[kx][0])
+        print("C: P0 - 2*U0 + 2*ABP_BBP - SS:", self.energy - 2*U0 + 2*U1 - SS)
 
         prop_energy = []
 

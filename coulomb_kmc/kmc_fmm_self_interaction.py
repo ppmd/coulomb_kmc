@@ -382,33 +382,21 @@ class FMMSelfInteraction:
             const REAL mopx = opx * {mcoeffx};
             const REAL mopy = opy * {mcoeffy};
             const REAL mopz = opz * {mcoeffz};
-            PRINTF(mopx, mopy, mopz)
             '''.format(**mcoeff)
 
             mirror_block += '''
             const REAL mnpx = npx * {mcoeffx};
             const REAL mnpy = npy * {mcoeffy};
             const REAL mnpz = npz * {mcoeffz};
-            PRINTF(mnpx, mnpy, mnpz)
-            
-            const REAL oodx = opx - mopx;
-            const REAL oody = opy - mopy;
-            const REAL oodz = opz - mopz;
-            const REAL oor2 = oodx*oodx + oody*oody + oodz*oodz;
-            const REAL BB = 0.5/sqrt(oor2);
-            energy27 += BB;
-            REAL BBP = 0.0;
-            REAL BPBP = 0.0;
-            PRINTF1(BB)
-
             '''.format(**mcoeff)
 
 
-
             for oxi, ox in enumerate(co):
+
+                oxi_zero = 0 if (ox[0] == 0 and ox[1] == 0 and ox[2] == 0) else 1
                 oxv = {
-                    'oxi':str(oxi),
-                    'half_factor': 1.0 if (ox[0]==0 and ox[1]==0 and ox[2]==0) else 1.0
+                    'oxi': str(oxi),
+                    'oxi_zero': str(oxi_zero)
                 }
                 oxv.update(mcoeff)
 
@@ -425,11 +413,7 @@ class FMMSelfInteraction:
                 const REAL mddz{oxi} = mdpz{oxi} - npz;
                 
                 // remove old energy
-                energy27 -= 1.0 / sqrt(mddx{oxi}*mddx{oxi} + mddy{oxi}*mddy{oxi} + mddz{oxi}*mddz{oxi});
-
-                BBP -= 1.0 / sqrt(mddx{oxi}*mddx{oxi} + mddy{oxi}*mddy{oxi} + mddz{oxi}*mddz{oxi});
-                PRINTF1(BBP)
-                PRINTF1(energy27)
+                energy27 -= 2.0 / sqrt(mddx{oxi}*mddx{oxi} + mddy{oxi}*mddy{oxi} + mddz{oxi}*mddz{oxi});
                 
                 
                 // offset of the new charge
@@ -442,15 +426,25 @@ class FMMSelfInteraction:
                 const REAL mnddy{oxi} = mnpy{oxi} - npy;
                 const REAL mnddz{oxi} = mnpz{oxi} - npz;
 
-                PRINTF(mnddy{oxi}, mnpy{oxi}, npy)
-
                 // add on the new contrib
-                energy27 += 0.5 / sqrt(mnddx{oxi}*mnddx{oxi} + mnddy{oxi}*mnddy{oxi} + mnddz{oxi}*mnddz{oxi});
+                energy27 += 1.0 / sqrt(mnddx{oxi}*mnddx{oxi} + mnddy{oxi}*mnddy{oxi} + mnddz{oxi}*mnddz{oxi});
 
-                BPBP += 0.5 / sqrt(mnddx{oxi}*mnddx{oxi} + mnddy{oxi}*mnddy{oxi} + mnddz{oxi}*mnddz{oxi});
+                // the factor 2 required for b_bp with the non-mirrors
+                energy27 += o_bbp{oxi};
 
-                PRINTF1(BPBP)
 
+                // compute b_b, first with non-mirror
+                const REAL do_opx{oxi} = opx - dpx{oxi};
+                const REAL do_opy{oxi} = opy - dpy{oxi};
+                const REAL do_opz{oxi} = opz - dpz{oxi};
+                energy27 -= ({oxi_zero} == 0) ? 0.0 : 1.0 / sqrt(do_opx{oxi}*do_opx{oxi} + do_opy{oxi}*do_opy{oxi} + do_opz{oxi}*do_opz{oxi});
+                
+                // with the mirror
+                const REAL do_mopx{oxi} = opx - mdpx{oxi};
+                const REAL do_mopy{oxi} = opy - mdpy{oxi};
+                const REAL do_mopz{oxi} = opz - mdpz{oxi};
+                energy27 += 1.0 / sqrt(do_mopx{oxi}*do_mopx{oxi} + do_mopy{oxi}*do_mopy{oxi} + do_mopz{oxi}*do_mopz{oxi});
+                
 
                 '''.format(**oxv)
 
@@ -487,8 +481,9 @@ class FMMSelfInteraction:
                 const REAL ddx{oxi} = dpx{oxi} - npx;
                 const REAL ddy{oxi} = dpy{oxi} - npy;
                 const REAL ddz{oxi} = dpz{oxi} - npz;
-
-                energy27 += 1.0 / sqrt(ddx{oxi}*ddx{oxi} + ddy{oxi}*ddy{oxi} + ddz{oxi}*ddz{oxi});
+                
+                const REAL o_bbp{oxi} = 1.0 / sqrt(ddx{oxi}*ddx{oxi} + ddy{oxi}*ddy{oxi} + ddz{oxi}*ddz{oxi});
+                energy27 += o_bbp{oxi};
                 '''.format(
                     oxi=str(oxi)
                 )
@@ -511,14 +506,11 @@ class FMMSelfInteraction:
             for(INT64 px=0 ; px<num_particles ; px++){{
                 
                 const REAL coeff = old_charges[px] * old_charges[px];
-                PRINTF(coeff, coeff, coeff)
                 const REAL opx = old_positions[3*px + 0];
                 const REAL opy = old_positions[3*px + 1];
                 const REAL opz = old_positions[3*px + 2];
-                PRINTF(opx, opy, opz)
 
                 {mirror_preloop}
-
 
                 const INT64 nprop = exclusive_sum[px+1] - exclusive_sum[px];
 
@@ -528,29 +520,19 @@ class FMMSelfInteraction:
                     const REAL npx = new_positions[3*movi + 0];
                     const REAL npy = new_positions[3*movi + 1];
                     const REAL npz = new_positions[3*movi + 2];
-
-                    PRINTF(npx, npy, npz)
                     
                     const REAL dx = opx - npx;
                     const REAL dy = opy - npy;
                     const REAL dz = opz - npz;
                     
                     REAL energy27 = (1.0 / sqrt(dx*dx + dy*dy + dz*dz));
-                    PRINTF(dx, dy, dz)
-                    PRINTF1(energy27)
-                    REAL tmp;
 
                     {bc27}
 
                     {mirror_block}
                     
-                    PRINTF(mnpx0, mnpy0, mnpz0)
-                    PRINTF(mnddx0, mnddy0, mnddz0)
-
                     REAL tmp_energy = energy27;
-
                     out[store_stride * px + movii] = coeff * tmp_energy;
-                    PRINTF(tmp_energy, tmp_energy, tmp_energy)
                     
                 }}
 
