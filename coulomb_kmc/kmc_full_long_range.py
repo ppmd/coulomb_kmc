@@ -228,15 +228,42 @@ class FullLongRangeEnergy:
         def _re_lm(l, m): return l**2 + l + m
 
 
-        mcoeff = dict()
-
+        mirror_preloop = ''
+        mirror_loop_0 = ''
         if self.mirror_direction is not None:
             # convert mirror directions to coefficients
+            mcoeff = dict()
+            mcoeff['mcoeffx'] = -1.0 if self.mirror_direction[0] else 1.0 
+            mcoeff['mcoeffy'] = -1.0 if self.mirror_direction[1] else 1.0 
+            mcoeff['mcoeffz'] = -1.0 if self.mirror_direction[2] else 1.0 
 
-            mcoeff['mcoeffx'] = -1.0 if mirror_direction[0] else 1.0 
-            mcoeff['mcoeffy'] = -1.0 if mirror_direction[1] else 1.0 
-            mcoeff['mcoeffz'] = -1.0 if mirror_direction[2] else 1.0 
+            mirror_preloop += '''
+            const REAL mopx = opx * {mcoeffx};
+            const REAL mopy = opy * {mcoeffy};
+            const REAL mopz = opz * {mcoeffz};
 
+            REAL moradius, motheta, mophi;
+            spherical(mopx, mopy, mopz, &moradius, &motheta, &mophi);
+            multipole_exp(charge, moradius, motheta, mophi, old_moments);
+            
+            // remove the contribs for the old mirror position
+            local_dot_vec(charge, moradius, motheta, mophi, old_evector);
+            '''.format(**mcoeff)
+
+            mirror_loop_0 = '''
+            const REAL mnpx = npx * {mcoeffx};
+            const REAL mnpy = npy * {mcoeffy};
+            const REAL mnpz = npz * {mcoeffz};
+
+            REAL mnradius, mntheta, mnphi;
+            spherical(mnpx, mnpy, mnpz, &mnradius, &mntheta, &mnphi);
+
+            // add on the new moments
+            multipole_exp(-1.0*charge, mnradius, mntheta, mnphi, &new_moments[movii*NCOMP]);
+
+            // add on the new evector coefficients
+            local_dot_vec(-1.0*charge, mnradius, mntheta, mnphi, &new_evector[movii*NCOMP]);
+            '''.format(**mcoeff)
 
 
         src = r'''
@@ -363,7 +390,9 @@ class FullLongRangeEnergy:
                 
                 // remove the contribs for the old position
                 local_dot_vec(-1.0 * charge, oradius, otheta, ophi, old_evector);
-
+                
+                // Do the above for mirror charge if required.
+                {MIRROR_PRELOOP}
 
                 // loop over the proposed new positions and copy old positions and compute spherical coordinate
                 // vectors
@@ -388,6 +417,8 @@ class FullLongRangeEnergy:
 
                     // add on the new evector coefficients
                     local_dot_vec(charge, nradius, ntheta, nphi, &new_evector[movii*NCOMP]);
+
+                    {MIRROR_LOOP_0}
                 }}
 
                 #pragma omp simd simdlen(8)
@@ -429,7 +460,9 @@ class FullLongRangeEnergy:
             LOCAL_EVAL_HEADER=self._lee.create_local_eval_header,
             LOCAL_EVAL_SRC=self._lee.create_local_eval_src,
             EVEC_HEADER=self._lee.create_dot_vec_header,
-            EVEC_SRC=self._lee.create_dot_vec_src
+            EVEC_SRC=self._lee.create_dot_vec_src,
+            MIRROR_PRELOOP=mirror_preloop,
+            MIRROR_LOOP_0=mirror_loop_0
         )
 
 

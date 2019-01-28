@@ -108,7 +108,7 @@ class KMCFMM(object):
 
         # long range calculation
         if self._bc == BCType.PBC:
-            self._lr_energy = FullLongRangeEnergy(self.fmm.L, self.fmm.domain, self._lee)
+            self._lr_energy = FullLongRangeEnergy(self.fmm.L, self.fmm.domain, self._lee, self.mirror_direction)
 
 
         # class to collect required local expansions
