@@ -259,14 +259,23 @@ class KMCFMM(object):
         
         Note this will move the particle in the position dat used in the intialiser.
 
+        If the KMC instance is defined with a mirror direction `move` should be a tuple
+        of moves.
+        (42, np.array(1.0, 2.0, 3.0)), (84, np.array(-1.0, 2.0, 3.0))
+
         :arg move: move to accept
         """
 
-        self._accept(move)
+        if self.mirror_direction is None:
+            self._accept(move)
+        else:
+            assert len(move) == 2
+            self._accept(move[0])
+            self._accept(move[1], compute_energy=False)
 
         # self.test_accept_reinit(move)
 
-    def _accept(self, move):
+    def _accept(self, move, compute_energy=True):
 
         t0 = time()
         
@@ -288,9 +297,10 @@ class KMCFMM(object):
             data[7]        = gid
             data[8]        = old_fmm_cell
             data[9]        = new_fmm_cell
-        
-            new_energy = self.propose((move,))[0][0]
-            self.energy = new_energy
+            
+            if compute_energy:
+                new_energy = self.propose((move,))[0][0]
+                self.energy = new_energy
 
 
         # with parallel MPI the move needs to be communicated here
