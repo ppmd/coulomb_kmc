@@ -259,10 +259,14 @@ class FullLongRangeEnergy:
             spherical(mnpx, mnpy, mnpz, &mnradius, &mntheta, &mnphi);
 
             // add on the new moments
-            multipole_exp(-1.0*charge, mnradius, mntheta, mnphi, &new_moments[movii*NCOMP]);
+            // multipole_exp(-1.0*charge, mnradius, mntheta, mnphi, &new_moments[movii*NCOMP]);
 
             // add on the new evector coefficients
-            local_dot_vec(-1.0*charge, mnradius, mntheta, mnphi, &new_evector[movii*NCOMP]);
+            // local_dot_vec(-1.0*charge, mnradius, mntheta, mnphi, &new_evector[movii*NCOMP]);
+            
+            // combined
+            local_dot_vec_multipole(-1.0 * charge, mnradius, mntheta, mnphi,
+                &new_evector[movii*NCOMP], &new_moments[movii*NCOMP]);
             '''.format(**mcoeff)
 
 
@@ -277,7 +281,8 @@ class FullLongRangeEnergy:
         {EVEC_HEADER}
         {EVEC_SRC}
 
-
+        {EVEC_MULTIPOLE_HEADER}
+        {EVEC_MULTIPOLE_SRC}
 
         static inline void apply_dipole_correction(
             const REAL * RESTRICT M,
@@ -413,10 +418,14 @@ class FullLongRangeEnergy:
 
 
                     // add on the new moments
-                    multipole_exp(charge, nradius, ntheta, nphi, &new_moments[movii*NCOMP]);
+                    // multipole_exp(charge, nradius, ntheta, nphi, &new_moments[movii*NCOMP]);
 
                     // add on the new evector coefficients
-                    local_dot_vec(charge, nradius, ntheta, nphi, &new_evector[movii*NCOMP]);
+                    // local_dot_vec(charge, nradius, ntheta, nphi, &new_evector[movii*NCOMP]);
+                    
+                    // combined
+                    local_dot_vec_multipole(charge, nradius, ntheta, nphi,
+                        &new_evector[movii*NCOMP], &new_moments[movii*NCOMP]);
 
                     {MIRROR_LOOP_0}
                 }}
@@ -462,7 +471,9 @@ class FullLongRangeEnergy:
             EVEC_HEADER=self._lee.create_dot_vec_header,
             EVEC_SRC=self._lee.create_dot_vec_src,
             MIRROR_PRELOOP=mirror_preloop,
-            MIRROR_LOOP_0=mirror_loop_0
+            MIRROR_LOOP_0=mirror_loop_0,
+            EVEC_MULTIPOLE_HEADER=self._lee.create_dot_vec_multipole_header,
+            EVEC_MULTIPOLE_SRC=self._lee.create_dot_vec_multipole_src
         )
 
 

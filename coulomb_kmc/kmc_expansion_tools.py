@@ -323,8 +323,6 @@ class LocalExpEval(object):
         self.create_dot_vec_multipole_src = src_lib
         self._dot_vec_multipole_lib = simple_lib_creator(header_code=header, src_code=src)['local_dot_vec_multipole']
         
-        import ppmd.lib.build.LIBS_LOADED
-        print(ppmd.lib.build.LIBS_LOADED[-1])
 
     def dot_vec_multipole(self, sph, charge, arr_vec, arr_mul):
         """
