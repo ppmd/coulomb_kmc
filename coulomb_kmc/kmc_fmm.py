@@ -79,6 +79,9 @@ class KMCFMM(object):
         self.comm = self.fmm.tree.cart_comm
         self.mirror_direction = mirror_direction
 
+        if mirror_direction is not None and sum([int(dx) for dx in mirror_direction]) > 1:
+            raise RuntimeError('Can only mirror in one direction.')
+
         self._cell_map = None
         self._cell_occ = None
 
@@ -133,6 +136,9 @@ class KMCFMM(object):
 
 
     def _create_diff_lib(self):
+        
+        mf = "1.0" if self.mirror_direction is None else "2.0"
+
         src = r'''
         #define REAL double
         #define INT64 int64_t
@@ -158,7 +164,11 @@ class KMCFMM(object):
                 for(INT64 movx=0 ; movx<es_count ; movx++){{
                     const INT64 u1loc = es_start + movx;
                     UDIFF[rate_location[u1loc]] = (ENERGY_UNIT) * (
-                        U1D[u1loc] + U1I[u1loc] - U0D[px] - U0I[px] - USI[px*stride_si + movx]
+                        {MF} * (
+                                    U1D[u1loc] + U1I[u1loc] - 
+                                    U0D[px]    - U0I[px]
+                               )
+                        - USI[px*stride_si + movx]
                     );
 
                 }}
@@ -166,7 +176,8 @@ class KMCFMM(object):
             return 0;
         }}
         '''.format(
-            ENERGY_UNIT=str(self.energy_unit)
+            ENERGY_UNIT=str(self.energy_unit),
+            MF=mf
         )
 
         header = r'''
@@ -340,11 +351,7 @@ class KMCFMM(object):
     def initialise(self):
         t0 = time()
 
-        tmp_potential = self.positions.group.TMP_POTENTIAL
-
-        self.energy = self.fmm(positions=self.positions, charges=self.charges, potential=tmp_potential)
-        
-        print("from kmc_fmm init", 0.5*sum(tmp_potential), tmp_potential[:4])
+        self.energy = self.fmm(positions=self.positions, charges=self.charges)
 
         self._check_ordering_dats()
         self.md.initialise(
@@ -523,24 +530,23 @@ class KMCFMM(object):
             self._lr_energy.propose(*tuple(list(cmove_data) + [self._tmp_energies[_ENERGY.U01_SELF]]))
 
         # compute differences
-        self._tmp_energies[_ENERGY.U_DIFF] = \
-              self._tmp_energies[_ENERGY.U1_DIRECT] \
-            + self._tmp_energies[_ENERGY.U1_INDIRECT] \
-            - self._tmp_energies[_ENERGY.U0_DIRECT] \
-            - self._tmp_energies[_ENERGY.U0_INDIRECT] \
-            - self._tmp_energies[_ENERGY.U01_SELF]
 
-        energy =  self._tmp_energies[_ENERGY.U0_DIRECT] \
-            + self._tmp_energies[_ENERGY.U0_INDIRECT]
+        if self.mirror_direction is None:
+            self._tmp_energies[_ENERGY.U_DIFF] = \
+                  self._tmp_energies[_ENERGY.U1_DIRECT] \
+                + self._tmp_energies[_ENERGY.U1_INDIRECT] \
+                - self._tmp_energies[_ENERGY.U0_DIRECT] \
+                - self._tmp_energies[_ENERGY.U0_INDIRECT] \
+                - self._tmp_energies[_ENERGY.U01_SELF]
+        
+        else:
+            self._tmp_energies[_ENERGY.U_DIFF] = \
+                  2.0 * self._tmp_energies[_ENERGY.U1_DIRECT] \
+                + 2.0 * self._tmp_energies[_ENERGY.U1_INDIRECT] \
+                - 2.0 * self._tmp_energies[_ENERGY.U0_DIRECT] \
+                - 2.0 * self._tmp_energies[_ENERGY.U0_INDIRECT] \
+                - self._tmp_energies[_ENERGY.U01_SELF]
 
-        print("self.energy", self.energy)
-        U0 = (self._tmp_energies[_ENERGY.U0_DIRECT] + self._tmp_energies[_ENERGY.U0_INDIRECT])[0][0]
-        U1 = (self._tmp_energies[_ENERGY.U1_DIRECT] + self._tmp_energies[_ENERGY.U1_INDIRECT])[0][0]
-        SS = self._tmp_energies[_ENERGY.U01_SELF]
-        print("U0", U0)
-        print("U1", U1)
-        print("SS", self._tmp_energies[_ENERGY.U01_SELF][0][0])
-        print("C: P0 - 2*U0 + 2*ABP_BBP - SS:", self.energy - 2*U0 + 2*U1 - SS)
 
         prop_energy = []
 

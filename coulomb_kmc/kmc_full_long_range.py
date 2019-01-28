@@ -18,15 +18,17 @@ from ppmd.coulomb.fmm_pbc import LongRangeMTL
 
 
 class FullLongRangeEnergy:
-    def __init__(self, L, domain, local_exp_eval):
+    def __init__(self, L, domain, local_exp_eval, mirror_direction=None):
         # this should be a full PBC fmm instance
         self.domain = domain
         self._lee = local_exp_eval
+        self.mirror_direction = mirror_direction
         self.L = L
         self.ncomp = 2*(L**2)
         self.half_ncomp = L**2
-
+        
         self.lrc = LongRangeMTL(L, domain)
+
 
         self.multipole_exp = np.zeros(self.ncomp, dtype=REAL)
         self.local_dot_coeffs = np.zeros(self.ncomp, dtype=REAL)
@@ -224,6 +226,17 @@ class FullLongRangeEnergy:
         ncomp = (self.L**2)*2
         half_ncomp = self.L**2
         def _re_lm(l, m): return l**2 + l + m
+
+
+        mcoeff = dict()
+
+        if self.mirror_direction is not None:
+            # convert mirror directions to coefficients
+
+            mcoeff['mcoeffx'] = -1.0 if mirror_direction[0] else 1.0 
+            mcoeff['mcoeffy'] = -1.0 if mirror_direction[1] else 1.0 
+            mcoeff['mcoeffz'] = -1.0 if mirror_direction[2] else 1.0 
+
 
 
         src = r'''
