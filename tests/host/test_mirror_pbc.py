@@ -27,6 +27,9 @@ SHARED_MEMORY = 'omp'
 
 from coulomb_kmc import *
 
+
+halfmeps = 0.5 - 10.0**-15
+
 REAL = ctypes.c_double
 INT64 = ctypes.c_int64
 
@@ -338,5 +341,150 @@ def test_kmc_fmm_pbc_2(direction):
         assert err < 2*(10.**-5)
 
 
+
+
+@pytest.mark.parametrize("direction", direction_bools)
+@pytest.mark.skipif('MPISIZE > 1')
+def test_kmc_fmm_pbc_3(direction):
+
+    L = 12
+    R = 3
+
+    N = 20
+    N2 = 2 * N
+    E = 4.
+    rc = E/4
+    M = 8
+
+
+    rng = np.random.RandomState(seed=8372)
+
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    A.npart = N2
+
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+    A.GID = data.ParticleDat(ncomp=1, dtype=INT64)
+    A.MIRROR_MAP = data.ParticleDat(ncomp=2, dtype=INT64)
+    A.prop_masks = data.ParticleDat(ncomp=M, dtype=INT64)
+    A.prop_positions = data.ParticleDat(ncomp=M*3)
+    A.prop_diffs = data.ParticleDat(ncomp=M)
+    A.sites = data.ParticleDat(ncomp=1, dtype=INT64)
+
+    site_max_counts = data.ScalarArray(ncomp=8, dtype=INT64)
+    site_max_counts[:] = rng.randint(0, 10, size=8)
+
+
+    half_extent = [E/2 if bx else E for bx in direction]
+
+    S = state.State()
+    S.npart = N
+    S.domain = domain.BaseDomainHalo(extent=half_extent)
+    S.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    S.P = data.PositionDat()
+    S.Q = data.ParticleDat(ncomp=1)
+    S.GID = data.ParticleDat(ncomp=1, dtype=ctypes.c_int64)
+
+    for dimx in range(3):
+        he = 0.25*E if direction[dimx] else 0.5*E
+        S.P[:, dimx] = rng.uniform(low=-he, high=he, size=N)
+
+    S.Q[:,0] = rng.uniform(size=N)
+
+    S.GID[:N, 0] = np.arange(N)
+
+    MCS = kmc_dirichlet_boundary.MirrorChargeSystem(direction, S, 'P', 'Q', 'GID')
+    MS = MCS.mirror_state
+    
+    A.P[:N2, :] = MS.P[:N2, :]
+    A.Q[:N2, :] = MS.Q[:N2, :]
+    A.GID[:N2, :] = MS.GID[:N2, :]
+    A.MIRROR_MAP[:N2, :]  = MS.mirror_map[:N2, :]
+    A.sites[:, 0] = rng.randint(0, 8, size=N2)
+
+    A.scatter_data_from(0)
+
+    fmm_bc = False
+    kmc_bc = 'pbc'
+
+    kmc_fmmA = KMCFMM(positions=A.P, charges=A.Q, domain=A.domain, r=R, l=L, 
+        boundary_condition=kmc_bc, mirror_direction=direction)
+    kmc_fmmA.initialise()
+    
+
+    def _make_prop_pos():
+        p = [0,0,0]
+        for dimx in range(3):
+            he = 0 if direction[dimx] else 0.5*E
+            p[dimx] = rng.uniform(low=-0.5*E, high=he, size=1)[0]
+        return p
+
+    def _mirror_pos(rpos):
+        f = [-1.0 if dx else 1.0 for dx in direction]
+        return (rpos[0] * f[0], rpos[1] * f[1], rpos[2] * f[2])
+
+    if direction[0]: 
+        plane_vector_1 = (0,1,0)
+        plane_vector_2 = (0,0,1)
+        plane_vector_3 = (1,0,0)
+    elif direction[1]: 
+        plane_vector_1 = (1,0,0)
+        plane_vector_2 = (0,0,1)
+        plane_vector_3 = (0,1,0)
+    elif direction[2]: 
+        plane_vector_1 = (1,0,0)
+        plane_vector_2 = (0,1,0)
+        plane_vector_3 = (0,0,1)
+    else:
+        raise RuntimeError('failed to set plane vectors')
+    
+
+    NP = 10
+
+    plane_vector_1 = np.array(plane_vector_1, dtype=REAL)
+    plane_vector_2 = np.array(plane_vector_2, dtype=REAL)
+    plane_vector_3 = np.array(plane_vector_3, dtype=REAL)
+
+    X,Y = np.meshgrid(
+        np.linspace(-halfmeps*E, halfmeps*E, NP),
+        np.linspace(-halfmeps*E, halfmeps*E, NP),
+    )
+    X = X.ravel()
+    Y = Y.ravel()
+
+    eval_points = np.zeros((3*NP*NP, 3), dtype=REAL)
+    
+
+    for px in range(NP*NP):
+        tmp = X[px] * plane_vector_1 + Y[px] * plane_vector_2
+        eval_points[px, :] = tmp
+        eval_points[px + NP*NP, :] = tmp + halfmeps * E * plane_vector_3
+        eval_points[px + 2*NP*NP, :] = tmp - halfmeps * E * plane_vector_3
+
+
+    #kmc_field = kmc_fmmA.eval_field(eval_points)
+    #err = np.linalg.norm(kmc_field, np.inf)
+    
+    for testx in range(8):
+        pid = rng.randint(0, N2)
+
+        mid = A.MIRROR_MAP[pid, 0]
+        mgid = np.where(A.GID[:] == mid)[0][0]               
+
+        pos = _make_prop_pos()
+        mpos = np.array(_mirror_pos(pos))
+        
+        kmc_fmmA.accept(
+            (
+                (pid, pos),
+                (mgid, mpos)
+            )
+        )
+
+        kmc_field = kmc_fmmA.eval_field(eval_points)
+        err = np.linalg.norm(kmc_field, np.inf)
+        assert err < 3 * (10.**-4)
 
 

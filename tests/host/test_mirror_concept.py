@@ -398,7 +398,6 @@ def test_kmc_fmm_eval_field_3(direction):
         eval_points[px + N2*N2, :] = tmp + halfmeps * E * plane_vector_3
         eval_points[px + 2*N2*N2, :] = tmp - halfmeps * E * plane_vector_3
 
-
     kmc_field = kmc_fmm.eval_field(eval_points)
     
     err = np.linalg.norm(kmc_field, np.inf)

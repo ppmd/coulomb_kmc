@@ -403,6 +403,10 @@ class KMCFMM(object):
 
     def eval_field(self, points):
         self._assert_init()
+
+        # the data structures this uses are not updated by accept
+        self.initialise()
+
         npoints = points.shape[0]
         out = np.zeros(npoints, dtype=REAL)
 
