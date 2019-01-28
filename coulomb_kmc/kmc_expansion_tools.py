@@ -35,18 +35,20 @@ class LocalExpEval(object):
         def cube_ind(L, M):
             return ((L) * ( (L) + 1 ) + (M) )
 
-        assign_gen = 'double rhol = 1.0;\n'
+        assign_gen =  'double rhol = 1.0;\n'
+        assign_gen += 'double rholcharge = rhol * charge;\n'
         for lx in range(self.L):
             for mx in range(-lx, lx+1):
-                assign_gen += 'out[{ind}] += {ylmm} * rhol * charge;\n'.format(
+                assign_gen += 'out[{ind}] += {ylmm} * rholcharge;\n'.format(
                         ind=cube_ind(lx, mx),
                         ylmm=str(sph_gen.get_y_sym(lx, -mx)[0])
                     )
-                assign_gen += 'out[IM_OFFSET + {ind}] += {ylmm} * rhol * charge;\n'.format(
+                assign_gen += 'out[IM_OFFSET + {ind}] += {ylmm} * rholcharge;\n'.format(
                         ind=cube_ind(lx, mx),
                         ylmm=str(sph_gen.get_y_sym(lx, -mx)[1])
                     )
             assign_gen += 'rhol *= radius;\n'
+            assign_gen += 'rholcharge = rhol * charge;\n'
 
         src = """
         #define IM_OFFSET ({IM_OFFSET})
@@ -87,18 +89,21 @@ class LocalExpEval(object):
 
         # --- lib to create vector to dot product with local expansions --- 
 
-        assign_gen = 'double rhol = 1.0;\n'
+        assign_gen =  'double rhol = 1.0;\n'
+        assign_gen += 'double rholcharge = rhol * charge;\n'
+
         for lx in range(self.L):
             for mx in range(-lx, lx+1):
-                assign_gen += 'out[{ind}] += {ylmm} * rhol * charge;\n'.format(
+                assign_gen += 'out[{ind}] += {ylmm} * rholcharge;\n'.format(
                         ind=cube_ind(lx, mx),
                         ylmm=str(sph_gen.get_y_sym(lx, mx)[0])
                     )
-                assign_gen += 'out[IM_OFFSET + {ind}] += (-1.0) * {ylmm} * rhol * charge;\n'.format(
+                assign_gen += 'out[IM_OFFSET + {ind}] += (-1.0) * {ylmm} * rholcharge;\n'.format(
                         ind=cube_ind(lx, mx),
                         ylmm=str(sph_gen.get_y_sym(lx, mx)[1])
                     )
             assign_gen += 'rhol *= radius;\n'
+            assign_gen += 'rholcharge = rhol * charge;\n'
 
         src = """
         #define IM_OFFSET ({IM_OFFSET})
@@ -251,6 +256,90 @@ class LocalExpEval(object):
         )
 
         self._local_create_lib = simple_lib_creator(header_code=header, src_code=src)['create_local_exp']
+
+
+        # --- lib to create vector to dot product and mutlipole expansions --- 
+
+
+        assign_gen =  'double rhol = 1.0;\n'
+        assign_gen += 'double rholcharge = rhol * charge;\n'
+
+        for lx in range(self.L):
+            for mx in range(-lx, lx+1):
+
+                assign_gen += 'out_mul[{ind}] += {ylmm} * rholcharge;\n'.format(
+                        ind=cube_ind(lx, mx),
+                        ylmm=str(sph_gen.get_y_sym(lx, -mx)[0])
+                    )
+                assign_gen += 'out_mul[IM_OFFSET + {ind}] += {ylmm} * rholcharge;\n'.format(
+                        ind=cube_ind(lx, mx),
+                        ylmm=str(sph_gen.get_y_sym(lx, -mx)[1])
+                    )
+                assign_gen += 'out_vec[{ind}] += {ylmm} * rholcharge;\n'.format(
+                        ind=cube_ind(lx, mx),
+                        ylmm=str(sph_gen.get_y_sym(lx, mx)[0])
+                    )
+                assign_gen += 'out_vec[IM_OFFSET + {ind}] += (-1.0) * {ylmm} * rholcharge;\n'.format(
+                        ind=cube_ind(lx, mx),
+                        ylmm=str(sph_gen.get_y_sym(lx, mx)[1])
+                    )
+            assign_gen += 'rhol *= radius;\n'
+            assign_gen += 'rholcharge = rhol * charge;\n'
+
+
+        src = """
+        #define IM_OFFSET ({IM_OFFSET})
+
+        {DECLARE} int local_dot_vec_multipole(
+            const double charge,
+            const double radius,
+            const double theta,
+            const double phi,
+            double * RESTRICT out_vec,
+            double * RESTRICT out_mul
+        ){{
+            {SPH_GEN}
+            {ASSIGN_GEN}
+            return 0;
+        }}
+        """
+        header = str(sph_gen.header)
+        
+        src_lib = src.format(
+            SPH_GEN=str(sph_gen.module),
+            ASSIGN_GEN=str(assign_gen),
+            IM_OFFSET=(self.L**2),
+            DECLARE=r'static inline'
+        )
+
+        src = src.format(
+            SPH_GEN=str(sph_gen.module),
+            ASSIGN_GEN=str(assign_gen),
+            IM_OFFSET=(self.L**2),
+            DECLARE=r'extern "C"'
+        )
+
+        self.create_dot_vec_multipole_header = header
+        self.create_dot_vec_multipole_src = src_lib
+        self._dot_vec_multipole_lib = simple_lib_creator(header_code=header, src_code=src)['local_dot_vec_multipole']
+
+
+    def dot_vec_multipole(self, sph, charge, arr_vec, arr_mul):
+        """
+        For a charge at the point sph computes the coefficients at the origin
+        and appends them onto arr that can be used in a dot product to compute
+        the energy.
+        """
+        assert arr_vec.dtype == REAL
+        assert arr_mul.dtype == REAL
+        self._dot_vec_multipole_lib(
+            REAL(charge),
+            REAL(sph[0]),
+            REAL(sph[1]),
+            REAL(sph[2]),
+            arr_vec.ctypes.get_as_parameter(),
+            arr_mul.ctypes.get_as_parameter()
+        )    
 
 
     def compute_phi_local(self, moments, disp_sph):

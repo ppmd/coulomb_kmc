@@ -408,12 +408,12 @@ class FullLongRangeEnergy:
 
                     // copy the old position moments
                     for(int nx=0 ; nx<NCOMP ; nx++){{ new_moments[movii*NCOMP + nx] = old_moments[nx]; }}
+                    // copy the old evector coefficients
+                    for(int nx=0 ; nx<NCOMP ; nx++){{ new_evector[movii*NCOMP + nx] = old_evector[nx]; }}
+
 
                     // add on the new moments
                     multipole_exp(charge, nradius, ntheta, nphi, &new_moments[movii*NCOMP]);
-
-                    // copy the old evector coefficients
-                    for(int nx=0 ; nx<NCOMP ; nx++){{ new_evector[movii*NCOMP + nx] = old_evector[nx]; }}
 
                     // add on the new evector coefficients
                     local_dot_vec(charge, nradius, ntheta, nphi, &new_evector[movii*NCOMP]);

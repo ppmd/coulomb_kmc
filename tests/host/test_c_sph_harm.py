@@ -162,7 +162,7 @@ def compute_phi_local(llimit, moments, disp_sph):
 
 
 def test_c_local_dot_eval():
-    L = 2
+    L = 20
     lee = LocalExpEval(L)
     rng = np.random.RandomState(9476213)
 
@@ -181,7 +181,35 @@ def test_c_local_dot_eval():
         eng_p, _ = compute_phi_local(L, L_exp, sph_pos)
 
         err = abs(eng_c - eng_p) / abs(eng_c)
-        assert err < 10.**-14
+        assert err < 10.**-13
+
+
+def test_c_local_dot_eval_multipole():
+    L = 20
+    lee = LocalExpEval(L)
+    rng = np.random.RandomState(9476213)
+
+    ncomp = (L**2)*2
+
+    for tx in range(1):
+        L_exp = np.zeros(ncomp, dtype=REAL)
+        M_exp = np.zeros_like(L_exp)
+        L2_exp = np.zeros_like(L_exp)
+        M2_exp = np.zeros_like(L_exp)
+        
+        pos = (tuple(rng.uniform(size=3)))
+        sph_pos = spherical(pos)
+
+        lee.dot_vec(sph_pos, 1, L_exp)
+        lee.multipole_exp(sph_pos, 1, M_exp)
+
+        lee.dot_vec_multipole(sph_pos, 1, L2_exp, M2_exp)
+
+        err_l = np.linalg.norm(L_exp - L2_exp, np.inf)
+        assert err_l < 10.**-15
+
+        err_m = np.linalg.norm(M_exp - M2_exp, np.inf)
+        assert err_m < 10.**-15
 
 
 
