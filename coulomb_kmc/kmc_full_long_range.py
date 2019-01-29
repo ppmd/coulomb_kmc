@@ -298,6 +298,28 @@ class FullLongRangeEnergy:
 
             return;
         }}
+
+
+        static inline REAL apply_dipole_correction_split(
+            const REAL * RESTRICT M,
+            const REAL * RESTRICT E
+        ){{
+            
+            REAL tmp = 0.0;
+
+            tmp += (DIPOLE_SX * M[RE_1P1]) * E[RE_1P1];
+            tmp += (DIPOLE_SX * M[RE_1P1]) * E[RE_1N1];
+        
+            tmp -= (DIPOLE_SY * M[IM_1P1]) * E[IM_1P1];
+            tmp += (DIPOLE_SY * M[IM_1P1]) * E[IM_1N1];
+
+            tmp += (DIPOLE_SZ * M[RE_1_0]) * E[RE_1_0];
+
+            return tmp;
+        }}
+
+
+
         
         static inline REAL dot_product(
             const REAL * RESTRICT A,
@@ -341,6 +363,35 @@ class FullLongRangeEnergy:
                     row_tmp += data * x[col];
                 }}
                 b[row] = row_tmp;
+            }}
+            return;
+        }}
+
+
+        static inline void linop_csr_both(
+            const REAL * RESTRICT linop_data,
+            const INT64 * RESTRICT linop_indptr,
+            const INT64 * RESTRICT linop_indices,
+            const REAL * RESTRICT x1,
+            const REAL * RESTRICT x2,
+            REAL * RESTRICT b1,
+            REAL * RESTRICT b2
+        ){{
+            
+            INT64 data_ind = 0;
+            for(INT64 row=0 ; row<HALF_NCOMP ; row++){{
+                REAL row_tmp_1 = 0.0;
+                REAL row_tmp_2 = 0.0;
+                #pragma omp simd reduction(+:row_tmp_1) reduction(+:row_tmp_2)
+                for(INT64 col_ind=linop_indptr[row] ; col_ind<linop_indptr[row+1] ; col_ind++){{
+                    const INT64 col = linop_indices[data_ind];
+                    const REAL data = linop_data[data_ind];
+                    data_ind++;
+                    row_tmp_1 += data * x1[col];
+                    row_tmp_2 += data * x2[col];
+                }}
+                b1[row] = row_tmp_1;
+                b2[row] = row_tmp_2;
             }}
             return;
         }}
@@ -401,6 +452,18 @@ class FullLongRangeEnergy:
 
                 // loop over the proposed new positions and copy old positions and compute spherical coordinate
                 // vectors
+
+                #pragma omp simd simdlen(8)
+                for(INT64 movii=0 ; movii<nprop ; movii++){{
+                    // copy the old position moments
+                    for(int nx=0 ; nx<NCOMP ; nx++){{ new_moments[movii*NCOMP + nx] = old_moments[nx]; }}
+                    // copy the old evector coefficients
+                    for(int nx=0 ; nx<NCOMP ; nx++){{ new_evector[movii*NCOMP + nx] = old_evector[nx]; }}
+                }}
+
+
+                // loop over the proposed new positions and copy old positions and compute spherical coordinate
+                // vectors
                 #pragma omp simd simdlen(8)
                 for(INT64 movii=0 ; movii<nprop ; movii++){{
                     const INT64 movi = movii + exclusive_sum[px];
@@ -410,12 +473,6 @@ class FullLongRangeEnergy:
 
                     REAL nradius, ntheta, nphi;
                     spherical(npx, npy, npz, &nradius, &ntheta, &nphi);
-
-                    // copy the old position moments
-                    for(int nx=0 ; nx<NCOMP ; nx++){{ new_moments[movii*NCOMP + nx] = old_moments[nx]; }}
-                    // copy the old evector coefficients
-                    for(int nx=0 ; nx<NCOMP ; nx++){{ new_evector[movii*NCOMP + nx] = old_evector[nx]; }}
-
 
                     // add on the new moments
                     // multipole_exp(charge, nradius, ntheta, nphi, &new_moments[movii*NCOMP]);
@@ -434,15 +491,25 @@ class FullLongRangeEnergy:
                 for(INT64 movii=0 ; movii<nprop ; movii++){{
 
                     // apply the lin op to the real part
-                    linop_csr(linop_data, linop_indptr, linop_indices,
-                        &new_moments[movii*NCOMP], &new_local_moments[movii*NCOMP]);
+                    //linop_csr(linop_data, linop_indptr, linop_indices,
+                    //    &new_moments[movii*NCOMP], &new_local_moments[movii*NCOMP]);
 
                     // then the imaginary part
-                    linop_csr(linop_data, linop_indptr, linop_indices,
-                        &new_moments[movii*NCOMP + HALF_NCOMP], &new_local_moments[movii*NCOMP + HALF_NCOMP]);
+                    //linop_csr(linop_data, linop_indptr, linop_indices,
+                    //    &new_moments[movii*NCOMP + HALF_NCOMP], &new_local_moments[movii*NCOMP + HALF_NCOMP]);
+
+
+                    linop_csr_both(
+                        linop_data, linop_indptr, linop_indices,
+                        &new_moments[movii*NCOMP],
+                        &new_moments[movii*NCOMP + HALF_NCOMP],
+                        &new_local_moments[movii*NCOMP],
+                        &new_local_moments[movii*NCOMP + HALF_NCOMP]
+                    );
+
 
                     // apply the dipole correction
-                    apply_dipole_correction(&new_moments[movii*NCOMP], &new_local_moments[movii*NCOMP]);
+                    // apply_dipole_correction(&new_moments[movii*NCOMP], &new_local_moments[movii*NCOMP]);
 
                 }}
                 
@@ -451,8 +518,13 @@ class FullLongRangeEnergy:
                     
                     // apply dot product to each proposed move to get energy
                     
-                    const REAL new_energy = 0.5 * dot_product(
+                    REAL new_energy = 0.5 * dot_product(
                         &new_local_moments[movii*NCOMP], &new_evector[movii*NCOMP]);
+
+                    new_energy += 0.5 * apply_dipole_correction_split(
+                        &new_moments[movii*NCOMP],
+                        &new_evector[movii*NCOMP]
+                    );
 
                     out[px*store_stride + movii] += old_energy - new_energy;
 
@@ -497,5 +569,6 @@ class FullLongRangeEnergy:
                 Define('IM_1N1', str(_re_lm(1,-1) + half_ncomp)),
             ))
         )
-        
-        return simple_lib_creator(header_code=header, src_code=src)['long_range_energy']
+
+        _l = simple_lib_creator(header_code=header, src_code=src)['long_range_energy']
+        return _l

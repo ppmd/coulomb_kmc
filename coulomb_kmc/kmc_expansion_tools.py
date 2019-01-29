@@ -260,9 +260,9 @@ class LocalExpEval(object):
 
         # --- lib to create vector to dot product and mutlipole expansions --- 
 
-
         assign_gen =  'double rhol = 1.0;\n'
         assign_gen += 'double rholcharge = rhol * charge;\n'
+        flops = {'+': 0, '-': 0, '*': 0, '/': 0}
 
         for lx in range(self.L):
             for mx in range(-lx, lx+1):
@@ -283,9 +283,18 @@ class LocalExpEval(object):
                         ind=cube_ind(lx, mx),
                         ylmm=str(sph_gen.get_y_sym(lx, mx)[1])
                     )
+
+                flops['+'] += 4
+                flops['*'] += 5
+
             assign_gen += 'rhol *= radius;\n'
             assign_gen += 'rholcharge = rhol * charge;\n'
+            flops['*'] += 2
 
+        flops['+'] += sph_gen.flops['*']
+        flops['-'] += sph_gen.flops['*']
+        flops['*'] += sph_gen.flops['*']
+        flops['/'] += sph_gen.flops['*']
 
         src = """
         #define IM_OFFSET ({IM_OFFSET})
@@ -309,7 +318,7 @@ class LocalExpEval(object):
             SPH_GEN=str(sph_gen.module),
             ASSIGN_GEN=str(assign_gen),
             IM_OFFSET=(self.L**2),
-            DECLARE=r'static inline'
+            DECLARE='static inline'
         )
 
         src = src.format(
@@ -321,6 +330,8 @@ class LocalExpEval(object):
 
         self.create_dot_vec_multipole_header = header
         self.create_dot_vec_multipole_src = src_lib
+        self.create_dot_vec_multipole_flops = flops
+
         self._dot_vec_multipole_lib = simple_lib_creator(header_code=header, src_code=src)['local_dot_vec_multipole']
         
 

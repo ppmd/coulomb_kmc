@@ -22,6 +22,7 @@ class LocalOctalBase:
         else:
             PROFILE[key] += inc
 
+
     def _get_fmm_cell(self, ix, cell_map, slow_to_fast=False):
         # produces xyz tuple by default
         cc = cell_map[ix][0]

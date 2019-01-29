@@ -336,6 +336,8 @@ class LocalParticleData(LocalOctalBase):
             u0 = cuda_data['old_energy_d'].get()[:num_particles:, :]
             self._profile_inc('cuda_direct', time.time() - t0)
         else:
+            div_count_new = INT64(0)
+            div_count_old = INT64(0)
 
             self._host_direct_new(
                 INT64(total_movs),
@@ -349,9 +351,12 @@ class LocalParticleData(LocalOctalBase):
                 self.local_particle_store_ids.ctypes.get_as_parameter(),
                 self.local_cell_occupancy.ctypes.get_as_parameter(),
                 INT64(self.local_particle_store[0, 0, 0, :, 0].shape[0]),
-                host_data['new_energy_d'].ctypes.get_as_parameter()
+                host_data['new_energy_d'].ctypes.get_as_parameter(),
+                ctypes.byref(div_count_new)
             )
             self._profile_inc('c_direct_new', time.time() - t0)
+            self._profile_inc('c_direct_new_div_count', div_count_new.value)
+
             t1 = time.time()
             self._host_direct_old(
                 INT64(num_particles),
@@ -365,9 +370,11 @@ class LocalParticleData(LocalOctalBase):
                 self.local_particle_store_ids.ctypes.get_as_parameter(),
                 self.local_cell_occupancy.ctypes.get_as_parameter(),
                 INT64(self.local_particle_store[0, 0, 0, :, 0].shape[0]),
-                host_data['old_energy_d'].ctypes.get_as_parameter()
+                host_data['old_energy_d'].ctypes.get_as_parameter(),
+                ctypes.byref(div_count_old)
             )
             self._profile_inc('c_direct_old', time.time() - t1)
+            self._profile_inc('c_direct_old_div_count', div_count_old.value)
 
             u1 = host_data['new_energy_d'][:total_movs:, :]
             u0 = host_data['old_energy_d'][:num_particles:, :]
@@ -775,10 +782,12 @@ class LocalParticleData(LocalOctalBase):
                 const INT64 * RESTRICT d_pdata_ids,
                 const INT64 * RESTRICT d_cell_occ,
                 const INT64 d_cell_stride,
-                REAL * RESTRICT d_energy"""
+                REAL * RESTRICT d_energy,
+                INT64 * RESTRICT div_count"""
             
         common_1 = r"""
-                #pragma omp parallel for schedule(dynamic)
+                INT64 tmp_div_count = 0;
+                #pragma omp parallel for schedule(dynamic) reduction(+:tmp_div_count)
                 for( INT64 idx=0 ; idx< num_movs ; idx++ ) {{
 
                     const INT64 ic = d_fmm_cells[idx];
@@ -795,6 +804,7 @@ class LocalParticleData(LocalOctalBase):
                         // compute the offset into the cell data
                         const INT64 offset = jc * d_cell_stride;
                         const INT64 offset5 = 5 * jc * d_cell_stride;
+                        tmp_div_count += d_cell_occ[jc];
 
                         // loop over the particles in the j cell
                         for(INT64 jx=0 ; jx<d_cell_occ[jc] ; jx++){{            
@@ -814,6 +824,7 @@ class LocalParticleData(LocalOctalBase):
                     }}
                     energy_red *= d_charges[idx];
                     d_energy[idx] = energy_red;
+                    *div_count = tmp_div_count;
                 }}
             return 0;
         """.format()

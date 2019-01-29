@@ -1,9 +1,7 @@
 from enum import Enum
-from ppmd import opt
 import numpy as np
 
-
-PROFILE = opt.PROFILE
+from ppmd.opt import PROFILE as PROFILE
 
 
 def spherical(xyz):
