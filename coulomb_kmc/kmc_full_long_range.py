@@ -12,7 +12,7 @@ INT64 = ctypes.c_int64
 import ppmd
 import ppmd.cuda
 from ppmd.coulomb.sph_harm import *
-from ppmd.lib.build import simple_lib_creator
+from ppmd.lib.build import simple_lib_creator, LOADED_LIBS
 from coulomb_kmc.common import spherical, cell_offsets
 from ppmd.coulomb.fmm_pbc import LongRangeMTL
 
@@ -367,33 +367,35 @@ class FullLongRangeEnergy:
             return;
         }}
 
-
-        static inline void linop_csr_both(
+        #pragma omp declare simd
+        static inline REAL linop_csr_both(
             const REAL * RESTRICT linop_data,
             const INT64 * RESTRICT linop_indptr,
             const INT64 * RESTRICT linop_indices,
             const REAL * RESTRICT x1,
-            const REAL * RESTRICT x2,
-            REAL * RESTRICT b1,
-            REAL * RESTRICT b2
+            const REAL * RESTRICT E
         ){{
             
             INT64 data_ind = 0;
+            REAL dot_tmp = 0.0;
+
             for(INT64 row=0 ; row<HALF_NCOMP ; row++){{
+
                 REAL row_tmp_1 = 0.0;
                 REAL row_tmp_2 = 0.0;
-                #pragma omp simd reduction(+:row_tmp_1) reduction(+:row_tmp_2)
+
                 for(INT64 col_ind=linop_indptr[row] ; col_ind<linop_indptr[row+1] ; col_ind++){{
                     const INT64 col = linop_indices[data_ind];
                     const REAL data = linop_data[data_ind];
                     data_ind++;
                     row_tmp_1 += data * x1[col];
-                    row_tmp_2 += data * x2[col];
+                    row_tmp_2 += data * x1[col  + HALF_NCOMP];
                 }}
-                b1[row] = row_tmp_1;
-                b2[row] = row_tmp_2;
+
+                dot_tmp += row_tmp_1 * E[row] + row_tmp_2 * E[row + HALF_NCOMP];
             }}
-            return;
+
+            return dot_tmp;
         }}
 
 
@@ -453,7 +455,6 @@ class FullLongRangeEnergy:
                 // loop over the proposed new positions and copy old positions and compute spherical coordinate
                 // vectors
 
-                #pragma omp simd simdlen(8)
                 for(INT64 movii=0 ; movii<nprop ; movii++){{
                     // copy the old position moments
                     for(int nx=0 ; nx<NCOMP ; nx++){{ new_moments[movii*NCOMP + nx] = old_moments[nx]; }}
@@ -473,12 +474,6 @@ class FullLongRangeEnergy:
 
                     REAL nradius, ntheta, nphi;
                     spherical(npx, npy, npz, &nradius, &ntheta, &nphi);
-
-                    // add on the new moments
-                    // multipole_exp(charge, nradius, ntheta, nphi, &new_moments[movii*NCOMP]);
-
-                    // add on the new evector coefficients
-                    // local_dot_vec(charge, nradius, ntheta, nphi, &new_evector[movii*NCOMP]);
                     
                     // combined
                     local_dot_vec_multipole(charge, nradius, ntheta, nphi,
@@ -486,40 +481,17 @@ class FullLongRangeEnergy:
 
                     {MIRROR_LOOP_0}
                 }}
-
-                #pragma omp simd simdlen(8)
-                for(INT64 movii=0 ; movii<nprop ; movii++){{
-
-                    // apply the lin op to the real part
-                    //linop_csr(linop_data, linop_indptr, linop_indices,
-                    //    &new_moments[movii*NCOMP], &new_local_moments[movii*NCOMP]);
-
-                    // then the imaginary part
-                    //linop_csr(linop_data, linop_indptr, linop_indices,
-                    //    &new_moments[movii*NCOMP + HALF_NCOMP], &new_local_moments[movii*NCOMP + HALF_NCOMP]);
-
-
-                    linop_csr_both(
-                        linop_data, linop_indptr, linop_indices,
-                        &new_moments[movii*NCOMP],
-                        &new_moments[movii*NCOMP + HALF_NCOMP],
-                        &new_local_moments[movii*NCOMP],
-                        &new_local_moments[movii*NCOMP + HALF_NCOMP]
-                    );
-
-
-                    // apply the dipole correction
-                    // apply_dipole_correction(&new_moments[movii*NCOMP], &new_local_moments[movii*NCOMP]);
-
-                }}
                 
-                #pragma omp simd simdlen(8)
+                // #pragma omp simd simdlen(8)
                 for(INT64 movii=0 ; movii<nprop ; movii++){{
                     
                     // apply dot product to each proposed move to get energy
                     
-                    REAL new_energy = 0.5 * dot_product(
-                        &new_local_moments[movii*NCOMP], &new_evector[movii*NCOMP]);
+                    REAL new_energy = 0.5 * linop_csr_both(
+                        linop_data, linop_indptr, linop_indices,
+                        &new_moments[movii*NCOMP],
+                        &new_evector[movii*NCOMP]
+                    );
 
                     new_energy += 0.5 * apply_dipole_correction_split(
                         &new_moments[movii*NCOMP],
@@ -572,3 +544,4 @@ class FullLongRangeEnergy:
 
         _l = simple_lib_creator(header_code=header, src_code=src)['long_range_energy']
         return _l
+
