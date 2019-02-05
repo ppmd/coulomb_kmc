@@ -110,7 +110,7 @@ class FullLongRangeEnergy:
             # get current long range energy
             self.lrc(self.multipole_exp, L_tmp)
             old_energy = 0.5 * np.dot(L_tmp, self.local_dot_coeffs)
-
+            
             self._host_lib(
                 REAL(old_energy),
                 INT64(arr.shape[1]),
@@ -270,6 +270,34 @@ class FullLongRangeEnergy:
             '''.format(**mcoeff)
 
 
+        csr_inline = '''
+        '''   
+        for rowx in range(half_ncomp):
+            tmp = '''
+            REAL rt1_{rowx} = 0.0;
+            REAL rt2_{rowx} = 0.0;
+            '''
+            for colx in range(half_ncomp):
+                tm = self.lrc.sparse_rmat[rowx, colx] 
+                if abs(tm) > 0:
+                    tmp += '''
+                    rt1_{rowx} += {val} * x1[{colx}];
+                    rt2_{rowx} += {val} * x1[{colx}  + HALF_NCOMP];
+                    '''.format(
+                        val=tm,
+                        rowx=rowx,
+                        colx=colx
+                    )
+
+            tmp += '''
+            dot_tmp += rt1_{rowx} * E[{rowx}] + rt2_{rowx} * E[{rowx} + HALF_NCOMP];
+            '''
+            
+            csr_inline += tmp.format(
+                rowx=rowx
+            )
+
+
         src = r'''
         
         {MULTIPOLE_HEADER}
@@ -399,6 +427,22 @@ class FullLongRangeEnergy:
         }}
 
 
+
+        #pragma omp declare simd
+        static inline REAL linop_csr_both_inline(
+            const REAL * RESTRICT x1,
+            const REAL * RESTRICT E
+        ){{
+            
+            REAL dot_tmp = 0.0;
+
+            {CSR_INLINE}
+
+            return dot_tmp;
+        }}
+
+
+
         extern "C" int long_range_energy(
             const REAL old_energy,
             const INT64 store_stride,
@@ -493,6 +537,11 @@ class FullLongRangeEnergy:
                         &new_evector[movii*NCOMP]
                     );
 
+                    //REAL new_energy = 0.5 * linop_csr_both_inline(
+                    //    &new_moments[movii*NCOMP],
+                    //    &new_evector[movii*NCOMP]
+                    //);
+
                     new_energy += 0.5 * apply_dipole_correction_split(
                         &new_moments[movii*NCOMP],
                         &new_evector[movii*NCOMP]
@@ -517,9 +566,9 @@ class FullLongRangeEnergy:
             MIRROR_PRELOOP=mirror_preloop,
             MIRROR_LOOP_0=mirror_loop_0,
             EVEC_MULTIPOLE_HEADER=self._lee.create_dot_vec_multipole_header,
-            EVEC_MULTIPOLE_SRC=self._lee.create_dot_vec_multipole_src
+            EVEC_MULTIPOLE_SRC=self._lee.create_dot_vec_multipole_src,
+            CSR_INLINE=csr_inline
         )
-
 
         header = str(
             Module((
