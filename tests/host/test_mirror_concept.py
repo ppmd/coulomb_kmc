@@ -4,7 +4,6 @@ __author__ = "W.R.Saunders"
 __copyright__ = "Copyright 2016, W.R.Saunders"
 
 import pytest, ctypes, math
-from mpi4py import MPI
 import numpy as np
 from itertools import product
 
@@ -21,6 +20,7 @@ from math import *
 
 from ppmd.coulomb.fmm_pbc import *
 
+from mpi4py import MPI
 MPISIZE = MPI.COMM_WORLD.Get_size()
 MPIRANK = MPI.COMM_WORLD.Get_rank()
 MPIBARRIER = MPI.COMM_WORLD.Barrier

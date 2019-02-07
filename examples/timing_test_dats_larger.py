@@ -3,8 +3,7 @@ from __future__ import print_function, division
 __author__ = "W.R.Saunders"
 __copyright__ = "Copyright 2016, W.R.Saunders"
 
-import pytest, ctypes, math
-from mpi4py import MPI
+import ctypes, math
 import numpy as np
 
 np.set_printoptions(linewidth=200)
@@ -18,9 +17,9 @@ import time
 
 from math import *
 
-MPISIZE = MPI.COMM_WORLD.Get_size()
-MPIRANK = MPI.COMM_WORLD.Get_rank()
-MPIBARRIER = MPI.COMM_WORLD.Barrier
+MPISIZE = mpi.MPI.COMM_WORLD.Get_size()
+MPIRANK = mpi.MPI.COMM_WORLD.Get_rank()
+MPIBARRIER = mpi.MPI.COMM_WORLD.Barrier
 DEBUG = True
 SHARED_MEMORY = 'omp'
 

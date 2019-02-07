@@ -99,6 +99,7 @@ class LocalParticleData(LocalOctalBase):
                 (els[0], els[1], els[2], 1), dtype=INT64)
         self.remote_inds = np.zeros((els[0], els[1], els[2], 1), dtype=INT64)
 
+        self._win_global_store = None
         self._wing = MPI.Win()
         self._occ_win = self._wing.Create(
             self.cell_occupancy,
@@ -386,9 +387,18 @@ class LocalParticleData(LocalOctalBase):
 
 
     def _check_owner_store(self, max_cell_occ):
+        
+        # ensures the Win.Create call is collective on the MPI COMM
+        m = np.array((max_cell_occ,), np.int)
+        m2 = np.array((max_cell_occ,), np.int)
+        self.comm.Allreduce(m, m2, mpi.MPI.MAX)
+        max_cell_occ = m2[0]
 
         if self._owner_store is None or \
                 max_cell_occ > self._owner_store.shape[3]:
+            
+            if self._win_global_store is not None:
+                self._win_global_store.Free()
 
             ls = self.local_size
             self._owner_store = np.zeros(
