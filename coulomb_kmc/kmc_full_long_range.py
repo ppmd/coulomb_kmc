@@ -4,6 +4,7 @@ __author__ = "W.R.Saunders"
 import ctypes
 import numpy as np
 from math import *
+import time
 
 REAL = ctypes.c_double
 INT64 = ctypes.c_int64
@@ -13,11 +14,11 @@ import ppmd
 import ppmd.cuda
 from ppmd.coulomb.sph_harm import *
 from ppmd.lib.build import simple_lib_creator, LOADED_LIBS
-from coulomb_kmc.common import spherical, cell_offsets
+from coulomb_kmc.common import spherical, cell_offsets, ProfInc
 from ppmd.coulomb.fmm_pbc import LongRangeMTL
 
 
-class FullLongRangeEnergy:
+class FullLongRangeEnergy(ProfInc):
     def __init__(self, L, domain, local_exp_eval, mirror_direction=None):
         # this should be a full PBC fmm instance
         self.domain = domain
@@ -111,6 +112,7 @@ class FullLongRangeEnergy:
             self.lrc(self.multipole_exp, L_tmp)
             old_energy = 0.5 * np.dot(L_tmp, self.local_dot_coeffs)
             
+            t0 = time.time()
             self._host_lib(
                 REAL(old_energy),
                 INT64(arr.shape[1]),
@@ -127,6 +129,7 @@ class FullLongRangeEnergy:
                 self._thread_ptrs.ctypes.get_as_parameter(),
                 arr.ctypes.get_as_parameter()
             )
+            t1 = time.time()
 
 
     def py_propose(self, total_movs, num_particles, host_data, cuda_data, arr, use_python=True):

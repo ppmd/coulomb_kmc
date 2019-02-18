@@ -28,11 +28,13 @@ import time
 import cProfile
 
 
-def time_test_dats_1(N=100, nprop=2, nsample=2000):
+def time_test_dats_1(N=100, nprop=2, nsample=1000):
+    
+    assert N >= nsample
 
     eps = 10.**-5
     L = 12
-    R = max(3, int(log(0.2*N, 8)))
+    R = max(3, int(log(0.5*N, 8)))
 
     E = 4.
     rc = E/4
@@ -124,7 +126,7 @@ if __name__ == '__main__':
     times = []
     for nx in nset:
         ti, ni, ri, tai, nsample2 = time_test_dats_1(N=int(nx), nprop=10)
-
+        # opt.print_profile()
         times.append((int(nx), ti/ni, tai/(nsample2*nx)))
 
         print('{: 8.2e} {: 8.4e} {: 8.4e} {: 4d}' .format(int(nx), ti/ni, tai/(nsample2*nx), ri))

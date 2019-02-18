@@ -11,7 +11,7 @@ INT64 = ctypes.c_int64
 # cuda imports if possible
 from ppmd.coulomb.sph_harm import *
 from ppmd.lib.build import simple_lib_creator
-
+from coulomb_kmc import common
 
 
 class LocalExpEval(object):
@@ -197,6 +197,9 @@ class LocalExpEval(object):
         self._local_eval_lib = simple_lib_creator(header_code=header, src_code=src)['local_eval']
 
         # lib to create local expansions
+        
+        tflops = common.new_flop_dict()
+        tflops = common.add_flop_dict(tflops, sph_gen.flops)
 
         assign_gen = 'const double iradius = 1.0/radius;\n'
         assign_gen += 'double rhol = iradius;\n'
@@ -210,7 +213,12 @@ class LocalExpEval(object):
                         ind=cube_ind(lx, mx),
                         ylmm=str(sph_gen.get_y_sym(lx, -mx)[1])
                     )
+                tflops['+'] += 2
+                tflops['*'] += 4
             assign_gen += 'rhol *= iradius;\n'
+            tflops['*'] += 1
+        
+        self.flop_count_create_local_exp = tflops
 
         src = """
         #define IM_OFFSET ({IM_OFFSET})

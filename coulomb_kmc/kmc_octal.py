@@ -10,12 +10,13 @@ from math import ceil
 import ctypes
 from itertools import product
 from cgen import *
+import time
 
 from ppmd import mpi
 from ppmd.coulomb.sph_harm import SphGen, SphSymbol, cmplx_mul
 from ppmd.lib import build
 
-from coulomb_kmc.common import BCType, PROFILE, spherical, cell_offsets
+from coulomb_kmc.common import BCType, PROFILE, spherical, cell_offsets, add_flop_dict
 from coulomb_kmc.kmc_fmm_common import LocalOctalBase
 from coulomb_kmc.kmc_expansion_tools import LocalExpEval
 
@@ -41,7 +42,8 @@ class LocalCellExpansions(LocalOctalBase):
         self.cell_indices = self.md.cell_indices
         
         self.cell_indices_arr = None
-
+        self.flop_count_propose = None
+        self.flop_count_accept = None
 
         self.cell_offsets = self.md.cell_offsets
         self.global_cell_size = self.md.global_cell_size
@@ -76,8 +78,10 @@ class LocalCellExpansions(LocalOctalBase):
         # compute the cell centres
         self.cell_centres = np.zeros(local_store_dims + [3], dtype=REAL)
         self.orig_cell_centres = np.zeros_like(self.cell_centres)
-        self._host_lib = self._init_host_kernels(self.fmm.L)
+        self._host_lib, self._flop_count_prop = self._init_host_kernels(self.fmm.L)
         self._host_accept_lib = self._init_accept_lib()
+
+
 
 
     def accept(self, movedata):
@@ -99,7 +103,10 @@ class LocalCellExpansions(LocalOctalBase):
         old_cell_tuple = self._cell_lin_to_tuple(old_fmm_cell)
 
         lsd = self.local_store_dims
-
+        
+        exp_exec_count = INT64(0)
+        
+        t0 = time.time()
         self._accept_lib(
             REAL(charge),
             REAL(new_position[0]),
@@ -121,8 +128,20 @@ class LocalCellExpansions(LocalOctalBase):
             INT64(lsd[1]),
             INT64(lsd[2]),
             self.orig_cell_centres.ctypes.get_as_parameter(),
-            self.local_expansions.ctypes.get_as_parameter()
+            self.local_expansions.ctypes.get_as_parameter(),
+            ctypes.byref(exp_exec_count)
         )
+        t1 = time.time()
+        
+        self._profile_inc('c_accept_exec_count_local_create', exp_exec_count.value)
+        self._profile_inc('c_accept_time', t1 - t0)
+        f = (
+                self._profile_get('c_accept_flop_count_local_create') * \
+                self._profile_get('c_accept_exec_count_local_create')
+            ) / \
+            self._profile_get('c_accept_time')
+        self._profile_set('c_accept_gflop_rate', f/(10.**9))
+
 
 
     def _accept_py(self, movedata):
@@ -261,7 +280,8 @@ class LocalCellExpansions(LocalOctalBase):
 
         u0 = None
         u1 = None
-
+        
+        t0 = time.time()
         self._host_lib(
             INT64(num_particles),
             host_data['old_fmm_cells'].ctypes.get_as_parameter(),
@@ -280,9 +300,20 @@ class LocalCellExpansions(LocalOctalBase):
             self.local_expansions.ctypes.get_as_parameter(),
             host_data['new_energy_i'].ctypes.get_as_parameter()
         )        
+        t1 = time.time()
 
         u0 = host_data['old_energy_i'][:num_particles:]
         u1 = host_data['new_energy_i'][:total_movs:]
+
+        nexec= num_particles + total_movs
+        
+        self._profile_inc('c_indirect_time', t1 - t0)
+        self._profile_inc('c_indirect_exec_count', nexec)
+
+        f = self._profile_get('c_indirect_exec_count') * self._flop_count_prop / \
+            self._profile_get('c_indirect_time')
+        
+        self._profile_set('c_indirect_gflop_rate', f / (10.**9))
 
         return u0, u1
 
@@ -548,9 +579,6 @@ class LocalCellExpansions(LocalOctalBase):
                 const REAL sin_phi = sin(phi);
                 const REAL cos_phi = cos(phi);
 
-                //printf("C pos: %f %f %f centre %f %f %f \n", d_positions[idx*3 + 0], d_positions[idx*3 + 1], d_positions[idx*3 + 2], d_centres[offset*3 + 0], d_centres[offset*3 + 1], d_centres[offset*3 + 2]);
-                //printf("C disp: %f %f %f\n", radius, theta, phi);
-
                 {SPH_GEN}
 
                 REAL tmp_energy = 0.0;
@@ -570,8 +598,8 @@ class LocalCellExpansions(LocalOctalBase):
             SPH_GEN=str(sph_gen.module),
             ENERGY_COMP=EC
         )
-        # print(flops, sum([flops[kx] for kx in flops.keys()]))
-        return build.simple_lib_creator(header_code=' ', src_code=src)['indirect_interactions']
+        fc = sum([flops[kx] for kx in flops.keys()])
+        return build.simple_lib_creator(header_code=' ', src_code=src)['indirect_interactions'], fc
 
 
     def _init_accept_lib(self):
@@ -579,8 +607,6 @@ class LocalCellExpansions(LocalOctalBase):
         extent = self.fmm.domain.extent
         ncomp = (L**2)*2
         half_ncomp = (L**2)
-        sph_gen = SphGen(maxl=L-1, theta_sym='theta', phi_sym='phi', ctype='double', avoid_calls=False)
-        
         ncell_side = 2**(self.fmm.R - 1)
         
         if self.boundary_condition is BCType.FREE_SPACE:
@@ -694,9 +720,11 @@ class LocalCellExpansions(LocalOctalBase):
             const INT64 lsd2,
 
             const REAL * RESTRICT orig_centres,
-            REAL * RESTRICT local_expansions
+            REAL * RESTRICT local_expansions,
+            INT64 * RESTRICT local_exp_execute_count
         ){{
-            #pragma omp parallel for schedule(dynamic) collapse(3)
+            INT64 tcount = 0;
+            #pragma omp parallel for schedule(dynamic) collapse(3) reduction(+:tcount)
             for(INT64 cz=0 ; cz<lsd0 ; cz++){{
                 for(INT64 cy=0 ; cy<lsd1 ; cy++){{
                     for(INT64 cx=0 ; cx<lsd2 ; cx++){{
@@ -723,6 +751,8 @@ class LocalCellExpansions(LocalOctalBase):
                             const REAL theta = atan2(sqrt(dx2_p_dy2), dz);
                             const REAL phi = atan2(dy, dx);
                             inline_local_exp(-1.0 * charge, radius, theta, phi, cell_local_exp);
+
+                            tcount++;
                         }}
 
                         if (well_separated(mnew_tuplex, mnew_tupley, mnew_tuplez, fmm_cellx, fmm_celly, fmm_cellz)){{
@@ -736,6 +766,8 @@ class LocalCellExpansions(LocalOctalBase):
                             const REAL theta = atan2(sqrt(dx2_p_dy2), dz);
                             const REAL phi = atan2(dy, dx);
                             inline_local_exp(charge, radius, theta, phi, cell_local_exp);
+
+                            tcount++;
                         }}
 
                         {OFFSET_LOOPING_END}
@@ -743,6 +775,7 @@ class LocalCellExpansions(LocalOctalBase):
                     }}
                 }}
             }}
+            *local_exp_execute_count = tcount;
             return 0;
         }}
         '''.format(
@@ -752,7 +785,10 @@ class LocalCellExpansions(LocalOctalBase):
             LOCAL_EXP_HEADER=self._lee.create_local_exp_header,
             LOCAL_EXP_SRC=self._lee.create_local_exp_src
         )
-
+        self.flop_count_accept = self._lee.flop_count_create_local_exp
+        _t = self.flop_count_accept
+        tf = sum([_tx for _tx in _t.values()])
+        self._profile_inc('c_accept_flop_count_local_create', tf)
         self._accept_lib = build.simple_lib_creator(header_code=' ', src_code=src)['accept_local_exp']
 
 

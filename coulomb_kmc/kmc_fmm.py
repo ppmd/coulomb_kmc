@@ -97,7 +97,6 @@ class KMCFMM(object):
             self.max_move = float(max_move)
         else:
             self.max_move = max(self.domain.extent[:])
-
         # class to handle the mpi decomposition and preprocessing of moves
         self.md = FMMMPIDecomp(self.fmm, self.max_move,
             boundary_condition=self._bc, cuda=self.cuda_direct)
@@ -587,11 +586,9 @@ class KMCFMM(object):
 
         icx, icy, icz = self._get_cell(prop_pos)
         
-        #print(prop_pos, icx, icy, icz)
 
         e_tmp = 0.0
         extent = self.domain.extent
-        # print("HST: prop", prop_pos)
         if ix is not None:
             q = self.charges.data[ix, 0]
         else:

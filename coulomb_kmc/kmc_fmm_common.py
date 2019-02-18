@@ -10,18 +10,10 @@ from functools import lru_cache
 REAL = ctypes.c_double
 INT64 = ctypes.c_int64
 
-from coulomb_kmc.common import PROFILE
+from coulomb_kmc.common import PROFILE, ProfInc
 
 
-class LocalOctalBase:
-
-    def _profile_inc(self, key, inc):
-        key = self.__class__.__name__ + ':' + key
-        if key not in PROFILE.keys():
-            PROFILE[key] = inc
-        else:
-            PROFILE[key] += inc
-
+class LocalOctalBase(ProfInc):
 
     def _get_fmm_cell(self, ix, cell_map, slow_to_fast=False):
         # produces xyz tuple by default

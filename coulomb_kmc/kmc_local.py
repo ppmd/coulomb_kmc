@@ -355,8 +355,11 @@ class LocalParticleData(LocalOctalBase):
                 host_data['new_energy_d'].ctypes.get_as_parameter(),
                 ctypes.byref(div_count_new)
             )
-            self._profile_inc('c_direct_new', time.time() - t0)
+            self._profile_inc('c_direct_new_time', time.time() - t0)
             self._profile_inc('c_direct_new_div_count', div_count_new.value)
+
+            f = self._profile_get('c_direct_new_div_count') / self._profile_get('c_direct_new_time')
+            self._profile_set('c_direct_new_div_sqrt_grate', f / (10.**9))
 
             t1 = time.time()
             self._host_direct_old(
@@ -374,8 +377,12 @@ class LocalParticleData(LocalOctalBase):
                 host_data['old_energy_d'].ctypes.get_as_parameter(),
                 ctypes.byref(div_count_old)
             )
-            self._profile_inc('c_direct_old', time.time() - t1)
+            self._profile_inc('c_direct_old_time', time.time() - t1)
             self._profile_inc('c_direct_old_div_count', div_count_old.value)
+
+            f = self._profile_get('c_direct_old_div_count') / self._profile_get('c_direct_old_time')
+            self._profile_set('c_direct_old_div_sqrt_grate', f / (10.**9))
+
 
             u1 = host_data['new_energy_d'][:total_movs:, :]
             u0 = host_data['old_energy_d'][:num_particles:, :]

@@ -53,7 +53,7 @@ def test_c_sph_harm_1():
     centres = np.array((0.5, 0.5, 0.5), dtype=REAL)
     energy = np.zeros(N, dtype=REAL)
     
-    lib = kmc_octal.LocalCellExpansions._init_host_kernels(L)
+    lib, _ = kmc_octal.LocalCellExpansions._init_host_kernels(L)
     
     def cptr(arr):
         return arr.ctypes.get_as_parameter()
@@ -93,7 +93,7 @@ def test_c_sph_harm_2():
     centres = np.array((0.5, 0.5, 0.5), dtype=REAL)
     energy = np.zeros(N, dtype=REAL)
     
-    lib = kmc_octal.LocalCellExpansions._init_host_kernels(L)
+    lib, _ = kmc_octal.LocalCellExpansions._init_host_kernels(L)
     
     lee = LocalExpEval(L)
 

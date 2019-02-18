@@ -70,4 +70,41 @@ cell_offsets = (
     (  1,  1,  1),
 )
 
+def add_flop_dict(d1, d2):
+    for kx in ('+', '-', '*', '/'):
+        d1[kx] += d2[kx]
+    return d1
+
+def new_flop_dict():
+    return {'+': 0, '-': 0, '*': 0, '/': 0}
+
+
+class ProfInc:
+    def _profile_inc(self, key, inc):
+        key = self.__class__.__name__ + ':' + key
+        if key not in PROFILE.keys():
+            PROFILE[key] = inc
+        else:
+            PROFILE[key] += inc
+
+    def _profile_get(self, key):
+        key = self.__class__.__name__ + ':' + key
+        return PROFILE[key]
+
+    def _profile_set(self, key, inc):
+        key = self.__class__.__name__ + ':' + key
+        if key not in PROFILE.keys():
+            PROFILE[key] = inc
+        else:
+            PROFILE[key] = inc
+
+
+
+
+
+
+
+
+
+
 
