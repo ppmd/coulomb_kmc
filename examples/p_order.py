@@ -28,15 +28,16 @@ import time
 import cProfile
 
 
-def time_test_dats_1(N=1000, nprop=2, nsample=1000):
+
+def p_complexity(E, pi, qi, p, N=1000, nprop=2, nsample=1000):
     
     assert N >= nsample
+    assert p > 0
 
     eps = 10.**-5
-    L = 12
+    L = int(p)
     R = max(3, int(log(0.5*N, 8)))
 
-    E = 3.3 * (N ** (1./3))
     rc = E/4
 
     M = nprop
@@ -57,11 +58,8 @@ def time_test_dats_1(N=1000, nprop=2, nsample=1000):
     site_max_counts = data.ScalarArray(ncomp=8, dtype=INT64)
     site_max_counts[:] = nprop
 
-    A.P[:] = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
-    for px in range(N):
-        A.Q[px,0] = (-1.0)**(px+1)
-    bias = np.sum(A.Q[:N:, 0])/N
-    A.Q[:, 0] -= bias
+    A.P[:] = pi
+    A.Q[:, 0] = qi
     
     A.scatter_data_from(0)
     
@@ -117,23 +115,32 @@ def time_test_dats_1(N=1000, nprop=2, nsample=1000):
     return (t1-t0, nm, kmc_fmm.fmm.R, t3 - t2, nsample2)
 
 if __name__ == '__main__':
-    nset = np.logspace(3, log(1000001, 10), 30)
-    #nset = (1000,)
-    
-    top_bar = '{: ^10} {: ^12} {: ^12} {: ^4}' .format('N', 'T_prop', 'T_accept', 'R')
+    pset = tuple(range(2, 31, 1))
+    N = 100000
+    E = 3.3 * (N ** (1./3))
+
+    rng = np.random.RandomState(1234)
+    pi = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
+    qi = np.zeros(N)
+    for px in range(N):
+        qi[px] = (-1.0)**(px+1)
+    bias = np.sum(qi[:N:])/N
+    qi[:] -= bias
+
+
+    top_bar = '{: ^4} {: ^12} {: ^12} {: ^4}' .format('N', 'T_prop', 'T_accept', 'R')
     print(top_bar)
     print('-' * len(top_bar))
     times = []
-    for nx in nset:
-        ti, ni, ri, tai, nsample2 = time_test_dats_1(N=int(nx), nprop=10)
-        # opt.print_profile()
-        times.append((int(nx), ti/ni, tai/(nsample2*nx)))
+    for px in pset:
+        ti, ni, ri, tai, nsample2 = p_complexity(E, pi, qi, p=px, N=N, nprop=10, nsample=1000)
+        times.append((px, ti/ni, tai/(nsample2*N)))
 
-        print('{: 8.2e} {: 8.4e} {: 8.4e} {: 4d}' .format(int(nx), ti/ni, tai/(nsample2*nx), ri))
+        print('{: 4d} {: 8.4e} {: 8.4e} {: 4d}' .format(int(px), ti/ni, tai/(nsample2*N), ri))
 
 
     times = np.array(times)
-    np.save('timings.npy', times)
+    np.save('porder_timings.npy', times)
 
 
 
