@@ -29,7 +29,7 @@ from coulomb_kmc import *
 
 c_double = ctypes.c_double
 
-
+@pytest.mark.skipif("MPISIZE > 1")
 def test_long_range_accept_correction_1():
     param_boundary = 'pbc'
 

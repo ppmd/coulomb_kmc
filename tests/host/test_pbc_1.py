@@ -87,7 +87,7 @@ def test_c_local_expansion_eval():
         assert err < 10.**-12
         
 
-
+@pytest.mark.skipif("MPISIZE > 1")
 def test_split_concept_1():
     L = 12
     R = 3
@@ -141,7 +141,7 @@ def test_split_concept_1():
     assert err < 10.**-14
 
 
-
+@pytest.mark.skipif("MPISIZE > 1")
 def test_kmc_lr_1():
     """
     Passes all proposed moves to kmc at once, then checks all outputs

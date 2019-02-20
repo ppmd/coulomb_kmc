@@ -5,6 +5,9 @@ from coulomb_kmc import *
 import ctypes
 import pytest
 
+from mpi4py import MPI
+MPISIZE = MPI.COMM_WORLD.Get_size()
+
 halfmeps = 0.5 - 10.0**-15
 
 direction_bools = (
@@ -13,6 +16,7 @@ direction_bools = (
     (False, False, True)
 )
 
+@pytest.mark.skipif("MPISIZE > 1")
 @pytest.mark.parametrize("direction", direction_bools)
 def test_init_1(direction):
 

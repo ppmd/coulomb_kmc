@@ -29,7 +29,7 @@ from coulomb_kmc import *
 
 c_double = ctypes.c_double
 
-
+@pytest.mark.skipif("MPISIZE > 1")
 @pytest.mark.parametrize("param_boundary", ('free_space', 'pbc', '27'))
 def test_kmc_fmm_dat_setup_prop_1(param_boundary):
 
@@ -208,7 +208,7 @@ def test_kmc_fmm_dat_setup_prop_1(param_boundary):
 
 
 
-
+@pytest.mark.skipif("MPISIZE > 1")
 @pytest.mark.parametrize("param_boundary", ('free_space', 'pbc', '27'))
 def test_kmc_fmm_dat_setup_prop_2(param_boundary):
 

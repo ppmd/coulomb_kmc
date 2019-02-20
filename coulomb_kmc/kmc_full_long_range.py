@@ -61,24 +61,31 @@ class FullLongRangeEnergy(ProfInc):
 
 
     def initialise(self, positions, charges):
-        assert self.domain.comm.size == 1, "need to MPI reduce coefficients"
 
         self.multipole_exp.fill(0)
         self.local_dot_coeffs.fill(0)
+        
+        tmp_multipole_exp = np.zeros_like(self.multipole_exp)
+        tmp_local_dot_coeffs = np.zeros_like(self.local_dot_coeffs)
+
 
         for px in range(positions.npart_local):
             # multipole expansion for the whole cell
             self._lee.multipole_exp(
                 spherical(tuple(positions[px,:])),
                 charges[px, 0],
-                self.multipole_exp
+                tmp_multipole_exp
             )
             # dot product for the local expansion for the cell
             self._lee.dot_vec(
                 spherical(tuple(positions[px,:])),
                 charges[px, 0],
-                self.local_dot_coeffs
+                tmp_local_dot_coeffs
             )
+
+        # MPI reduce all coefficients
+        self.domain.comm.Allreduce(tmp_multipole_exp, self.multipole_exp)
+        self.domain.comm.Allreduce(tmp_local_dot_coeffs, self.local_dot_coeffs)
         
         L_tmp = np.zeros_like(self.local_dot_coeffs)
         self.lrc(self.multipole_exp, L_tmp)
@@ -200,6 +207,7 @@ class FullLongRangeEnergy(ProfInc):
 
 
     def accept(self, movedata):
+        assert self.domain.comm.size == 1, "need to MPI reduce coefficients"
 
         realdata = movedata[:7].view(dtype=REAL)
 
