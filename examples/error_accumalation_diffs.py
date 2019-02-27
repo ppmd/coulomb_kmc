@@ -163,7 +163,7 @@ if __name__ == '__main__':
         np.save('./error_data.npy', data)
 
     
-    N = 10**5
+    N = 10**4
     proposer = ErrorPropDiff(N, 12)
     print("=" * 80)
     print("N:\t\t", N)

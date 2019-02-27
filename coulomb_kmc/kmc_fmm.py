@@ -25,7 +25,7 @@ from coulomb_kmc.common import BCType, PROFILE, cell_offsets, spherical
 from coulomb_kmc.kmc_fmm_common import *
 from coulomb_kmc.kmc_mpi_decomp import *
 from coulomb_kmc.kmc_full_long_range import FullLongRangeEnergy
-from coulomb_kmc.kmc_fmm_self_interaction import FMMSelfInteraction, LongRangeCorrection
+from coulomb_kmc.kmc_fmm_self_interaction import FMMSelfInteraction
 from coulomb_kmc.kmc_expansion_tools import LocalExpEval
 
 REAL = ctypes.c_double
