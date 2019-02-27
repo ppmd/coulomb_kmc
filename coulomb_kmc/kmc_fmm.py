@@ -45,7 +45,379 @@ class _ENERGY(Enum):
     U01_SELF = 'u01_self'
 
 
-class KMCFMM(object):
+class _PY_KMCFMM(object):
+    """
+    This class contains python based test code and PoC code that is required by
+    tests but is not the performant/MPI code path.
+    """
+
+    def _py_init(self):
+
+        if self._cell_map is None:
+
+            self._cell_map = {}
+            cell_occ = 1
+            for pid in range(self.positions.npart_total):
+                cell = self._get_fmm_cell(pid)
+                if cell in self._cell_map.keys():
+                    self._cell_map[cell].append(pid)
+                    cell_occ = max(cell_occ, len(self._cell_map[cell]))
+                else:
+                    self._cell_map[cell] = [pid]
+
+            self._dsa = np.zeros(27 * cell_occ)
+            self._dsb = np.zeros(27 * cell_occ)
+            self._dsc = np.zeros(27 * cell_occ)
+
+
+    def eval_field(self, points):
+        self._assert_init()
+
+        # the data structures this uses are not updated by accept
+        self.initialise()
+
+        npoints = points.shape[0]
+        out = np.zeros(npoints, dtype=REAL)
+
+        for px in range(npoints):
+            pointx = points[px, :]
+            assert len(pointx) == 3
+
+            direct_field = self._direct_contrib_new(None, pointx)
+            indirect_field = self._charge_indirect_energy_new(None, pointx)
+            # indirect_field = 0
+            out[px] = direct_field + indirect_field
+
+        if self._bc == BCType.PBC:
+            self._lr_energy.eval_field(points, out)
+
+        return out
+
+
+    def _direct_contrib_new(self, ix, prop_pos):
+
+        self._py_init()
+
+        t0 = time()
+
+        icx, icy, icz = self._get_cell(prop_pos)
+        
+
+        e_tmp = 0.0
+        extent = self.domain.extent
+        if ix is not None:
+            q = self.charges.data[ix, 0]
+        else:
+            q = 1.0
+        
+        ncount = 0
+        _tva = self._dsa
+        _tvb = self._dsb
+        _tvc = self._dsc
+        
+
+        for ox in cell_offsets:
+            jcell = (icx + ox[0], icy + ox[1], icz + ox[2])
+            image_mod = np.zeros(3)
+            # print("\tHST: jcell", jcell)
+            # in pbc we need to wrap the direct part
+            if self._bc in (BCType.PBC, BCType.NEAREST):
+
+                sl = 2 ** (self.fmm.R - 1)
+
+                # position offset
+                # in python -5//7 = -1
+                image_mod = np.array([float(cx // sl)*ex for cx, ex in \
+                    zip(jcell, extent)])
+
+                # find the correct cell
+                jcell = (jcell[0] % sl, jcell[1] % sl, jcell[2] % sl)
+
+            if jcell in self._cell_map.keys():
+
+
+                for jxi, jx in enumerate(self._cell_map[jcell]):
+                    _diff = prop_pos - self.positions.data[jx, :] - image_mod
+                    # print("\tHST: jpos", self.positions.data[jx, :], jcell)
+                    _tva[ncount] = np.dot(_diff, _diff)
+                    _tvb[ncount] = self.charges.data[jx, 0]
+                    ncount += 1
+         
+        np.sqrt(_tva[:ncount:], out=_tvc[:ncount:])
+        np.reciprocal(_tvc[:ncount:], out=_tva[:ncount:])
+        e_tmp += np.dot(_tva[:ncount:], _tvb[:ncount:])
+        
+        self._profile_inc('py_direct_new', time() - t0)
+
+        return e_tmp * q
+
+
+    def _direct_contrib_old(self, ix):
+        
+        self._py_init()
+
+        t0 = time()
+        icx, icy, icz = self._get_fmm_cell(ix)
+        e_tmp = 0.0
+        extent = self.domain.extent
+
+        q = self.charges.data[ix, 0]
+        pos = self.positions.data[ix, :]
+        for ox in cell_offsets:
+            jcell = (icx + ox[0], icy + ox[1], icz + ox[2])
+            image_mod = np.zeros(3)
+
+            # in pbc we need to wrap the direct part
+            if self._bc in (BCType.PBC, BCType.NEAREST):
+                sl = 2 ** (self.fmm.R - 1)
+                # position offset
+                # in python -5//7 = -1
+                image_mod = np.array([float(cx // sl)*ex for \
+                    cx, ex in zip(jcell, extent)])
+
+                # find the correct cell
+                jcell = (jcell[0] % sl, jcell[1] % sl, jcell[2] % sl)
+
+            if jcell in self._cell_map.keys():
+                _tva = np.zeros(len(self._cell_map[jcell]))
+                _tvb = np.zeros(len(self._cell_map[jcell]))
+
+                for jxi, jx in enumerate(self._cell_map[jcell]):
+
+                    if jx == ix:
+                        _tvb[jxi] = 0.0
+                        _tva[jxi] = 1.0
+                        continue
+
+                    _diff = pos - self.positions.data[jx, :] - image_mod
+                    _tva[jxi] = np.dot(_diff, _diff)
+                    _tvb[jxi] = self.charges.data[jx, 0]                   
+
+                _tva = 1.0/np.sqrt(_tva)
+                e_tmp += np.dot(_tva, _tvb)
+
+        self._profile_inc('py_direct_old', time() - t0)
+
+        return e_tmp * q
+
+
+    def _get_fmm_cell(self, ix):
+        R = self.fmm.R
+        cc = self.group._fmm_cell[ix][0]
+        sl = 2 ** (R - 1)
+        cx = cc % sl
+        cycz = (cc - cx) // sl
+        cy = cycz % sl
+        cz = (cycz - cy) // sl
+        return cx, cy, cz
+    
+    def _get_lin_cell(self, position):
+        cell_tuple = self._get_cell(position)
+        cc = 2**(self.fmm.R -1)
+        return cell_tuple[0] + cc * (cell_tuple[1] + cc * cell_tuple[2])
+
+    def _get_cell(self, position):
+
+        extent = self.group.domain.extent
+        cell_widths = [ex / (2**(self.fmm.R - 1)) for ex in extent]
+        spos = [0.5*ex + po for po, ex in zip(position, extent)]
+        
+        # if a charge is slightly out of the negative end of an axis this will
+        # truncate to zero
+        cell = [int(pcx / cwx) for pcx, cwx in zip(spos, cell_widths)]
+        # truncate down if too high on axis, if way too high this should 
+        # probably throw an error
+        return tuple([min(cx, 2**(self.fmm.R -1)) for cx in cell ])
+
+
+    def _charge_indirect_energy_new(self, ix, prop_pos):
+        cell = self._get_cell(prop_pos)
+        lexp = self._get_local_expansion(cell)
+        disp = self._get_cell_disp(cell, prop_pos)
+
+        if ix is not None:
+            q = self.charges.data[ix, 0]
+        else:
+            q = 1.0
+
+        return q * self._lee.compute_phi_local(lexp, disp)[0]
+
+
+    def _charge_indirect_energy_old(self, ix):
+        cell = self._get_fmm_cell(ix)
+        lexp = self._get_local_expansion(cell)
+        disp = self._get_cell_disp(cell, self.positions.data[ix,:])
+
+        return self.charges.data[ix, 0] * \
+            self._lee.compute_phi_local(lexp, disp)[0]
+
+
+    def _get_local_expansion(self, cell):
+
+        nor = list(self.kmco.global_to_local)
+        lcn = [cx + lx for cx, lx in zip(reversed(cell), nor)]
+        new_exp = self.kmco.local_expansions[lcn[0], lcn[1], lcn[2], :]
+        
+        # uses the local expansions directly in the fmm instance as opposed
+        # to the new approach that gathers them directly
+        test_old = False
+        if test_old:
+            ls = self.fmm.tree[self.fmm.R-1].local_grid_cube_size
+            lo = self.fmm.tree[self.fmm.R-1].local_grid_offset
+            lor = list(lo)
+            lor.reverse()
+            lc = [cx - lx for cx, lx in zip(cell, lor)]
+
+            old_exp = self.fmm.tree_plain[self.fmm.R-1][lc[2], lc[1], lc[0], :]
+            np.testing.assert_array_equal(old_exp, new_exp)
+
+        return new_exp
+
+
+    def _get_cell_disp(self, cell, position):
+        """
+        Returns spherical coordinate of particle with local cell centre as an
+        origin
+        """
+        R = self.fmm.R
+        extent = self.group.domain.extent
+        sl = 2 ** (R - 1)
+        csl = [extent[0] / sl,
+               extent[1] / sl,
+               extent[2] / sl]
+        
+        es = [extent[0] * -0.5,
+              extent[1] * -0.5,
+              extent[2] * -0.5]
+
+        ec = [esx + 0.5 * cx + ccx * cx for esx, cx, ccx in zip(es, csl, cell)]
+        
+        disp = (position[0] - ec[0], position[1] - ec[1], position[2] - ec[2])
+        sph = spherical(disp)
+        
+        return sph
+
+
+    def test_accept_reinit(self, move):
+        # perform the move by setting the new position and reinitialising the instance
+        self.positions[move[0], :] = move[1]
+        self.initialise()   
+
+
+    def test_propose(self, moves, use_python=True):
+
+        self._assert_init()
+        
+        td0 = 0.0
+        td1 = 0.0
+        ti0 = 0.0
+        ti1 = 0.0
+        
+        cmove_data = self.md.setup_propose(moves)
+
+        tpd0 = time()
+
+        num_particles = cmove_data[1]
+        max_num_moves = 0
+        for movx in moves:
+            movs = np.atleast_2d(movx[1])
+            num_movs = movs.shape[0]
+            max_num_moves = max(max_num_moves, num_movs)
+        
+        # check tmp energy arrays are large enough
+        self._tmp_energy_check((num_particles, max_num_moves))
+        
+        # direct differences
+        for movxi, movx in enumerate(moves):
+            # get particle local id
+            pid = movx[0]
+            # get passed moves, number of moves
+            movs = np.atleast_2d(movx[1])
+
+
+            old_indirect_energy = self._charge_indirect_energy_old(pid)
+            old_direct_energy = self._direct_contrib_old(pid)
+
+            for mxi, mx in enumerate(movs):
+                self._tmp_energies[_ENERGY.U0_DIRECT][movxi, mxi] = \
+                    old_direct_energy
+
+                new_direct_energy = self._direct_contrib_new(pid, mx)
+
+                self._tmp_energies[_ENERGY.U1_DIRECT][movxi, mxi] = \
+                    new_direct_energy
+        
+                self._tmp_energies[_ENERGY.U0_INDIRECT][movxi, mxi] = \
+                    old_indirect_energy
+
+                new_indirect_energy = \
+                    self._charge_indirect_energy_new(pid, mx)
+
+                self._tmp_energies[_ENERGY.U1_INDIRECT][movxi, mxi] = \
+                    new_indirect_energy
+
+
+        tpd1 = time()
+
+        self._profile_inc('py-direct-indirect', tpd1 - tpd0)
+
+
+        self._si.propose(*tuple(list(cmove_data) + [self._tmp_energies[_ENERGY.U01_SELF]]))
+
+        # long range calculation
+        if self._bc == BCType.PBC:
+            #print("LR DISABLED")
+            self._lr_energy.propose(*tuple(list(cmove_data) + [self._tmp_energies[_ENERGY.U01_SELF]]))
+
+        # compute differences
+
+        if self.mirror_direction is None:
+            self._tmp_energies[_ENERGY.U_DIFF] = \
+                  self._tmp_energies[_ENERGY.U1_DIRECT] \
+                + self._tmp_energies[_ENERGY.U1_INDIRECT] \
+                - self._tmp_energies[_ENERGY.U0_DIRECT] \
+                - self._tmp_energies[_ENERGY.U0_INDIRECT] \
+                - self._tmp_energies[_ENERGY.U01_SELF]
+        
+        else:
+            self._tmp_energies[_ENERGY.U_DIFF] = \
+                  2.0 * self._tmp_energies[_ENERGY.U1_DIRECT] \
+                + 2.0 * self._tmp_energies[_ENERGY.U1_INDIRECT] \
+                - 2.0 * self._tmp_energies[_ENERGY.U0_DIRECT] \
+                - 2.0 * self._tmp_energies[_ENERGY.U0_INDIRECT] \
+                - self._tmp_energies[_ENERGY.U01_SELF]
+
+
+        prop_energy = []
+
+        for movxi, movx in enumerate(moves):
+            pid = movx[0]
+            movs = np.atleast_2d(movx[1])
+            num_movs = movs.shape[0]
+            pid_prop_energy = np.zeros(num_movs)
+
+            for mxi, mx in enumerate(movs):
+                if np.linalg.norm(self.positions.data[pid, :] - mx) < 10.**-14:
+                    pid_prop_energy[mxi] = self.energy * self.energy_unit
+                else:
+                    pid_prop_energy[mxi] = (self.energy + self._tmp_energies[_ENERGY.U_DIFF][movxi, mxi]) * \
+                        self.energy_unit
+
+            prop_energy.append(pid_prop_energy)
+
+        return tuple(prop_energy)
+
+
+
+
+
+
+
+
+
+
+
+class KMCFMM(_PY_KMCFMM):
 
     _prof_time = 0.0
 
@@ -196,6 +568,9 @@ class KMCFMM(object):
         prop_masks:         ParticleDat, dtype=c_int64      Input
         prop_energy_diffs:  ParticleDat, dtype=c_double     Output
         """
+        
+        self._assert_init()
+
         t0 = time()
         if not diff:
             raise NotImplementedError()
@@ -245,10 +620,12 @@ class KMCFMM(object):
         e.g. moves = ((0, np.array(((1, 0, 0), (0, 1, 0), (0, 0, 1)))), )
         should return (np.array((0.1, 0.2, 0.3)), )
         """
+        self._assert_init()
         t0 = time()
-        r = self.test_propose(moves, use_python=False)
+        r = self._propose(moves)
         self._profile_inc('propose', time() - t0)
         return r
+
 
     def accept(self, move=None):
         """
@@ -272,7 +649,6 @@ class KMCFMM(object):
             self._accept(move[0])
             self._accept(move[1], compute_energy=False)
 
-        # self.test_accept_reinit(move)
 
     def _accept(self, move, compute_energy=True):
 
@@ -330,13 +706,6 @@ class KMCFMM(object):
             self._lr_energy.accept(movedata)
             self._profile_inc('lr_energy_accept', time() - t0)
 
-        
-
-    def test_accept_reinit(self, move):
-        # perform the move by setting the new position and reinitialising the instance
-        self.positions[move[0], :] = move[1]
-        self.initialise()
-
 
     def _check_ordering_dats(self):
         # self._ordering_win
@@ -357,6 +726,7 @@ class KMCFMM(object):
         self._ordering_win.Fence()
         self.group._kmc_fmm_order[:nlocal:, 0] = np.arange(rbuf[0], rbuf[0] + nlocal)        
 
+
     def initialise(self):
         t0 = time()
 
@@ -369,21 +739,8 @@ class KMCFMM(object):
             fmm_cells=self.group._fmm_cell,
             ids=self.group._kmc_fmm_order
         )
+
         self._si.initialise()
-        self._cell_map = {}
-        cell_occ = 1
-
-        for pid in range(self.positions.npart_total):
-            cell = self._get_fmm_cell(pid)
-            if cell in self._cell_map.keys():
-                self._cell_map[cell].append(pid)
-                cell_occ = max(cell_occ, len(self._cell_map[cell]))
-            else:
-                self._cell_map[cell] = [pid]
-
-        self._dsa = np.zeros(27 * cell_occ)
-        self._dsb = np.zeros(27 * cell_occ)
-        self._dsc = np.zeros(27 * cell_occ)
 
         # long range calculation
         if self._bc == BCType.PBC:
@@ -392,39 +749,18 @@ class KMCFMM(object):
 
         self._profile_inc('initialise', time() - t0)
 
+        # ensure re-init of python-test structs
+        self._cell_map = None
+
     
     def _assert_init(self):
-        if self._cell_map is None:
-            raise RuntimeError('Run initialise before this call')
+
         if self.energy is None:
             raise RuntimeError('Run initialise before this call')
-    
-
-    def eval_field(self, points):
-        self._assert_init()
-
-        # the data structures this uses are not updated by accept
-        self.initialise()
-
-        npoints = points.shape[0]
-        out = np.zeros(npoints, dtype=REAL)
-
-        for px in range(npoints):
-            pointx = points[px, :]
-            assert len(pointx) == 3
-
-            direct_field = self._direct_contrib_new(None, pointx)
-            indirect_field = self._charge_indirect_energy_new(None, pointx)
-            # indirect_field = 0
-            out[px] = direct_field + indirect_field
-
-        if self._bc == BCType.PBC:
-            self._lr_energy.eval_field(points, out)
-
-        return out
 
 
-    def test_propose(self, moves, use_python=True):
+
+    def _propose(self, moves):
 
         self._assert_init()
         
@@ -433,19 +769,20 @@ class KMCFMM(object):
         ti0 = 0.0
         ti1 = 0.0
         
+
         cmove_data = self.md.setup_propose(moves)
 
-        if not use_python:
-            td0 = time()
-            du0, du1 = self.kmcl.propose(*cmove_data)
-            td1 = time()
-            
-            ti0 = time()
-            iu0, iu1 = self.kmco.propose(*cmove_data)
-            ti1 = time()
+        td0 = time()
+        du0, du1 = self.kmcl.propose(*cmove_data)
+        td1 = time()
+        
+        ti0 = time()
+        iu0, iu1 = self.kmco.propose(*cmove_data)
+        ti1 = time()
         
         self._profile_inc('c-direct', td1 - td0)
         self._profile_inc('c-indirect', ti1 - ti0)
+
 
         tpd0 = time()
 
@@ -460,80 +797,24 @@ class KMCFMM(object):
         self._tmp_energy_check((num_particles, max_num_moves))
         
         tmp_index = 0
-        # direct differences
         for movxi, movx in enumerate(moves):
-            # get particle local id
-            pid = movx[0]
-            # get passed moves, number of moves
-            movs = np.atleast_2d(movx[1])
 
-            if not use_python:
-                old_direct_energy = du0[movxi]
-            else:
-                old_direct_energy = self._direct_contrib_old(pid)
-
-            for mxi, mx in enumerate(movs):
-                self._tmp_energies[_ENERGY.U0_DIRECT][movxi, mxi] = \
-                    old_direct_energy
-
-                if not use_python:
-                    new_direct_energy = du1[tmp_index]
-                else:
-                    new_direct_energy = self._direct_contrib_new(pid, mx)
-                tmp_index += 1
-
-                self._tmp_energies[_ENERGY.U1_DIRECT][movxi, mxi] = \
-                    new_direct_energy
-        
-        tpd1 = time()
-        tpi0 = time()
-
-        tmp_index = 0
-        
-        # indirect differences
-        for movxi, movx in enumerate(moves):
-            # get particle local id
-            pid = movx[0]
             # get passed moves, number of moves
             movs = np.atleast_2d(movx[1])
             num_movs = movs.shape[0]
+            new_tmp_index = tmp_index + num_movs
+
+            self._tmp_energies[_ENERGY.U0_DIRECT][movxi, :num_movs] = du0[movxi]
+            self._tmp_energies[_ENERGY.U0_INDIRECT][movxi, :num_movs] = iu0[movxi]
+            self._tmp_energies[_ENERGY.U1_DIRECT][movxi, :num_movs] = du1[tmp_index:new_tmp_index:, 0]
+            self._tmp_energies[_ENERGY.U1_INDIRECT][movxi, :num_movs] = iu1[tmp_index:new_tmp_index:, 0]
             
-            if not use_python:
-                old_indirect_energy = iu0[movxi]
-            else:
-                old_indirect_energy = self._charge_indirect_energy_old(pid)
+            tmp_index = new_tmp_index
 
 
-            for mxi, mx in enumerate(movs):
-                self._tmp_energies[_ENERGY.U0_INDIRECT][movxi, mxi] = \
-                    old_indirect_energy
+        tpd1 = time()
+        self._profile_inc('py-direct-indirect', tpd1 - tpd0)
 
-                if not use_python:
-                    new_indirect_energy = iu1[tmp_index]
-                else:
-                    new_indirect_energy = \
-                        self._charge_indirect_energy_new(pid, mx)
-                tmp_index += 1
-
-                self._tmp_energies[_ENERGY.U1_INDIRECT][movxi, mxi] = \
-                    new_indirect_energy
-
-        tpi1 = time()
-        
-        self._profile_inc('py-direct', tpd1 - tpd0)
-        self._profile_inc('py-indirect', tpi1 - tpi0)
-
-        
-
-        # compute self interactions
-        #for movxi, movx in enumerate(moves):
-        #    pid = movx[0]
-        #    movs = np.atleast_2d(movx[1])
-        #    num_movs = movs.shape[0]
-
-        #    for mxi, mx in enumerate(movs):
-        #        self._tmp_energies[_ENERGY.U01_SELF][movxi, mxi] = self._self_interaction(pid, mx)
-        
 
         self._si.propose(*tuple(list(cmove_data) + [self._tmp_energies[_ENERGY.U01_SELF]]))
 
@@ -581,202 +862,6 @@ class KMCFMM(object):
         return tuple(prop_energy)
 
 
-    def _direct_contrib_new(self, ix, prop_pos):
-        t0 = time()
-
-        icx, icy, icz = self._get_cell(prop_pos)
-        
-
-        e_tmp = 0.0
-        extent = self.domain.extent
-        if ix is not None:
-            q = self.charges.data[ix, 0]
-        else:
-            q = 1.0
-        
-        ncount = 0
-        _tva = self._dsa
-        _tvb = self._dsb
-        _tvc = self._dsc
-        
-
-        for ox in cell_offsets:
-            jcell = (icx + ox[0], icy + ox[1], icz + ox[2])
-            image_mod = np.zeros(3)
-            # print("\tHST: jcell", jcell)
-            # in pbc we need to wrap the direct part
-            if self._bc in (BCType.PBC, BCType.NEAREST):
-
-                sl = 2 ** (self.fmm.R - 1)
-
-                # position offset
-                # in python -5//7 = -1
-                image_mod = np.array([float(cx // sl)*ex for cx, ex in \
-                    zip(jcell, extent)])
-
-                # find the correct cell
-                jcell = (jcell[0] % sl, jcell[1] % sl, jcell[2] % sl)
-
-            if jcell in self._cell_map.keys():
-
-
-                for jxi, jx in enumerate(self._cell_map[jcell]):
-                    _diff = prop_pos - self.positions.data[jx, :] - image_mod
-                    # print("\tHST: jpos", self.positions.data[jx, :], jcell)
-                    _tva[ncount] = np.dot(_diff, _diff)
-                    _tvb[ncount] = self.charges.data[jx, 0]
-                    ncount += 1
-         
-        np.sqrt(_tva[:ncount:], out=_tvc[:ncount:])
-        np.reciprocal(_tvc[:ncount:], out=_tva[:ncount:])
-        e_tmp += np.dot(_tva[:ncount:], _tvb[:ncount:])
-        
-        self._profile_inc('py_direct_new', time() - t0)
-
-        return e_tmp * q
-
-
-    def _direct_contrib_old(self, ix):
-        t0 = time()
-        icx, icy, icz = self._get_fmm_cell(ix)
-        e_tmp = 0.0
-        extent = self.domain.extent
-
-        q = self.charges.data[ix, 0]
-        pos = self.positions.data[ix, :]
-        for ox in cell_offsets:
-            jcell = (icx + ox[0], icy + ox[1], icz + ox[2])
-            image_mod = np.zeros(3)
-
-            # in pbc we need to wrap the direct part
-            if self._bc in (BCType.PBC, BCType.NEAREST):
-                sl = 2 ** (self.fmm.R - 1)
-                # position offset
-                # in python -5//7 = -1
-                image_mod = np.array([float(cx // sl)*ex for \
-                    cx, ex in zip(jcell, extent)])
-
-                # find the correct cell
-                jcell = (jcell[0] % sl, jcell[1] % sl, jcell[2] % sl)
-
-            if jcell in self._cell_map.keys():
-                _tva = np.zeros(len(self._cell_map[jcell]))
-                _tvb = np.zeros(len(self._cell_map[jcell]))
-
-                for jxi, jx in enumerate(self._cell_map[jcell]):
-
-                    if jx == ix:
-                        _tvb[jxi] = 0.0
-                        _tva[jxi] = 1.0
-                        continue
-
-                    _diff = pos - self.positions.data[jx, :] - image_mod
-                    _tva[jxi] = np.dot(_diff, _diff)
-                    _tvb[jxi] = self.charges.data[jx, 0]                   
-
-                _tva = 1.0/np.sqrt(_tva)
-                e_tmp += np.dot(_tva, _tvb)
-
-        self._profile_inc('py_direct_old', time() - t0)
-
-        return e_tmp * q
-
-
-    def _get_fmm_cell(self, ix):
-        R = self.fmm.R
-        cc = self.group._fmm_cell[ix][0]
-        sl = 2 ** (R - 1)
-        cx = cc % sl
-        cycz = (cc - cx) // sl
-        cy = cycz % sl
-        cz = (cycz - cy) // sl
-        return cx, cy, cz
-    
-    def _get_lin_cell(self, position):
-        cell_tuple = self._get_cell(position)
-        cc = 2**(self.fmm.R -1)
-        return cell_tuple[0] + cc * (cell_tuple[1] + cc * cell_tuple[2])
-
-    def _get_cell(self, position):
-
-        extent = self.group.domain.extent
-        cell_widths = [ex / (2**(self.fmm.R - 1)) for ex in extent]
-        spos = [0.5*ex + po for po, ex in zip(position, extent)]
-        
-        # if a charge is slightly out of the negative end of an axis this will
-        # truncate to zero
-        cell = [int(pcx / cwx) for pcx, cwx in zip(spos, cell_widths)]
-        # truncate down if too high on axis, if way too high this should 
-        # probably throw an error
-        return tuple([min(cx, 2**(self.fmm.R -1)) for cx in cell ])
-
-
-    def _charge_indirect_energy_new(self, ix, prop_pos):
-        cell = self._get_cell(prop_pos)
-        lexp = self._get_local_expansion(cell)
-        disp = self._get_cell_disp(cell, prop_pos)
-
-        if ix is not None:
-            q = self.charges.data[ix, 0]
-        else:
-            q = 1.0
-
-        return q * self._lee.compute_phi_local(lexp, disp)[0]
-
-
-    def _charge_indirect_energy_old(self, ix):
-        cell = self._get_fmm_cell(ix)
-        lexp = self._get_local_expansion(cell)
-        disp = self._get_cell_disp(cell, self.positions.data[ix,:])
-
-        return self.charges.data[ix, 0] * \
-            self._lee.compute_phi_local(lexp, disp)[0]
-
-
-    def _get_local_expansion(self, cell):
-
-        nor = list(self.kmco.global_to_local)
-        lcn = [cx + lx for cx, lx in zip(reversed(cell), nor)]
-        new_exp = self.kmco.local_expansions[lcn[0], lcn[1], lcn[2], :]
-        
-        # uses the local expansions directly in the fmm instance as opposed
-        # to the new approach that gathers them directly
-        test_old = False
-        if test_old:
-            ls = self.fmm.tree[self.fmm.R-1].local_grid_cube_size
-            lo = self.fmm.tree[self.fmm.R-1].local_grid_offset
-            lor = list(lo)
-            lor.reverse()
-            lc = [cx - lx for cx, lx in zip(cell, lor)]
-
-            old_exp = self.fmm.tree_plain[self.fmm.R-1][lc[2], lc[1], lc[0], :]
-            np.testing.assert_array_equal(old_exp, new_exp)
-
-        return new_exp
-
-
-    def _get_cell_disp(self, cell, position):
-        """
-        Returns spherical coordinate of particle with local cell centre as an
-        origin
-        """
-        R = self.fmm.R
-        extent = self.group.domain.extent
-        sl = 2 ** (R - 1)
-        csl = [extent[0] / sl,
-               extent[1] / sl,
-               extent[2] / sl]
-        
-        es = [extent[0] * -0.5,
-              extent[1] * -0.5,
-              extent[2] * -0.5]
-
-        ec = [esx + 0.5 * cx + ccx * cx for esx, cx, ccx in zip(es, csl, cell)]
-        
-        disp = (position[0] - ec[0], position[1] - ec[1], position[2] - ec[2])
-        sph = spherical(disp)
-        
-        return sph
 
     def _tmp_energy_check(self, new_size):
         ts = self._tmp_energies[_ENERGY.U0_DIRECT].shape
@@ -791,17 +876,13 @@ class KMCFMM(object):
             }
         return self._tmp_energies[_ENERGY.U0_DIRECT].shape[1]
 
+
     def _profile_inc(self, key, inc):
         key = self.__class__.__name__ + ':' + key
         if key not in PROFILE.keys():
             PROFILE[key] = inc
         else:
             PROFILE[key] += inc
-
-
-
-
-
 
 
 
