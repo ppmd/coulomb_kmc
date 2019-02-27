@@ -419,9 +419,6 @@ class _PY_KMCFMM(object):
 
 class KMCFMM(_PY_KMCFMM):
 
-    _prof_time = 0.0
-
-
     def __init__(self, positions, charges, domain, N=None, boundary_condition='pbc',
         r=None, shell_width=0.0, energy_unit=1.0,
         _debug=False, l=None, max_move=None, cuda_direct=False, mirror_direction=None):
