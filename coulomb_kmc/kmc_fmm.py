@@ -356,11 +356,6 @@ class _PY_KMCFMM(object):
                 self._tmp_energies[_ENERGY.U1_INDIRECT][movxi, mxi] = \
                     new_indirect_energy
 
-            print("t_du0\t", old_direct_energy)
-            print("t_iu0\t", old_indirect_energy)
-            print("t_du1\t", new_direct_energy)
-            print("t_iu1\t", new_indirect_energy)
-
         tpd1 = time()
 
         self._profile_inc('py-direct-indirect', tpd1 - tpd0)
@@ -810,11 +805,6 @@ class KMCFMM(_PY_KMCFMM):
             self._tmp_energies[_ENERGY.U1_DIRECT][movxi, :num_movs] = du1[tmp_index:new_tmp_index:, 0]
             self._tmp_energies[_ENERGY.U1_INDIRECT][movxi, :num_movs] = iu1[tmp_index:new_tmp_index:, 0]
 
-            print("du0\t", du0[movxi])
-            print("iu0\t", iu0[movxi])
-            print("du1\t", du1[tmp_index:new_tmp_index:, 0])
-            print("iu1\t", iu1[tmp_index:new_tmp_index:, 0])
-            
             tmp_index = new_tmp_index
 
 
