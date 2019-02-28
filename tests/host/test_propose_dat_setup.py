@@ -212,7 +212,7 @@ def test_kmc_fmm_dat_setup_prop_1(param_boundary):
 @pytest.mark.parametrize("param_boundary", ('free_space', 'pbc', '27'))
 def test_kmc_fmm_dat_setup_prop_2(param_boundary):
 
-    L = 4
+    L = 8
     R = 3
 
     N = 200

@@ -336,17 +336,10 @@ class LocalCellExpansions(LocalOctalBase):
         starts = [ -0.5*ex + 0.5*wx for wx, ex in zip(widths, extent_s2f)]
         offset_starts = [sx + wx*ox for sx, wx, ox in zip(starts, widths, self.md.local_offset)]
         
-        print("\ncompute cell centres", self.comm.rank, starts, self.md.local_offset)
-
         centres = [
             [offset_starts[dimi] + cx * widths[dimi] for cx in dimx] for \
             dimi, dimx in enumerate(self.cell_offsets)
         ]
-
-        print(centres)
-        print("." * 80)
-        print(self.cell_offsets)
-        print("." * 80)
 
         orig_centres = [[starts[dimi] + cx * widths[dimi] for cx in dimx] for \
             dimi, dimx in enumerate(self.cell_indices)]
