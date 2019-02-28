@@ -75,7 +75,6 @@ def time_test_dats_1(N=1000, nprop=2, nsample=1000):
     # make  some random proposed moves
     order = rng.permutation(range(N))
     nm = 0
-
     for px in range(nsample):
         mp = site_max_counts[A.sites[px,0]]
         for propx in range(mp):
@@ -87,19 +86,36 @@ def time_test_dats_1(N=1000, nprop=2, nsample=1000):
 
     pr = cProfile.Profile()
     pr.enable()
+    to_test =  kmc_fmm.propose_with_dats(site_max_counts, A.sites,
+        A.prop_positions, A.prop_masks, A.prop_diffs, diff=True)
+    pr.disable()
+    pr.dump_stats('/tmp/propose.prof')
+
+
+
+    # make some (NEW) random proposed moves
+    order = rng.permutation(range(N))
+    nm = 0
+    for px in range(nsample):
+        mp = site_max_counts[A.sites[px,0]]
+        for propx in range(mp):
+            nm += 1
+            prop_pos = rng.uniform(low=-0.5*E, high=0.5*E, size=3)
+            A.prop_masks[px, propx] = 1
+            A.prop_positions[px, propx*3:propx*3+3:] = prop_pos
+
+
     t0 = time.time()
     to_test =  kmc_fmm.propose_with_dats(site_max_counts, A.sites,
         A.prop_positions, A.prop_masks, A.prop_diffs, diff=True)
     t1 = time.time()
-    pr.disable()
-    pr.dump_stats('/tmp/propose.prof')
  
+
     pr = cProfile.Profile()
     pr.enable()   
 
     naccept = 0
-    nsample2 = 10
-    t2 = time.time()
+    nsample2 = 2
 
     for px in range(N):
         if naccept == nsample2:
@@ -110,9 +126,32 @@ def time_test_dats_1(N=1000, nprop=2, nsample=1000):
             if naccept == nsample2:
                 break
 
-    t3 = time.time()
     pr.disable()
     pr.dump_stats('/tmp/accept.prof')
+
+
+
+    naccept = 0
+    nsample2 = 10
+    t2 = time.time()
+
+    for px in range(nsample2, N):
+        if naccept == nsample2:
+            break
+        for propx in range(M):
+            kmc_fmm.accept((px, A.prop_positions[px, propx*3: (propx+1)*3:]))
+            naccept+=1
+            if naccept == nsample2:
+                break
+
+    t3 = time.time()
+
+
+
+
+
+
+
 
     return (t1-t0, nm, kmc_fmm.fmm.R, t3 - t2, nsample2)
 

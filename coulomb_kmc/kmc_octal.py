@@ -332,9 +332,22 @@ class LocalCellExpansions(LocalOctalBase):
         extent_s2f = list(reversed(self.domain.extent))
         ncell_s2f = self.global_cell_size
         widths = [ex/sx for ex, sx in zip(extent_s2f, ncell_s2f)]
+        
         starts = [ -0.5*ex + 0.5*wx for wx, ex in zip(widths, extent_s2f)]
-        centres = [[starts[dimi] + cx * widths[dimi] for cx in dimx] for \
-            dimi, dimx in enumerate(self.cell_offsets)]
+        offset_starts = [sx + wx*ox for sx, wx, ox in zip(starts, widths, self.md.local_offset)]
+        
+        print("\ncompute cell centres", self.comm.rank, starts, self.md.local_offset)
+
+        centres = [
+            [offset_starts[dimi] + cx * widths[dimi] for cx in dimx] for \
+            dimi, dimx in enumerate(self.cell_offsets)
+        ]
+
+        print(centres)
+        print("." * 80)
+        print(self.cell_offsets)
+        print("." * 80)
+
         orig_centres = [[starts[dimi] + cx * widths[dimi] for cx in dimx] for \
             dimi, dimx in enumerate(self.cell_indices)]
 
@@ -575,6 +588,17 @@ class LocalCellExpansions(LocalOctalBase):
                 const REAL theta = atan2(sqrt(dx*dx + dy*dy), dz);
                 const REAL cos_theta = cos(theta);
                 const REAL sqrt_theta_tmp = sqrt(1.0 - cos_theta*cos_theta);
+
+                printf("-------------\n");
+
+                printf("rx %f, ry %f, rz %f | cx %f, cy %f, cz %f \n",
+                    d_positions[idx*3 + 0], d_positions[idx*3 + 1], d_positions[idx*3 + 2],
+                    d_centres[offset*3 + 0], d_centres[offset*3 + 1], d_centres[offset*3 + 2]
+                );
+                printf("dx %f, dy %f, dz %f | radius %f, theta %f, phi %f\n", dx, dy, dz, radius, theta, phi);
+                printf("re %f %f %f %f %f %f\n", re_exp[0], re_exp[1], re_exp[2], re_exp[3], re_exp[4], re_exp[5], re_exp[6], re_exp[7]);
+                printf("re %f %f %f %f %f %f\n", im_exp[0], im_exp[1], im_exp[2], im_exp[3], im_exp[4], im_exp[5], im_exp[6], im_exp[7]);
+                printf("-------------\n");
 
                 const REAL sin_phi = sin(phi);
                 const REAL cos_phi = cos(phi);

@@ -31,6 +31,8 @@ import cProfile
 
 INT64 = ctypes.c_int64
 
+import sys
+
     
 class ErrorPropDiff:
     def __init__(self, N, L):
@@ -157,19 +159,20 @@ class ErrorPropDiff:
 
 if __name__ == '__main__':
 
+    N = int(sys.argv[1])
+
     data_list = []
     def save_data_list():
         data = np.array(data_list)
-        np.save('./error_data.npy', data)
-
+        np.save('./error_data_{}.npy'.format(N), data)
     
-    N = 10**4
+
     proposer = ErrorPropDiff(N, 12)
     print("=" * 80)
     print("N:\t\t", N)
     print("Extent:\t", proposer.E)
     print("=" * 80)
-    niter = 10**5
+    niter = 10**4
 
     m_tmp = 0.0
     m2_tmp = 0.0
@@ -185,7 +188,7 @@ if __name__ == '__main__':
 
 
     for tx in range(niter):
-        if (tx > 0) and (tx % 1000 == 0):
+        if (tx > 0) and (tx % 100 == 0):
             proposer.random_initialise()
 
         proposer.random_propose()
@@ -201,7 +204,7 @@ if __name__ == '__main__':
         t = get_data_tuple()
         append_data_tuple(t)
         
-        if tx % 100 == 0:
+        if tx % 10 == 0:
             save_data_list()
             print("{: 12d} | {: 8.2e} {: 8.2e} | {: 8.2e} {: 8.2e} | {: 8.2e} {: 8.2e} | {: 8.2e}".format(*t))
     

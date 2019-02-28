@@ -65,7 +65,7 @@ class FMMMPIDecomp(LocalOctalBase):
         ls = fmm.tree.entry_map.local_size
         lo = fmm.tree.entry_map.local_offset
 
-        # as offset indices
+        # as offset indices (of entry map)
         pad_low = [list(range(-px, 0)) for px in pad]
         pad_high = [list(range(lsx, lsx + px)) for px, lsx in zip(pad, ls)]
         
@@ -73,8 +73,21 @@ class FMMMPIDecomp(LocalOctalBase):
         global_to_local = [-lo[dx] + pad[dx] for dx in range(3)]
         self.global_to_local = np.array(global_to_local, dtype=INT64)
         
-        # cell indices as offsets from owned octal cells
+        # cell indices as offsets (entry map not octal tree) 0 here is the first cell collected in entry map
         cell_indices = [ lpx + list(range(lsx)) + hpx for lpx, lsx, hpx in zip(pad_low, ls, pad_high) ]
+        
+        # cell indices as offsets from owned cells in octal tree
+        entry_octal_offset = [ox - ex for ex, ox in zip(self.entry_local_offset, self.local_offset)]
+
+        print("="* 60)
+        print(cell_indices[2])
+
+        cell_indices = [ [ cx + ox for cx in cell_indices[dimx] ] for dimx, ox in enumerate(entry_octal_offset) ]
+
+        print(cell_indices[2])
+
+        print("="* 60)
+
  
         # xyz last allowable cell offset index
         self.upper_allowed = list(reversed([cx[-2] for cx in cell_indices]))
@@ -84,19 +97,25 @@ class FMMMPIDecomp(LocalOctalBase):
         self.lower_allowed_arr = np.array(self.lower_allowed, dtype=INT64)
 
         # use cell indices to get periodic coefficients
-        self.periodic_factors = [[ (lo[di] + cellx)//csc[di] for cellx in dimx ] for \
+        self.periodic_factors = [[ (self.local_offset[di] + cellx)//csc[di] for cellx in dimx ] for \
             di, dimx in enumerate(cell_indices)]
         
         self.cell_offsets = cell_indices
 
         # cell indices as actual cell indices
-        cell_indices = [[ (cx + osx) % cscx for cx in dx ] for dx, cscx, osx in zip(cell_indices, csc, lo)]
+        cell_indices = [[ (cx + osx) % cscx for cx in dx ] for dx, cscx, osx in zip(cell_indices, csc, self.local_offset)]
 
         # this is slowest to fastest (s2f) not xyz
         local_store_dims = [len(dx) for dx in cell_indices]
         
-        cell_data_offset = [len(px) - ox for px, ox in zip(pad_low, lo)]
+        print("lo", lo, "ls", ls, "lsd", local_store_dims, "|", self.local_offset, self.local_size)
+
+        cell_data_offset = [len(px) - ox - osx for px, ox, osx in zip(pad_low, self.local_offset, entry_octal_offset)]
         self.cell_data_offset = np.array(cell_data_offset, dtype=INT64)
+
+        print("cell data offset", cell_data_offset)
+        print("entry_octal_offset", entry_octal_offset)
+        print("pad_low", pad_low)
 
         # this is slowest to fastest not xyz
         self.local_store_dims = local_store_dims
@@ -196,6 +215,9 @@ class FMMMPIDecomp(LocalOctalBase):
             self._cuda_h['old_fmm_cells'][movi, 0] = self._gcell_to_lcell(
                 self._get_fmm_cell(pid, self.fmm_cells)
             )
+            
+            print("old fmm cell", self._get_fmm_cell(pid, self.fmm_cells))
+
             self._cuda_h['old_ids'][movi, 0]       = self.ids.data[pid, 0]
 
             cells, positions, shift_pos = self._vector_get_cell(movs)
@@ -205,6 +227,8 @@ class FMMMPIDecomp(LocalOctalBase):
             self._cuda_h['new_shifted_positions'][s:e:, :] = shift_pos
             self._cuda_h['new_fmm_cells'][s:e:, 0] = self._vector_gcell_to_lcell(cells)
 
+            print("new gcells", cells)
+
             self._cuda_h['exclusive_sum'][movi, 0] = tmp_index
             tmp_index += num_movs
             
@@ -212,6 +236,15 @@ class FMMMPIDecomp(LocalOctalBase):
 
         if self.cuda_enabled:
             self._copy_to_device()
+
+        for key in self._cuda_h.keys():
+            print(key, self._cuda_h[key])
+
+
+
+
+
+        
         return total_movs, num_particles, self._cuda_h, self._cuda_d
 
 
@@ -518,6 +551,8 @@ class FMMMPIDecomp(LocalOctalBase):
         cell = [cx + ox for cx, ox in \
             zip(cell, reversed(self.cell_data_offset))]
 
+        print("local cell", cell, "cell_data_offset", self.cell_data_offset)
+
         return cell[0] + self.local_store_dims[2] * \
             (cell[1] + self.local_store_dims[1]*cell[2])
         
@@ -525,6 +560,8 @@ class FMMMPIDecomp(LocalOctalBase):
         cells[:, 0] += self.cell_data_offset[2]
         cells[:, 1] += self.cell_data_offset[1]
         cells[:, 2] += self.cell_data_offset[0]
+
+        print("offset cell", cells)
         return cells[:, 0] + self.local_store_dims[2] * (cells[:, 1] + self.local_store_dims[1] * cells[:, 2])
 
     def _vector_get_cell(self, positions):
