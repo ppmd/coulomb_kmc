@@ -732,7 +732,6 @@ class KMCFMM(_PY_KMCFMM):
 
     def initialise(self):
         t0 = time()
-
         self.energy = self.fmm(positions=self.positions, charges=self.charges)
 
         self._check_ordering_dats()
@@ -758,6 +757,7 @@ class KMCFMM(_PY_KMCFMM):
         )
 
         self._si.initialise()
+
 
         # long range calculation
         if self._bc == BCType.PBC:

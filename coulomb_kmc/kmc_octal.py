@@ -372,7 +372,7 @@ class LocalCellExpansions(LocalOctalBase):
         
         lsd = self.local_store_dims
         lcl = self.cell_indices
-
+        
         # these are slowest to fastest tuples of cells
         for local_cellx in product(range(lsd[0]), range(lsd[1]), range(lsd[2])):
             
@@ -399,7 +399,6 @@ class LocalCellExpansions(LocalOctalBase):
                 remote_cells.append((cellx, gcellx, owning_rank, local_cellx))
 
         self._win_ind.Fence(MPI.MODE_NOPUT)
-        
         self.comm.Barrier()           
         self._win.Fence(MPI.MODE_NOPUT)
         
@@ -419,6 +418,7 @@ class LocalCellExpansions(LocalOctalBase):
                     owning_rank, target=remote_ind)
 
         self._win.Fence(MPI.MODE_NOPUT)
+
         self.comm.Barrier()
 
     
