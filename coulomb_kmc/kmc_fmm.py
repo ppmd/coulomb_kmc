@@ -431,10 +431,15 @@ class KMCFMM(_PY_KMCFMM):
             '27': '27'
         }[boundary_condition]
 
+
+
         self.fmm = PyFMM(domain, N=N, free_space=_bc, r=r,
             shell_width=shell_width, cuda=False, cuda_levels=1,
             force_unit=1.0, energy_unit=energy_unit,
             _debug=_debug, l=l, cuda_local=False)
+        
+
+
 
         self.cuda_direct = cuda_direct
 
@@ -461,27 +466,28 @@ class KMCFMM(_PY_KMCFMM):
         
         self._lee = LocalExpEval(self.fmm.L)
 
+
         if max_move is not None:
             self.max_move = float(max_move)
         else:
             self.max_move = max(self.domain.extent[:])
+
         # class to handle the mpi decomposition and preprocessing of moves
         self.md = FMMMPIDecomp(self.fmm, self.max_move,
             boundary_condition=self._bc, cuda=self.cuda_direct)
 
-        # self interaction handling class
 
+        # self interaction handling class
         self._si = FMMSelfInteraction(self.fmm, domain, self._bc, self._lee, self.mirror_direction) 
 
         # long range calculation
         if self._bc == BCType.PBC:
             self._lr_energy = FullLongRangeEnergy(self.fmm.L, self.fmm.domain, self._lee, self.mirror_direction)
 
-
         # class to collect required local expansions
-        self.kmco = self.md.kmco
+        self.kmco = kmc_octal.LocalCellExpansions(self.md)
         # class to collect and redistribute particle data
-        self.kmcl = self.md.kmcl
+        self.kmcl = kmc_local.LocalParticleData(self.md)
         
         self._tmp_energies = {
             _ENERGY.U_DIFF      : np.zeros((1, 1), dtype=REAL),
@@ -500,6 +506,7 @@ class KMCFMM(_PY_KMCFMM):
         )
 
         self._diff_lib = self._create_diff_lib()
+
 
 
     def _create_diff_lib(self):
@@ -729,7 +736,21 @@ class KMCFMM(_PY_KMCFMM):
         self.energy = self.fmm(positions=self.positions, charges=self.charges)
 
         self._check_ordering_dats()
+
         self.md.initialise(
+            positions=self.positions,
+            charges=self.charges,
+            fmm_cells=self.group._fmm_cell,
+            ids=self.group._kmc_fmm_order
+        )
+
+        self.kmco.initialise(
+            positions=self.positions,
+            charges=self.charges,
+            fmm_cells=self.group._fmm_cell
+        ) 
+
+        self.kmcl.initialise(
             positions=self.positions,
             charges=self.charges,
             fmm_cells=self.group._fmm_cell,

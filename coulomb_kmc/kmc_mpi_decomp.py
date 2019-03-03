@@ -147,12 +147,7 @@ class FMMMPIDecomp(LocalOctalBase):
             self._cuda_d['old_ids']       = None
             self._cuda_d['exclusive_sum'] = None
             self._cuda_d['rate_location'] = None
-
-        # class to collect required local expansions
-        self.kmco = kmc_octal.LocalCellExpansions(self)
-        # class to collect and redistribute particle data
-        self.kmcl = kmc_local.LocalParticleData(self)
-
+        
         self._dat_lib = self._create_dat_lib()
 
     def initialise(self, positions, charges, fmm_cells, ids):
@@ -162,17 +157,8 @@ class FMMMPIDecomp(LocalOctalBase):
         self.ids = ids
         self.group = self.positions.group
 
-        self.kmco.initialise(
-            positions=self.positions,
-            charges=self.charges,
-            fmm_cells=self.group._fmm_cell
-        )        
-        self.kmcl.initialise(
-            positions=self.positions,
-            charges=self.charges,
-            fmm_cells=self.group._fmm_cell,
-            ids=self.group._kmc_fmm_order
-        )
+       
+
 
     def setup_propose(self, moves):
         total_movs = 0

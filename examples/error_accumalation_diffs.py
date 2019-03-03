@@ -180,8 +180,14 @@ if __name__ == '__main__':
     err_max = -1
     err_min = 100
 
+    mean_energy_tmp = 0.0
+    mean_diff_energy_tmp = 0.0
+
+    mean_energy = 0.0
+    mean_diff_energy = 0.0
+
     def get_data_tuple():
-        return tx, e[0], e[1], m, v, err_min, err_max, e[2]
+        return tx, e[0], e[1], m, v, err_min, err_max, e[2], mean_diff_energy, mean_energy
 
     def append_data_tuple(t):
         data_list.append(t)
@@ -200,13 +206,20 @@ if __name__ == '__main__':
         v = (m2_tmp/ (tx  + 1)) - (m)**2.0
         err_max = max(err_max, e[1])
         err_min = min(err_min, e[1])
+        
+        mean_energy_tmp += abs(e[2])
+        mean_diff_energy_tmp += abs(e[0])
+
+        mean_energy = mean_energy_tmp / (tx + 1)
+        mean_diff_energy = mean_diff_energy_tmp / (tx + 1)
+
 
         t = get_data_tuple()
         append_data_tuple(t)
         
         if tx % 10 == 0:
             save_data_list()
-            print("{: 12d} | {: 8.2e} {: 8.2e} | {: 8.2e} {: 8.2e} | {: 8.2e} {: 8.2e} | {: 8.2e}".format(*t))
+            print("{: 12d} | {: 8.2e} {: 8.2e} | {: 8.2e} {: 8.2e} | {: 8.2e} {: 8.2e} | {: 8.2e} | m_diff {: 8.2e} m_energy {: 8.2e} ".format(*t))
     
     save_data_list()
 

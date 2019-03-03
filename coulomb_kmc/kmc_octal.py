@@ -30,7 +30,7 @@ class LocalCellExpansions(LocalOctalBase):
     Object to get, store and update local expansions from an fmm instance.
     """
     def __init__(self, mpi_decomp):
-        
+ 
         self.md = mpi_decomp
         self.fmm = self.md.fmm
         self.domain = self.md.domain
@@ -61,6 +61,7 @@ class LocalCellExpansions(LocalOctalBase):
         self.remote_inds = np.zeros(local_store_dims + [1], dtype=INT64)
         self.remote_inds[:] = -1
         
+
         self._wing = MPI.Win()
         data_nbytes = self.fmm.tree_plain[-1][0,0,0,:].nbytes
         self._win = self._wing.Create(
@@ -80,8 +81,6 @@ class LocalCellExpansions(LocalOctalBase):
         self.orig_cell_centres = np.zeros_like(self.cell_centres)
         self._host_lib, self._flop_count_prop = self._init_host_kernels(self.fmm.L)
         self._host_accept_lib = self._init_accept_lib()
-
-
 
 
     def accept(self, movedata):
