@@ -487,6 +487,9 @@ class KMCFMM(_PY_KMCFMM):
         # class to collect required local expansions
         self.kmco = kmc_octal.LocalCellExpansions(self.md)
         # class to collect and redistribute particle data
+
+        #print("KMC FMM INIT BROKE")
+        #self.kmcl = None
         self.kmcl = kmc_local.LocalParticleData(self.md)
         
         self._tmp_energies = {
@@ -498,9 +501,8 @@ class KMCFMM(_PY_KMCFMM):
             _ENERGY.U01_SELF    : np.zeros((1, 1), dtype=REAL)
         }
 
-        self._wing = MPI.Win()
         self._ordering_buf = np.zeros(1, dtype=INT64)
-        self._ordering_win = self._wing.Create(self._ordering_buf,
+        self._ordering_win = MPI.Win.Create(self._ordering_buf,
             disp_unit=self._ordering_buf[0].nbytes,
             comm=self.comm
         )
@@ -727,14 +729,25 @@ class KMCFMM(_PY_KMCFMM):
         self._ordering_win.Fence()
         self._ordering_win.Fetch_and_op(sbuf, rbuf, 0, 0)
         self._ordering_win.Fence()
-        self.group._kmc_fmm_order[:nlocal:, 0] = np.arange(rbuf[0], rbuf[0] + nlocal)        
+        self.group._kmc_fmm_order[:nlocal:, 0] = np.arange(rbuf[0], rbuf[0] + nlocal)
+
+
+    def __del__(self):
+        self._ordering_win.Free()
+        del self._ordering_buf
+        del self.kmco
+        del self.kmcl
+        del self.md
 
 
     def initialise(self):
         t0 = time()
-        self.energy = self.fmm(positions=self.positions, charges=self.charges)
 
+        self.energy = self.fmm(positions=self.positions, charges=self.charges)
+        
         self._check_ordering_dats()
+
+
 
         self.md.initialise(
             positions=self.positions,
@@ -743,11 +756,13 @@ class KMCFMM(_PY_KMCFMM):
             ids=self.group._kmc_fmm_order
         )
 
+
         self.kmco.initialise(
             positions=self.positions,
             charges=self.charges,
             fmm_cells=self.group._fmm_cell
         ) 
+
 
         self.kmcl.initialise(
             positions=self.positions,
@@ -756,8 +771,8 @@ class KMCFMM(_PY_KMCFMM):
             ids=self.group._kmc_fmm_order
         )
 
-        self._si.initialise()
 
+        self._si.initialise()
 
         # long range calculation
         if self._bc == BCType.PBC:

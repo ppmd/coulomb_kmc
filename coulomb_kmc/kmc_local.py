@@ -87,6 +87,7 @@ class LocalParticleData(LocalOctalBase):
         self.entry_local_offset = self.md.entry_local_offset
         self.periodic_factors = self.md.periodic_factors
         self.boundary_condition = self.md.boundary_condition
+        
 
         ls = self.md.local_size
         lo = self.md.local_offset
@@ -100,18 +101,13 @@ class LocalParticleData(LocalOctalBase):
         self.remote_inds = np.zeros((els[0], els[1], els[2], 1), dtype=INT64)
 
         self._win_global_store = None
-        self._wing = MPI.Win()
-        self._occ_win = self._wing.Create(
+        self._occ_win = MPI.Win.Create(
             self.cell_occupancy,
             disp_unit=self.cell_occupancy[0,0,0,0].nbytes,
             comm=self.comm
         )
-        gmap_nbytes = self.fmm.tree[-1].global_to_local[0,0,0].nbytes
-        self._win_ind = self._wing.Create(
-            self.fmm.tree[-1].global_to_local,
-            disp_unit=gmap_nbytes,
-            comm=self.comm
-        )
+
+        self._win_ind = self.md.win_ind
         
         self._max_cell_occ = -1
         self._owner_store = None
@@ -124,6 +120,8 @@ class LocalParticleData(LocalOctalBase):
         self.remote_inds_particles = np.zeros((lsd[0], lsd[1], lsd[2], 1), dtype=INT64)
         self.local_cell_occupancy = np.zeros((lsd[0], lsd[1], lsd[2], 1), dtype=INT64)
         
+
+
         # force creation of self._owner_store and self.local_particle_store
         self._check_owner_store(max_cell_occ=1)
 
@@ -152,6 +150,12 @@ class LocalParticleData(LocalOctalBase):
             self._init_cuda_kernels()
         else:
             self._init_host_kernels()
+
+    
+    def __del__(self):
+        self._occ_win.Free()
+        del self.cell_occupancy
+        self._win_global_store.Free()
 
 
     def accept(self, movedata):
@@ -401,11 +405,13 @@ class LocalParticleData(LocalOctalBase):
         self.comm.Allreduce(m, m2, mpi.MPI.MAX)
         max_cell_occ = m2[0]
 
+
         if self._owner_store is None or \
                 max_cell_occ > self._owner_store.shape[3]:
-            
+
             if self._win_global_store is not None:
                 self._win_global_store.Free()
+                self.comm.Barrier()
 
             ls = self.local_size
             self._owner_store = np.zeros(
@@ -413,7 +419,7 @@ class LocalParticleData(LocalOctalBase):
                 dtype=REAL
             )
             nbytes = self._owner_store[0,0,0,0,:].nbytes
-            self._win_global_store = self._wing.Create(
+            self._win_global_store = MPI.Win.Create(
                 self._owner_store,
                 disp_unit=nbytes,
                 comm=self.comm

@@ -36,7 +36,7 @@ def time_test_dats_1(N=1000, nprop=2, nsample=20000):
     assert N >= nsample
 
     eps = 10.**-5
-    L = 12
+    L = 4
     R = max(3, int(log(0.5*N, 8)))
     
     E = 3.3 * (N ** (1./3))
@@ -69,15 +69,33 @@ def time_test_dats_1(N=1000, nprop=2, nsample=20000):
     A.scatter_data_from(0)
     
     bcs = (False, 'pbc')
-    # bcs = (False, 'free_space')
+    bcs = (False, 'free_space')
     
     max_move = E/10.
 
     kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
         domain=A.domain, r=R, l=L, boundary_condition=bcs[1], max_move=max_move)
 
-    kmc_fmm.initialise()
 
+    kmc_fmm.initialise()
+    
+    #MPIBARRIER()
+    #print("---------- del call in script", N, MPIRANK)
+    #del kmc_fmm
+    #print("========== del call in script", N, MPIRANK)
+    #MPIBARRIER()
+
+    #if MPIRANK == 0:
+    #    print("returning early"); 
+    #return (0, 1, 3, 0, 1)
+
+
+
+    #print("-" * 80)
+    #del kmc_fmm
+    #print("=" * 80)
+    #
+    
     # make  some random proposed moves
     order = rng.permutation(range(A.npart_local))
     nm = 0
@@ -169,6 +187,8 @@ def time_test_dats_1(N=1000, nprop=2, nsample=20000):
     recv = np.array((0,))
     A.domain.comm.Reduce(np.array((nm,)), recv)
     nm = recv[0]
+    
+
 
     return (t1-t0, nm, kmc_fmm.fmm.R, t3 - t2, nsample2)
 

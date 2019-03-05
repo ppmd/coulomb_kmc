@@ -62,17 +62,12 @@ class LocalCellExpansions(LocalOctalBase):
         self.remote_inds[:] = -1
         
 
-        self._wing = MPI.Win()
-        data_nbytes = self.fmm.tree_plain[-1][0,0,0,:].nbytes
-        self._win = self._wing.Create(
-            self.fmm.tree_plain[-1], disp_unit=data_nbytes, comm=self.comm)
+        self._ltp = self.fmm.tree_plain[-1]
 
-        gmap_nbytes = self.fmm.tree[-1].global_to_local[0,0,0].nbytes
-        self._win_ind = self._wing.Create(
-            self.fmm.tree[-1].global_to_local,
-            disp_unit=gmap_nbytes,
-            comm=self.comm
-        )
+        data_nbytes = self.fmm.tree_plain[-1][0,0,0,:].nbytes
+        self._win = MPI.Win.Create(self._ltp, disp_unit=data_nbytes, comm=self.comm)
+        
+        self._win_ind = self.md.win_ind
         
         self._ncomp = (self.fmm.L**2)*2
 
@@ -82,6 +77,9 @@ class LocalCellExpansions(LocalOctalBase):
         self._host_lib, self._flop_count_prop = self._init_host_kernels(self.fmm.L)
         self._host_accept_lib = self._init_accept_lib()
 
+    def __del__(self):
+        self._win.Free()
+        del self._ltp
 
     def accept(self, movedata):
         self._accept(movedata)

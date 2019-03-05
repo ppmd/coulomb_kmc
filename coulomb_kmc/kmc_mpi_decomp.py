@@ -18,6 +18,8 @@ from coulomb_kmc import kmc_octal, kmc_local
 import ppmd
 import ppmd.cuda
 
+from ppmd.mpi import MPI
+
 from ppmd.lib.build import simple_lib_creator
 
 if ppmd.cuda.CUDA_IMPORT:
@@ -149,6 +151,20 @@ class FMMMPIDecomp(LocalOctalBase):
             self._cuda_d['rate_location'] = None
         
         self._dat_lib = self._create_dat_lib()
+
+        self._lg2l = self.fmm.tree[-1].global_to_local
+        gmap_nbytes = self.fmm.tree[-1].global_to_local.itemsize
+        self.win_ind = MPI.Win.Create(
+            self._lg2l,
+            disp_unit=gmap_nbytes,
+            comm=self.comm
+        )
+
+
+    def __del__(self):
+        self.win_ind.Free()
+        del self._lg2l
+
 
     def initialise(self, positions, charges, fmm_cells, ids):
         self.positions = positions
