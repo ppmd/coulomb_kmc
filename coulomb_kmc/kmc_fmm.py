@@ -748,21 +748,12 @@ class KMCFMM(_PY_KMCFMM):
         self._check_ordering_dats()
 
 
-
         self.md.initialise(
             positions=self.positions,
             charges=self.charges,
             fmm_cells=self.group._fmm_cell,
             ids=self.group._kmc_fmm_order
         )
-
-
-        self.kmco.initialise(
-            positions=self.positions,
-            charges=self.charges,
-            fmm_cells=self.group._fmm_cell
-        ) 
-
 
         self.kmcl.initialise(
             positions=self.positions,
@@ -771,6 +762,11 @@ class KMCFMM(_PY_KMCFMM):
             ids=self.group._kmc_fmm_order
         )
 
+        self.kmco.initialise(
+            positions=self.positions,
+            charges=self.charges,
+            fmm_cells=self.group._fmm_cell
+        ) 
 
         self._si.initialise()
 

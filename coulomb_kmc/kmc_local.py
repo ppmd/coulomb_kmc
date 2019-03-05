@@ -103,7 +103,7 @@ class LocalParticleData(LocalOctalBase):
         self._win_global_store = None
         self._occ_win = MPI.Win.Create(
             self.cell_occupancy,
-            disp_unit=self.cell_occupancy[0,0,0,0].nbytes,
+            disp_unit=self.cell_occupancy.itemsize,
             comm=self.comm
         )
 
@@ -518,10 +518,10 @@ class LocalParticleData(LocalOctalBase):
                 self._win_ind.Get(self.remote_inds_particles[lcellx[0], lcellx[1], lcellx[2], :],
                     owning_rank, target=gcellx)
 
+
         self._win_ind.Fence(MPI.MODE_NOPUT)
         self.comm.Barrier()
         self._occ_win.Fence()
-        
         
         for cellx in self._cell_map.keys():
 
@@ -545,7 +545,8 @@ class LocalParticleData(LocalOctalBase):
 
         self._occ_win.Fence()
         self.comm.Barrier()
-        
+ 
+
         red_max_occ = np.array([np.max(self.cell_occupancy[:,:,:,0])], dtype=INT64)
         red_val = np.zeros_like(red_max_occ)
         self.comm.Allreduce(red_max_occ, red_val, MPI.MAX)
@@ -580,9 +581,9 @@ class LocalParticleData(LocalOctalBase):
                 offset += self.entry_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], 0]
 
                 self._win_global_store.Put(tmp[-1], owning_rank, offset)
-                
 
             else:
+
                 # case for copying data directly
 
                 s = self.entry_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], 0]
@@ -594,21 +595,27 @@ class LocalParticleData(LocalOctalBase):
                 self._owner_store[llcellx[0], llcellx[1], llcellx[2], s:e:, 4 ].view(dtype=INT64)[:] = \
                     ids[particle_inds, 0]
 
+
         self._win_global_store.Fence()
-        self.comm.Barrier()
-        
+
+
+
+
+
+
         # at this point all ranks are holding the particle data for the octal cells they own
 
-        # print(self._owner_store)
-        
+
+
+
         # loop over required cells and copy particle data
+ 
+
+        self.comm.Barrier()
 
 
-        self._occ_win.Fence(MPI.MODE_NOPUT)
-        self._win_global_store.Fence(MPI.MODE_NOPUT)
 
-        self.local_particle_store[:] = -888
-
+        self._occ_win.Fence(0)
 
         for lcellx in product(
                 range(self.local_store_dims[0]),
@@ -633,9 +640,14 @@ class LocalParticleData(LocalOctalBase):
                 remote_index = self.remote_inds_particles[lcellx[0], lcellx[1], lcellx[2], 0]
                 assert remote_index > -1
 
+                self._occ_win.Lock(owning_rank, MPI.LOCK_SHARED)
+
                 self._occ_win.Get(self.local_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], :],
                     owning_rank,
                     target=remote_index)
+
+                self._occ_win.Unlock(owning_rank)
+                self._win_global_store.Lock(owning_rank, MPI.LOCK_SHARED)
 
                 remote_index *= self._max_cell_occ
                 self._win_global_store.Get(
@@ -644,10 +656,11 @@ class LocalParticleData(LocalOctalBase):
                     target=remote_index
                 )
 
-        self._win_global_store.Fence(MPI.MODE_NOPUT)
-        self._occ_win.Fence(MPI.MODE_NOPUT)
+                self._win_global_store.Unlock(owning_rank)
+
         self.comm.Barrier()
-        
+
+
 
         # apply periodic boundary conditions
         for lcellx in product(

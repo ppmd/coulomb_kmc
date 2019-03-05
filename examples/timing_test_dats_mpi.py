@@ -29,6 +29,9 @@ from coulomb_kmc import *
 import time
 import cProfile
 
+#import psutil
+#p = psutil.Process()
+
 
 def time_test_dats_1(N=1000, nprop=2, nsample=20000):
     
@@ -189,7 +192,6 @@ def time_test_dats_1(N=1000, nprop=2, nsample=20000):
     nm = recv[0]
     
 
-
     return (t1-t0, nm, kmc_fmm.fmm.R, t3 - t2, nsample2)
 
 if __name__ == '__main__':
@@ -213,6 +215,7 @@ if __name__ == '__main__':
     if MPIRANK == 0:
         times = np.array(times)
         np.save('timings.npy', times)
+    
 
 
 
