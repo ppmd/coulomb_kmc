@@ -101,13 +101,7 @@ class LocalParticleData(LocalOctalBase):
         self.remote_inds = np.zeros((els[0], els[1], els[2], 1), dtype=INT64)
 
         self._win_global_store = None
-        self._occ_win = MPI.Win.Create(
-            self.cell_occupancy,
-            disp_unit=self.cell_occupancy.itemsize,
-            comm=self.comm
-        )
-
-        self._win_ind = self.md.win_ind
+        self._occ_win = None
         
         self._max_cell_occ = -1
         self._owner_store = None
@@ -119,11 +113,7 @@ class LocalParticleData(LocalOctalBase):
         self.local_store_dims_arr = np.array(lsd, dtype=INT64)
         self.remote_inds_particles = np.zeros((lsd[0], lsd[1], lsd[2], 1), dtype=INT64)
         self.local_cell_occupancy = np.zeros((lsd[0], lsd[1], lsd[2], 1), dtype=INT64)
-        
 
-
-        # force creation of self._owner_store and self.local_particle_store
-        self._check_owner_store(max_cell_occ=1)
 
         self.positions = None
         self.charges = None
@@ -151,11 +141,23 @@ class LocalParticleData(LocalOctalBase):
         else:
             self._init_host_kernels()
 
-    
-    def __del__(self):
+
+    def _create_wins(self):
+        assert self._occ_win == None
+        self._occ_win = MPI.Win.Create(
+            self.cell_occupancy,
+            disp_unit=self.cell_occupancy.itemsize,
+            comm=self.comm
+        )
+
+
+    def _free_wins(self):
+
         self._occ_win.Free()
-        del self.cell_occupancy
+        self._occ_win = None
+
         self._win_global_store.Free()
+        self._win_global_store = None
 
 
     def accept(self, movedata):
@@ -405,6 +407,7 @@ class LocalParticleData(LocalOctalBase):
         self.comm.Allreduce(m, m2, mpi.MPI.MAX)
         max_cell_occ = m2[0]
 
+        assert self._win_global_store == None
 
         if self._owner_store is None or \
                 max_cell_occ > self._owner_store.shape[3]:
@@ -472,6 +475,9 @@ class LocalParticleData(LocalOctalBase):
         self.fmm_cells = fmm_cells
         self.ids = ids
         self.group = self.positions.group
+        self._win_ind = self.md.get_win_ind()
+        
+        self._create_wins()
 
         self._cell_map = {}
         cell_occ = 1
@@ -599,10 +605,6 @@ class LocalParticleData(LocalOctalBase):
         self._win_global_store.Fence()
 
 
-
-
-
-
         # at this point all ranks are holding the particle data for the octal cells they own
 
 
@@ -660,7 +662,8 @@ class LocalParticleData(LocalOctalBase):
 
         self.comm.Barrier()
 
-
+        self._free_wins()
+        self.md.free_win_ind()
 
         # apply periodic boundary conditions
         for lcellx in product(

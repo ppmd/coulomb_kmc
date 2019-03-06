@@ -1,22 +1,6 @@
 from __future__ import print_function, division
 
 
-def rma():
-    import mpi4py
-    #mpi4py.rc(thread_level='single') 
-    from mpi4py import MPI
-    import numpy as np
-    import ctypes
-    INT64 = ctypes.c_int64
-    b = np.zeros(1, INT64)
-    print("\tPRE CREATE")
-    bw = MPI.Win.Create(b, comm=MPI.COMM_WORLD)
-    print("\tPOST CREATE")
-
-
-
-
-
 
 __author__ = "W.R.Saunders"
 __copyright__ = "Copyright 2016, W.R.Saunders"
@@ -55,15 +39,10 @@ MPI = mpi.MPI
 
 
 
-
-
 @pytest.mark.parametrize("param_boundary", ('free_space', 'pbc', '27'))
 def test_kmc_fmm_dat_setup_prop_mpi_1(param_boundary):
     
-    from ppmd.coulomb.octal import OctalTree
-    
-    print("BAD L SET")
-    L = 2
+    L = 14
     R = 3
 
     N = 200
@@ -107,24 +86,19 @@ def test_kmc_fmm_dat_setup_prop_mpi_1(param_boundary):
     
     B.P[:] = A.P.data.copy()
     B.Q[:] = A.Q.data.copy()
-
+    
     A.scatter_data_from(0)
     B.scatter_data_from(0)
-
 
     # create a kmc instance
     kmc_fmmA = KMCFMM(positions=A.P, charges=A.Q, 
         domain=A.domain, r=R, l=L, boundary_condition=param_boundary)
-        
-    return
-
 
     kmc_fmmA.initialise()
     
     kmc_fmmB = KMCFMM(positions=B.P, charges=B.Q, 
         domain=B.domain, r=R, l=L, boundary_condition=param_boundary)
     kmc_fmmB.initialise() 
-
 
 
     for testx in range(4):
@@ -172,8 +146,6 @@ def test_kmc_fmm_dat_setup_prop_mpi_1(param_boundary):
 
                     found_movs += 1
      
-
-
 
 
 

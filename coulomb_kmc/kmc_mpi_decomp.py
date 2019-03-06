@@ -153,17 +153,16 @@ class FMMMPIDecomp(LocalOctalBase):
         self._dat_lib = self._create_dat_lib()
 
         self._lg2l = self.fmm.tree[-1].global_to_local
+        self.win_ind = None
+
+    def _create_win(self):
+        assert self.win_ind == None
         gmap_nbytes = self.fmm.tree[-1].global_to_local.itemsize
         self.win_ind = MPI.Win.Create(
             self._lg2l,
             disp_unit=gmap_nbytes,
             comm=self.comm
         )
-
-
-    def __del__(self):
-        self.win_ind.Free()
-        del self._lg2l
 
 
     def initialise(self, positions, charges, fmm_cells, ids):
@@ -173,7 +172,13 @@ class FMMMPIDecomp(LocalOctalBase):
         self.ids = ids
         self.group = self.positions.group
 
-       
+    def get_win_ind(self):
+        self._create_win()
+        return self.win_ind
+
+    def free_win_ind(self):
+        self.win_ind.Free()
+        self.win_ind = None
 
 
     def setup_propose(self, moves):

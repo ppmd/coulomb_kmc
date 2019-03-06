@@ -39,7 +39,7 @@ def time_test_dats_1(N=1000, nprop=2, nsample=20000):
     assert N >= nsample
 
     eps = 10.**-5
-    L = 4
+    L = 12
     R = max(3, int(log(0.5*N, 8)))
     
     E = 3.3 * (N ** (1./3))

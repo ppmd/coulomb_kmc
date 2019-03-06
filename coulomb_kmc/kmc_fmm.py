@@ -502,13 +502,8 @@ class KMCFMM(_PY_KMCFMM):
         }
 
         self._ordering_buf = np.zeros(1, dtype=INT64)
-        self._ordering_win = MPI.Win.Create(self._ordering_buf,
-            disp_unit=self._ordering_buf[0].nbytes,
-            comm=self.comm
-        )
-
+        self._ordering_win = None
         self._diff_lib = self._create_diff_lib()
-
 
 
     def _create_diff_lib(self):
@@ -725,19 +720,18 @@ class KMCFMM(_PY_KMCFMM):
         sbuf[0] = nlocal
         rbuf = np.zeros_like(self._ordering_buf)
 
-        self.comm.Barrier()
-        self._ordering_win.Fence()
+        assert self._ordering_win is None
+        self._ordering_win = MPI.Win.Create(self._ordering_buf,
+            disp_unit=self._ordering_buf[0].nbytes,
+            comm=self.comm
+        )
+        self._ordering_win.Fence(0)
         self._ordering_win.Fetch_and_op(sbuf, rbuf, 0, 0)
-        self._ordering_win.Fence()
+        self._ordering_win.Fence(0)
         self.group._kmc_fmm_order[:nlocal:, 0] = np.arange(rbuf[0], rbuf[0] + nlocal)
 
-
-    def __del__(self):
         self._ordering_win.Free()
-        del self._ordering_buf
-        del self.kmco
-        del self.kmcl
-        del self.md
+        self._ordering_win = None
 
 
     def initialise(self):
@@ -766,7 +760,8 @@ class KMCFMM(_PY_KMCFMM):
             positions=self.positions,
             charges=self.charges,
             fmm_cells=self.group._fmm_cell
-        ) 
+        )
+
 
         self._si.initialise()
 
