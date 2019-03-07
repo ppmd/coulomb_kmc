@@ -92,7 +92,7 @@ class _PY_KMCFMM(object):
             self._lr_energy.eval_field(points, out)
 
         return out
-
+    
 
     def _direct_contrib_new(self, ix, prop_pos):
 
@@ -417,6 +417,9 @@ class _PY_KMCFMM(object):
 
 
 class KMCFMM(_PY_KMCFMM):
+
+    def free(self):
+        self.fmm.free()
 
     def __init__(self, positions, charges, domain, N=None, boundary_condition='pbc',
         r=None, shell_width=0.0, energy_unit=1.0,

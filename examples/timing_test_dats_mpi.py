@@ -191,6 +191,7 @@ def time_test_dats_1(N=1000, nprop=2, nsample=20000):
     A.domain.comm.Reduce(np.array((nm,)), recv)
     nm = recv[0]
     
+    kmc_fmm.free()
 
     return (t1-t0, nm, kmc_fmm.fmm.R, t3 - t2, nsample2)
 
