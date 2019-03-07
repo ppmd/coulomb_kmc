@@ -75,6 +75,8 @@ def time_test_dats_1(N=1000, nprop=2, nsample=20000):
     bcs = (False, 'free_space')
     
     max_move = E/10.
+    
+
 
     kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
         domain=A.domain, r=R, l=L, boundary_condition=bcs[1], max_move=max_move)
@@ -82,6 +84,8 @@ def time_test_dats_1(N=1000, nprop=2, nsample=20000):
 
     kmc_fmm.initialise()
     
+
+
     #MPIBARRIER()
     #print("---------- del call in script", N, MPIRANK)
     #del kmc_fmm

@@ -728,22 +728,23 @@ class KMCFMM(_PY_KMCFMM):
             disp_unit=self._ordering_buf[0].nbytes,
             comm=self.comm
         )
-        self._ordering_win.Fence(0)
+        self._ordering_win.Lock(0, MPI.LOCK_SHARED)
         self._ordering_win.Fetch_and_op(sbuf, rbuf, 0, 0)
-        self._ordering_win.Fence(0)
+        self._ordering_win.Unlock(0)
         self.group._kmc_fmm_order[:nlocal:, 0] = np.arange(rbuf[0], rbuf[0] + nlocal)
-
+        
+        self.comm.Barrier()
         self._ordering_win.Free()
         self._ordering_win = None
 
 
     def initialise(self):
         t0 = time()
+        
 
         self.energy = self.fmm(positions=self.positions, charges=self.charges)
         
         self._check_ordering_dats()
-
 
         self.md.initialise(
             positions=self.positions,
