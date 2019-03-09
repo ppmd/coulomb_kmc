@@ -210,10 +210,10 @@ def test_kmc_fmm_dat_setup_prop_1(param_boundary):
 
 @pytest.mark.skipif("MPISIZE > 1")
 @pytest.mark.parametrize("param_boundary", ('free_space', 'pbc', '27'))
-def test_kmc_fmm_dat_setup_prop_2(param_boundary):
+@pytest.mark.parametrize("R", (3, 4, 5))
+def test_kmc_fmm_dat_setup_prop_2(param_boundary, R):
 
     L = 8
-    R = 3
 
     N = 200
     E = 4.

@@ -95,13 +95,18 @@ class ErrorPropDiff:
         self.B = B
 
         self.rng = rng
+        
+        Nc = int(math.ceil(N**(1./3)))
+
+        self.lattice = utility.lattice.cubic_lattice((Nc, Nc, Nc), (E, E, E))[:N, :]
+
 
         self.random_initialise()
 
     
     def random_initialise(self):
 
-        self.A.P[:self.N:, :] = self.rng.uniform(low=-0.5*self.E, high=0.5*self.E, size=(self.N,3))
+        self.A.P[:self.N:, :] = self.lattice + self.rng.uniform(low=-2., high=2.0, size=(self.N,3))
         self.B.P[:self.N:, :] = self.A.P[:self.N:, :]
         self.kmc_fmm.initialise()
         self.kmc_fmm_true.initialise()
@@ -217,9 +222,7 @@ if __name__ == '__main__':
         t = get_data_tuple()
         append_data_tuple(t)
         
-        if tx % 10 == 0:
-            save_data_list()
-            print("{: 12d} | {: 8.2e} {: 8.2e} | {: 8.2e} {: 8.2e} | {: 8.2e} {: 8.2e} | {: 8.2e} | m_diff {: 8.2e} m_energy {: 8.2e} ".format(*t))
+        print("{: 12d} | {: 8.2e} {: 8.2e} | {: 8.2e} {: 8.2e} | {: 8.2e} {: 8.2e} | {: 8.2e} | m_diff {: 8.2e} m_energy {: 8.2e} ".format(*t))
     
     save_data_list()
 

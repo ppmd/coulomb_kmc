@@ -141,14 +141,14 @@ def charge_indirect_energy(s, ix, fmm):
 
 
 @pytest.mark.skipif('MPISIZE > 1')
-def test_kmc_fmm_free_space_1():
+@pytest.mark.parametrize("R", (3, 4, 5))
+def test_kmc_fmm_free_space_1(R):
     """
     Tests proposed moves one by one against direct calculation.
     """
 
     eps = 10.**-5
     L = 12
-    R = 3
 
     N = 50
     E = 4.
@@ -333,14 +333,14 @@ def test_kmc_fmm_free_space_2():
 
 
 @pytest.mark.skipif('MPISIZE > 1')
-def test_kmc_fmm_free_space_3():
+@pytest.mark.parametrize("R", (3, 4, 5))
+def test_kmc_fmm_free_space_3(R):
     """
     Passes all proposed moves to kmc at once, then checks all outputs
     """
     
     eps = 10.**-5
     L = 12
-    R = 3
 
     N = 200
     E = 4.

@@ -467,14 +467,14 @@ def test_kmc_fmm_pbc_2():
 
 
 @pytest.mark.skipif('MPISIZE > 1')
-def test_kmc_fmm_pbc_3():
+@pytest.mark.parametrize("R", (3, 4, 5))
+def test_kmc_fmm_pbc_3(R):
     """
     Passes all proposed moves to kmc at once, then checks all outputs
     """
     
     eps = 10.**-5
     L = 12
-    R = 3
 
     N = 200
     E = 4.

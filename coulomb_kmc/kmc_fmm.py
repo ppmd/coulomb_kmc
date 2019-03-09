@@ -420,6 +420,7 @@ class KMCFMM(_PY_KMCFMM):
 
     def free(self):
         self.fmm.free()
+        del self.fmm
 
     def __init__(self, positions, charges, domain, N=None, boundary_condition='pbc',
         r=None, shell_width=0.0, energy_unit=1.0,
