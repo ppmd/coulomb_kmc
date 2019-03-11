@@ -239,7 +239,6 @@ class FMMMPIDecomp(LocalOctalBase):
             shifted_position[0] = position[0];
             shifted_position[1] = position[1];
             shifted_position[2] = position[2];
-            return;
             '''
         else:
             assert self.boundary_condition in (BCType.PBC, BCType.NEAREST)
@@ -258,8 +257,6 @@ class FMMMPIDecomp(LocalOctalBase):
             shifted_position[0] = position[0] + offsets[0] * extent[0];
             shifted_position[1] = position[1] + offsets[1] * extent[1];
             shifted_position[2] = position[2] + offsets[2] * extent[2];
-
-            return;
             '''
 
 
@@ -285,12 +282,13 @@ class FMMMPIDecomp(LocalOctalBase):
             const REAL w1 = fmm_cells_per_side[1] / extent[1];
             const REAL w2 = fmm_cells_per_side[2] / extent[2];
 
-            cell[0] = (INT64) shifted_position[0] * w0;
-            cell[1] = (INT64) shifted_position[1] * w1;
-            cell[2] = (INT64) shifted_position[2] * w2;
+            cell[0] = (INT64) (shifted_position[0] * w0);
+            cell[1] = (INT64) (shifted_position[1] * w1);
+            cell[2] = (INT64) (shifted_position[2] * w2);
 
             {CELL_GEN}
 
+            return;
 
         }}
 
@@ -473,7 +471,6 @@ class FMMMPIDecomp(LocalOctalBase):
         
         total_movs = INT64(0)
         num_particles = INT64(0)
-
         self._dat_lib(
             INT64(self.positions.npart_local),
             INT64(prop_masks.ncomp),
@@ -564,6 +561,7 @@ class FMMMPIDecomp(LocalOctalBase):
 
         cells = np.zeros(cell_bin.shape, dtype=INT64)
         cells[:] = cell_bin[:]
+
 
         if self.boundary_condition is BCType.FREE_SPACE:
             return cells, positions, positions

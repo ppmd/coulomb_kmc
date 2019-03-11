@@ -540,8 +540,10 @@ class KMCFMM(_PY_KMCFMM):
                     const INT64 u1loc = es_start + movx;
                     UDIFF[rate_location[u1loc]] = (ENERGY_UNIT) * (
                         {MF} * (
-                                    U1D[u1loc] + U1I[u1loc] - 
-                                    U0D[px]    - U0I[px]
+                                + U1D[u1loc]
+                                + U1I[u1loc] 
+                                - U0D[px]
+                                - U0I[px]
                                )
                         - USI[px*stride_si + movx]
                     );
@@ -855,11 +857,11 @@ class KMCFMM(_PY_KMCFMM):
 
         if self.mirror_direction is None:
             self._tmp_energies[_ENERGY.U_DIFF] = \
-                  self._tmp_energies[_ENERGY.U1_DIRECT] \
                 + self._tmp_energies[_ENERGY.U1_INDIRECT] \
                 - self._tmp_energies[_ENERGY.U0_DIRECT] \
-                - self._tmp_energies[_ENERGY.U0_INDIRECT] \
-                - self._tmp_energies[_ENERGY.U01_SELF]
+                + self._tmp_energies[_ENERGY.U1_DIRECT] \
+                - self._tmp_energies[_ENERGY.U01_SELF] \
+                - self._tmp_energies[_ENERGY.U0_INDIRECT]
         
         else:
             self._tmp_energies[_ENERGY.U_DIFF] = \
@@ -868,6 +870,12 @@ class KMCFMM(_PY_KMCFMM):
                 - 2.0 * self._tmp_energies[_ENERGY.U0_DIRECT] \
                 - 2.0 * self._tmp_energies[_ENERGY.U0_INDIRECT] \
                 - self._tmp_energies[_ENERGY.U01_SELF]
+        
+        
+        #for keyx in self._tmp_energies.keys():
+        #    print(keyx, self._tmp_energies[keyx])
+
+
 
 
         prop_energy = []

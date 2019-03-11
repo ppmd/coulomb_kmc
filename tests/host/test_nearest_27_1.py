@@ -131,13 +131,14 @@ def test_kmc_fmm_nearest_27_1():
 
 
 @pytest.mark.skipif('MPISIZE > 1')
-def test_kmc_fmm_nearest_27_2():
+@pytest.mark.parametrize("R", (3, 4, 5))
+def test_kmc_fmm_nearest_27_2(R):
     """
     Passes all proposed moves to kmc at once, then checks all outputs
     """
     
     eps = 10.**-5
-    L = 12
+    L = 10
     R = 3
 
     N = 50
@@ -200,7 +201,7 @@ def test_kmc_fmm_nearest_27_2():
     
     # get the energy of the proposed moves
     prop_energy_py = kmc_fmm.test_propose(moves=prop, use_python=True)
-    prop_energy_c  = kmc_fmm.test_propose(moves=prop, use_python=False)
+    prop_energy_c  = kmc_fmm.propose(moves=prop)
     
     # test agains the direct calculation
     for rxi, rx in enumerate(prop):

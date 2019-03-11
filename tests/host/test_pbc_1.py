@@ -474,7 +474,7 @@ def test_kmc_fmm_pbc_3(R):
     """
     
     eps = 10.**-5
-    L = 12
+    L = 10
 
     N = 200
     E = 4.
@@ -544,7 +544,7 @@ def test_kmc_fmm_pbc_3(R):
     kmc_fmm.initialise()
 
     t0 = time.time()
-    prop_energy_c  = kmc_fmm.test_propose(moves=prop, use_python=False)
+    prop_energy_c  = kmc_fmm.propose(moves=prop)
     t1 = time.time()
     #pr.disable()
     #pr.dump_stats('/tmp/propose.prof')
