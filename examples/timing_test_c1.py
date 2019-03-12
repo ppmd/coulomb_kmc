@@ -102,6 +102,8 @@ def time_test_1(N=100, nprop=None, nsample=100):
             break
     t3 = time.time()
 
+    kmc_fmm.free()
+
     return (t1-t0, nm, kmc_fmm.fmm.R, t3 - t2, nsample2)
 
 if __name__ == '__main__':

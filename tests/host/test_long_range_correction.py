@@ -137,7 +137,8 @@ def test_long_range_accept_correction_1():
     assert err < 10.**-15, str(seed)
 
 
-    
+    kmc_fmmA.free()
+    kmc_fmmB.free()
 
 
 

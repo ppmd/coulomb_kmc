@@ -418,6 +418,8 @@ def test_kmc_fmm_nearest_27_1():
         return
         assert err < 10.**-16
 
+    fmm.free()
+    kmc_fmm.free()
 
 direction_bools = (
     (True, False, False),
@@ -553,6 +555,8 @@ def test_kmc_fmm_nearest_27_1(direction):
         #print("ERR", err, prop_energy[0][0], phi_1)
         assert err < 10.**-5
 
+    fmm.free()
+    kmc_fmm.free()
 
 @pytest.mark.parametrize("direction", direction_bools)
 @pytest.mark.skipif('MPISIZE > 1')
@@ -693,5 +697,8 @@ def test_kmc_fmm_nearest_27_2(direction):
                     assert err < 2*(10**-14)
 
                     found_movs += 1
+
+    kmc_fmmA.free()
+    kmc_fmmB.free()
 
 

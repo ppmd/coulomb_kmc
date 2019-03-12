@@ -90,7 +90,7 @@ def test_kmc_fmm_eval_field_1():
     err = np.linalg.norm(correct_field - kmc_field, np.inf)
     assert err < 10.**-5
 
-
+    kmc_fmm.free()
 
 direction_bools = (
     (True, False, False),
@@ -191,7 +191,7 @@ def test_kmc_fmm_eval_field_2(direction):
     err = np.linalg.norm(kmc_field, np.inf)
     assert err < 10.**-5
 
-
+    kmc_fmm.free()
 
 
 
@@ -476,7 +476,7 @@ def test_kmc_fmm_eval_field_3(direction):
     pyevtk.hl.pointsToVTK('/tmp/foo2', kmc_field, Y, X, None)
 
 
-
+    kmc_fmm.free()
 
 
 

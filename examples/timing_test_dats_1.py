@@ -111,6 +111,8 @@ def time_test_dats_1(N=100, nprop=2, nsample=100):
     pr.disable()
     pr.dump_stats('/tmp/accept.prof')
 
+    kmc_fmm.free()
+
     return (t1-t0, nm, kmc_fmm.fmm.R, t3 - t2, nsample2)
 
 if __name__ == '__main__':

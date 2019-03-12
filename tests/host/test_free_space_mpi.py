@@ -127,7 +127,7 @@ def test_kmc_fmm_free_space_1():
         # print(prop_energy[0][0], phi_direct)
         assert (abs(prop_energy[0][0] - phi_direct)/abs(phi_direct) < eps) or (abs(prop_energy[0][0] - phi_direct) < eps)
 
-
+    kmc_fmm.free()
 
 
 

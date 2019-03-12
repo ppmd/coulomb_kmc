@@ -140,6 +140,9 @@ def test_split_concept_1():
 
     assert err < 10.**-14
 
+    fmm_pbc.free()
+    fmm_27.free()
+
 
 @pytest.mark.skipif("MPISIZE > 1")
 def test_kmc_lr_1():
@@ -235,7 +238,7 @@ def test_kmc_lr_1():
             err = abs(c - m)/rel
             assert err < 10.**-15
             
-
+    kmc_fmm.free()
 
 
 @pytest.mark.skipif('MPISIZE > 1')
@@ -351,6 +354,9 @@ def test_kmc_fmm_pbc_1():
         # print(prop_energy[0][0], phi_direct, abs(prop_energy[0][0] - phi_direct))
         assert err < eps
 
+    fmm.free()
+    kmc_fmm.free()
+
 
 @pytest.mark.skipif('MPISIZE > 1')
 def test_kmc_fmm_pbc_2():
@@ -465,6 +471,9 @@ def test_kmc_fmm_pbc_2():
 
             assert abs(fmm_phi - phi_direct)/abs(phi_direct) < eps
 
+    fmm.free()
+    kmc_fmm.free()
+
 
 @pytest.mark.skipif('MPISIZE > 1')
 @pytest.mark.parametrize("R", (3, 4, 5))
@@ -564,6 +573,9 @@ def test_kmc_fmm_pbc_3(R):
             fmm_phi_c = prop_energy_c[rxi][movi]
 
             assert abs(fmm_phi_py - fmm_phi_c)/abs(fmm_phi_py) < eps
+
+    kmc_fmm.free()
+
 
 
 def test_kmc_fmm_pbc_parallel_1():
@@ -679,6 +691,10 @@ def test_kmc_fmm_pbc_parallel_1():
 
             assert abs(fmm_phi - phi_direct)/abs(phi_direct) < eps
 
+    fmm.free()
+    kmc_fmm.free()
+
+
 
 @pytest.mark.skipif('MPISIZE > 1')
 def test_kmc_fmm_pbc_accept_1():
@@ -772,6 +788,10 @@ def test_kmc_fmm_pbc_accept_1():
 
         err = abs(prop_accept_energy - kmc_fmm.energy) / rel
         assert err < 10.**-5
+
+    kmc_fmm.free()
+
+
 
 
 @pytest.mark.skipif('MPISIZE > 1')
@@ -910,6 +930,9 @@ def test_kmc_fmm_pbc_accept_1_5():
 
             assert err<10.**-13
 
+    kmc_fmmA.free()
+    kmc_fmmB.free()
+
 
 
 @pytest.mark.skipif('MPISIZE > 1')
@@ -1032,6 +1055,9 @@ def test_kmc_fmm_pbc_accept_2():
         err = abs(kmc_fmmA.energy - kmc_fmmB.energy) / rel
         #print("==========>", err)
         assert err < 10.**-5
+
+    kmc_fmmA.free()
+    kmc_fmmB.free()
 
 
     

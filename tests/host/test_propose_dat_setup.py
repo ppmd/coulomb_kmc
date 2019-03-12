@@ -204,6 +204,9 @@ def test_kmc_fmm_dat_setup_prop_1(param_boundary, R):
     )
     assert err < 10.**-15
 
+    kmc_fmmA.free()
+    kmc_fmmB.free()
+
 
 
 
@@ -317,7 +320,8 @@ def test_kmc_fmm_dat_setup_prop_2(param_boundary, R):
             
 
     # opt.print_profile()
-
+    kmc_fmmA.free()
+    kmc_fmmB.free()
 
 
 
@@ -489,9 +493,8 @@ def test_kmc_fmm_realistic_1(param_boundary, R):
     # opt.print_profile()
 
 
-
-
-
+    fmm.free()
+    kmc_fmmA.free()
 
 
 

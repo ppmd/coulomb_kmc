@@ -203,7 +203,8 @@ def test_kmc_fmm_pbc_1(direction):
 
                     found_movs += 1
 
-
+    fmm.free()
+    kmc_fmmA.free()
  
 
 @pytest.mark.parametrize("direction", direction_bools)
@@ -340,7 +341,9 @@ def test_kmc_fmm_pbc_2(direction):
         err = abs(correct - to_test) / abs(correct)
         assert err < 2*(10.**-5)
 
-
+    fmm.free()
+    fmmA.free()    
+    kmc_fmmA.free()
 
 
 @pytest.mark.parametrize("direction", direction_bools)
@@ -486,5 +489,8 @@ def test_kmc_fmm_pbc_3(direction):
         kmc_field = kmc_fmmA.eval_field(eval_points)
         err = np.linalg.norm(kmc_field, np.inf)
         assert err < 3 * (10.**-4)
+
+    kmc_fmmA.free()
+
 
 

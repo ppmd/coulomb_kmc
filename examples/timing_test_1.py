@@ -87,6 +87,9 @@ def time_test_1(N=100, nprop=None, nsample=10):
     t0 = time.time()
     prop_energy = kmc_fmm.test_propose(moves=prop)
     t1 = time.time()
+    
+    kmc_fmm.free()
+
     return (t1-t0, nm, kmc_fmm.fmm.R)
 
 if __name__ == '__main__':

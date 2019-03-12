@@ -148,7 +148,7 @@ def test_kmc_local_collection_1():
             required.remove(px)
         assert len(required) == 0
 
-
+    kmc_fmm.free()
 
 
 def test_kmc_local_collection_2():
@@ -286,6 +286,8 @@ def test_kmc_local_collection_2():
             assert corr_ids[orig_id] == kmcl_ids[pxi]
             for compx in range(4):
                 assert corr_data[orig_id, compx] == kmcl_data[pxi, compx]
+
+    kmc_fmm.free()
 
 
 def test_kmc_local_collection_3():
@@ -425,7 +427,7 @@ def test_kmc_local_collection_3():
                 assert abs(corr_data[orig_id, compx] - kmcl_data[pxi, compx] + offset[compx]) < 10.**-14
             assert corr_data[orig_id, 3] == kmcl_data[pxi, 3]
 
-
+    kmc_fmm.free()
  
 
 
@@ -559,4 +561,5 @@ def test_kmc_local_collection_4():
                 assert abs(corr_data[orig_id, compx] - kmcl_data[pxi, compx] + offset[compx]) < 10.**-14
             assert corr_data[orig_id, 3] == kmcl_data[pxi, 3]
 
+    kmc_fmm.free()
 

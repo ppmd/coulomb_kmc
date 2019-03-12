@@ -129,6 +129,9 @@ def test_kmc_fmm_nearest_27_1():
         # print(prop_energy[0][0], phi_direct, abs(prop_energy[0][0] - phi_direct))
         assert err < eps
 
+    fmm.free()
+    kmc_fmm.free()
+
 
 @pytest.mark.skipif('MPISIZE > 1')
 @pytest.mark.parametrize("R", (3, 4, 5))
@@ -212,6 +215,8 @@ def test_kmc_fmm_nearest_27_2(R):
             fmm_phi_c = prop_energy_c[rxi][movi]
 
             assert abs(fmm_phi_py - fmm_phi_c)/abs(fmm_phi_py) < eps
+
+    kmc_fmm.free()
 
 
 @pytest.mark.skipif('MPISIZE > 1')
@@ -306,7 +311,9 @@ def test_kmc_fmm_nearest_27_accept_1():
 
         err = abs(prop_accept_energy - kmc_fmm.energy) / rel
         assert err < 10.**-6
-    
+
+    kmc_fmm.free()
+
 
 @pytest.mark.skipif('MPISIZE > 1')
 def test_kmc_fmm_nearest_27_accept_1_5():
@@ -445,7 +452,8 @@ def test_kmc_fmm_nearest_27_accept_1_5():
 
             assert err<10.**-13
 
-
+    kmc_fmmA.free()
+    kmc_fmmB.free()
 
 
 
@@ -571,7 +579,8 @@ def test_kmc_fmm_nearest_27_accept_2():
         err = abs(kmc_fmmA.energy - kmc_fmmB.energy) / rel
         assert err < 10.**-5
 
-
+    kmc_fmmA.free()
+    kmc_fmmB.free()
 
 
 

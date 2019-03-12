@@ -149,7 +149,7 @@ def time_test_dats_1(N=1000, nprop=2, nsample=1000):
 
 
 
-
+    kmc_fmm.free()
 
 
 

@@ -229,6 +229,8 @@ def test_kmc_fmm_free_space_1(R):
         # print(prop_energy[0][0], phi_direct)
         assert abs(prop_energy[0][0] - phi_direct)/abs(phi_direct) < eps
 
+    kmc_fmm.free()
+    
 
 @pytest.mark.skipif('MPISIZE > 1')
 def test_kmc_fmm_free_space_2():
@@ -330,6 +332,8 @@ def test_kmc_fmm_free_space_2():
             fmm_phi = prop_energy[rxi][movi]
 
             assert abs(fmm_phi - phi_direct)/abs(phi_direct) < eps
+
+    kmc_fmm.free()
 
 
 @pytest.mark.skipif('MPISIZE > 1')
@@ -440,6 +444,7 @@ def test_kmc_fmm_free_space_3(R):
     #print("\n")
     #print_profile()
 
+    kmc_fmm.free()
 
 @pytest.mark.skipif('MPISIZE > 1')
 def test_kmc_fmm_free_space_accept_1():
@@ -534,7 +539,9 @@ def test_kmc_fmm_free_space_accept_1():
         err = abs(prop_accept_energy - kmc_fmm.energy) / rel
         assert err < 10.**-6
     
-    
+    kmc_fmm.free()
+
+
 @pytest.mark.skipif('MPISIZE > 1')
 def test_kmc_fmm_free_space_accept_1_5():
 
@@ -662,7 +669,8 @@ def test_kmc_fmm_free_space_accept_1_5():
 
             assert err<10.**-14
 
-
+    kmc_fmmA.free()
+    kmc_fmmB.free()
 
 
 
@@ -794,7 +802,8 @@ def test_kmc_fmm_free_space_accept_2():
         #print("---", err)
         assert err < 10.**-6
 
-
+    kmc_fmmA.free()
+    kmc_fmmB.free()
 
 
 

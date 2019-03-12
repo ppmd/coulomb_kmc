@@ -115,5 +115,5 @@ def test_kmc_octal_1():
         )
 
 
-
+    kmc_fmm.free()
 

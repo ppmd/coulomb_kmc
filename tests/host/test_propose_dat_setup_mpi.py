@@ -148,7 +148,8 @@ def test_kmc_fmm_dat_setup_prop_mpi_1(param_boundary):
      
 
 
-
+    kmc_fmmA.free()
+    kmc_fmmB.free()
 
 
 

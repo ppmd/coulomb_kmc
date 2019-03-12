@@ -103,6 +103,10 @@ class ErrorPropDiff:
 
         self.random_initialise()
 
+    def free(self):
+        self.kmc_fmm.free()
+        self.kmc_fmm_true.free()
+
     
     def random_initialise(self):
 
@@ -225,6 +229,7 @@ if __name__ == '__main__':
         print("{: 12d} | {: 8.2e} {: 8.2e} | {: 8.2e} {: 8.2e} | {: 8.2e} {: 8.2e} | {: 8.2e} | m_diff {: 8.2e} m_energy {: 8.2e} ".format(*t))
     
     save_data_list()
+    proposer.free()
 
 
 

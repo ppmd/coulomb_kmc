@@ -87,7 +87,8 @@ class ErrorPropExp:
     
         return (self.U_fmm, self.U_kmc, abs(self.U_fmm - self.U_kmc) / rel)
 
-
+    def free(self):
+        self.kmc_fmm.free()
 
 if __name__ == '__main__':
     
@@ -101,4 +102,4 @@ if __name__ == '__main__':
             e = proposer.energy
             print("{: 12d} | {: 8.2e}".format(tx, e[2]))
 
-
+    proposer.free()
