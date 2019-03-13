@@ -9,6 +9,12 @@ INT64 = ctypes.c_int64
 
 from itertools import product
 
+from coulomb_kmc.common import spherical
+from ppmd.coulomb.fmm_pbc import LongRangeMTL
+from coulomb_kmc.kmc_expansion_tools import LocalExpEval
+
+import numpy as np
+
 class FreeSpaceDirect:
     def __init__(self):
         
@@ -202,18 +208,46 @@ class NearestDirect:
 
 
 class PBCDirect:
-    def __init__(self, E, L):
+    def __init__(self, E, domain, L):
+        
+        self.lrc = LongRangeMTL(L, domain)
 
         self._nd = NearestDirect(E)
 
+        self.ncomp = 2*(L**2)
+        self.half_ncomp = L**2
+
+        self._lee = LocalExpEval(L)
+        self.multipole_exp = np.zeros(self.ncomp, dtype=REAL)
+        self.local_dot_coeffs = np.zeros(self.ncomp, dtype=REAL)
 
     def __call__(self, N, P, Q):
 
-        phi = ctypes.c_double(0)
-
         sr = self._nd(N, P, Q)
-        
-        return phi.value
+
+        self.multipole_exp.fill(0)
+        self.local_dot_coeffs.fill(0)
+ 
+        for px in range(N):
+            # multipole expansion for the whole cell
+            self._lee.multipole_exp(
+                spherical(tuple(P[px,:])),
+                Q[px, 0],
+                self.multipole_exp
+            )
+            # dot product for the local expansion for the cell
+            self._lee.dot_vec(
+                spherical(tuple(P[px,:])),
+                Q[px, 0],
+                self.local_dot_coeffs
+            )
+
+        L_tmp = np.zeros_like(self.local_dot_coeffs)
+        self.lrc(self.multipole_exp, L_tmp)
+
+        lr = 0.5 * np.dot(L_tmp, self.local_dot_coeffs)
+
+        return sr + lr
 
 
 

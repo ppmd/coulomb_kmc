@@ -52,8 +52,6 @@ def test_kmc_fmm_dat_setup_prop_mpi_1(param_boundary):
 
     A = state.State()
     A.domain = domain.BaseDomainHalo(extent=(E,E,E))
-
-
     A.domain.boundary_condition = domain.BoundaryTypePeriodic()
     A.npart = N
     A.P = data.PositionDat(ncomp=3)
