@@ -31,6 +31,10 @@ _PROFILE = common.PROFILE
 REAL = ctypes.c_double
 INT64 = ctypes.c_int64
 
+
+from kmc_test_common import *
+
+
 @pytest.mark.parametrize("R", (3, 4, 5))
 def test_kmc_fmm_free_space_1(R):
     """
@@ -43,8 +47,8 @@ def test_kmc_fmm_free_space_1(R):
     eps = 10.**-5
     L = 12
 
-    N = 50
-    E = 4.
+    N = 100
+    E = 2*3.1415
     rc = E/4
 
     A = state.State()
@@ -77,13 +81,20 @@ def test_kmc_fmm_free_space_1(R):
     A.scatter_data_from(0)
     
 
+    FSD = FreeSpaceDirect()
+
     def _direct():
+        
+        _phi_c = FSD(N, ppi, qi)
+        return _phi_c
+
         _phi_direct = 0.0
         # compute phi from image and surrounding 26 cells
         for ix in range(N):
             for jx in range(ix+1, N):
                 rij = np.linalg.norm(ppi[jx,:] - ppi[ix,:])
                 _phi_direct += qi[ix, 0] * qi[jx, 0] / rij
+
         return _phi_direct
     
     phi_direct = _direct()

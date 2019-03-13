@@ -544,7 +544,7 @@ def test_kmc_fmm_realistic_2(param_boundary, R):
 
     A.P[:] = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
     for px in range(N):
-        A.Q[px,0] = (-1.0)**(px+1)
+        A.Q[px,0] = (-10.0)**(px+1)
     bias = np.sum(A.Q[:N:, 0])/N
     A.Q[:, 0] -= bias
     A.sites[:, 0] = rng.randint(0, 8, size=N)
