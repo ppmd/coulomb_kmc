@@ -31,15 +31,17 @@ _PROFILE = common.PROFILE
 REAL = ctypes.c_double
 INT64 = ctypes.c_int64
 
-
-def test_kmc_fmm_free_space_1():
+@pytest.mark.parametrize("R", (3, 4, 5))
+def test_kmc_fmm_free_space_1(R):
     """
     Tests proposed moves one by one against direct calculation.
     """
 
+    if R < 4 and MPISIZE > 8:
+        return
+
     eps = 10.**-5
     L = 12
-    R = 4
 
     N = 50
     E = 4.
@@ -56,7 +58,7 @@ def test_kmc_fmm_free_space_1():
 
     A.crr = data.ScalarArray(ncomp=1)
 
-    rng = np.random.RandomState(seed=1234)
+    rng = np.random.RandomState(seed=9184)
 
     pi = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
     ppi = pi.copy()

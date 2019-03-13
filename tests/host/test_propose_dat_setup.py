@@ -499,6 +499,179 @@ def test_kmc_fmm_realistic_1(param_boundary, R):
 
 
 
+@pytest.mark.skipif("MPISIZE > 1")
+@pytest.mark.parametrize("param_boundary", (
+    ('free_space', True), ('pbc', False)
+))
+@pytest.mark.parametrize("R", (3, 4, 5))
+def test_kmc_fmm_realistic_2(param_boundary, R):
+    
+    L = 12
+    
+    N = 100
+    E = 31.
+    rc = E/4
+    M = 4
+    N_steps = 10
+    
+    tol_ewald = 10.**-3
+    tol_kmc = 10.**-5
+
+
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    A.npart = N
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+    A.prop_masks = data.ParticleDat(ncomp=M, dtype=INT64)
+    A.prop_positions = data.ParticleDat(ncomp=M*3)
+    A.prop_diffs = data.ParticleDat(ncomp=M)
+    A.sites = data.ParticleDat(ncomp=1, dtype=INT64)
+
+    B = state.State()
+    B.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    B.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    B.npart = N
+    B.P = data.PositionDat(ncomp=3)
+    B.Q = data.ParticleDat(ncomp=1)
+    B.F = data.ParticleDat(ncomp=3)
+
+    rng  = np.random.RandomState(seed=817)
+
+    site_max_counts = data.ScalarArray(ncomp=8, dtype=INT64)
+    site_max_counts[:] = rng.randint(0, 10, size=8)
+
+    A.P[:] = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
+    for px in range(N):
+        A.Q[px,0] = (-1.0)**(px+1)
+    bias = np.sum(A.Q[:N:, 0])/N
+    A.Q[:, 0] -= bias
+    A.sites[:, 0] = rng.randint(0, 8, size=N)
+
+    
+    B.P[:] = A.P.data.copy()
+    B.Q[:] = A.Q.data.copy()
+
+    A.scatter_data_from(0)
+    B.scatter_data_from(0)
+
+    # create a kmc instance
+    kmc_fmmA = KMCFMM(positions=A.P, charges=A.Q, 
+        domain=A.domain, r=R, l=L, boundary_condition=param_boundary[0])
+    kmc_fmmA.initialise()
+    
+    # no point using more than 3 levels here
+    fmm = PyFMM(B.domain, N=N, free_space=param_boundary[1], r=3, l=L)
+    
+    def _direct():
+        _phi_direct_fmm = fmm(positions=B.P, charges=B.Q)
+        if param_boundary[0] == 'free_space':
+            _phi_direct = 0.0
+            # compute phi from image and surrounding 26 cells
+            for ix in range(N):
+                phi_part = 0.0
+                for jx in range(ix+1, N):
+                    rij = np.linalg.norm(B.P[jx,:] - B.P[ix,:])
+                    _phi_direct += B.Q[ix, 0] * B.Q[jx, 0] /rij
+
+            rel = abs(_phi_direct)
+            rel = 1.0 if rel == 0 else rel
+            err =  abs(_phi_direct - _phi_direct_fmm) / rel
+            if err > tol_ewald:
+                print(err)
+            #assert err < tol_ewald
+
+        return _phi_direct_fmm
+    
+    
+    def _check_system_energy():
+
+        init_energy = _direct()
+        rel = abs(init_energy)
+        rel = rel if rel > 0 else 1.0
+        err = abs(init_energy - kmc_fmmA.energy) / rel
+
+        assert err < tol_kmc
+
+
+    _check_system_energy()
+    
+    for testx in range(N_steps):
+
+
+        prop = []
+        nmov = 0
+        for px in range(N):
+            tmp = []
+            masks = np.zeros(M)
+            masks[:site_max_counts[A.sites[px,0]]:] = 1
+            masks = rng.permutation(masks)
+
+            for propx in range(M):
+                mask = masks[propx]
+                prop_pos = rng.uniform(low=-0.5*E, high=0.5*E, size=3)
+                A.prop_masks[px, propx] = mask
+                A.prop_positions[px, propx*3:propx*3+3:] = prop_pos
+                
+                if mask > 0:
+                    tmp.append(list(prop_pos))
+                    nmov += 1
+            if len(tmp) > 0:
+                prop.append((px, np.array(tmp)))
+
+
+
+        to_test =  kmc_fmmA.propose_with_dats(site_max_counts, A.sites,
+            A.prop_positions, A.prop_masks, A.prop_diffs, diff=True)
+
+
+        for propi, propx in enumerate(prop):
+            pid = propx[0]
+            movs = propx[1]
+            found_movs = 0
+            for pmi in range(M):
+                if A.prop_masks[pid, pmi] > 0:
+                    mov = A.prop_positions[pid, pmi*3:(pmi+1)*3:]
+
+                    B.P[pid, :] = mov
+                    correct_energy = _direct()
+                    B.P[pid, :] = A.P[pid, :]
+
+
+                    to_test_energy = A.prop_diffs[pid, pmi] + kmc_fmmA.energy
+                    
+                    rel = 1.0 if abs(correct_energy) < 1 else abs(correct_energy)
+                    err = abs(correct_energy - to_test_energy) / rel
+                    
+                    assert err < tol_kmc
+
+                    found_movs += 1
+
+        # pick random accept
+
+        pid = rng.randint(0, A.npart_local-1)
+        pmi = rng.randint(0, M-1)
+        mov = A.prop_positions[pid, pmi*3:(pmi+1)*3:]
+        
+        kmc_fmmA.accept((pid, mov))
+        B.P[pid, :] = mov
+
+
+        _check_system_energy()
+
+
+    # opt.print_profile()
+
+
+    fmm.free()
+    kmc_fmmA.free()
+
+
+
+
+
+
 
 
 

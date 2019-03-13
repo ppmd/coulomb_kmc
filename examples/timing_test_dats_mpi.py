@@ -93,10 +93,10 @@ def time_test_dats_1(N=1000, nprop=2, nsample=20000):
     #print("========== del call in script", N, MPIRANK)
     #MPIBARRIER()
 
-    if MPIRANK == 0:
-        print("returning early"); 
-    kmc_fmm.free()
-    return (0, 1, R, 0, 1)
+    #if MPIRANK == 0:
+    #    print("returning early"); 
+    #kmc_fmm.free()
+    #return (0, 1, R, 0, 1)
 
 
 
