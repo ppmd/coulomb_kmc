@@ -70,7 +70,8 @@ def test_pbc_mpi_1(R):
     B.P = data.PositionDat(ncomp=3)
     B.Q = data.ParticleDat(ncomp=1)
     
-    ND = NearestDirect(E)
+
+    PBCD = PBCDirect(E, A.domain, L)
 
     rng = np.random.RandomState(seed=9184)
 
@@ -98,42 +99,12 @@ def test_pbc_mpi_1(R):
  
 
     kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
-        domain=A.domain, r=R, l=L, boundary_condition='27')
+        domain=A.domain, r=R, l=L, boundary_condition='pbc')
+
     kmc_fmm.initialise()
 
-    fmm = PyFMM(B.domain, N=N, free_space='27', r=3, l=L)
-    
-
     def _direct():
-
-        return ND(N, ppi, qi)
-
-        _phi_direct = 0.0
-        # compute phi from image and surrounding 26 cells
-        for ix in range(N):
-            for jx in range(ix+1, N):
-                rij = np.linalg.norm(ppi[jx,:] - ppi[ix,:])
-                _phi_direct += qi[ix, 0] * qi[jx, 0] / rij
-
-            for jx in range(N):
-                for ox in product(ox_range, ox_range, ox_range):
-                    if ox[0] != 0 or ox[1] != 0 or ox[2] != 0:
-                        rij = np.linalg.norm(ppi[jx,:] - ppi[ix,:] + (E*np.array(ox)))
-                        _phi_direct += 0.5 * qi[ix, 0] * qi[jx, 0] / rij
-
-
-        _phi_fmm = fmm(positions=B.P, charges=B.Q)
-
-        rel = abs(_phi_fmm)
-        rel = 1.0 if rel == 0 else rel
-        err = abs(_phi_fmm - _phi_direct) / rel
-        assert err < 10.**-4
-
-        return _phi_direct
-    
-    phi_direct = _direct()
-
-
+        return PBCD(N, ppi, qi)
 
     for rx in range(200):
     #for rx in range(1):
@@ -175,7 +146,6 @@ def test_pbc_mpi_1(R):
         assert (abs(prop_energy[0][0] - phi_direct)/abs(phi_direct) < eps) or (abs(prop_energy[0][0] - phi_direct) < eps)
 
     kmc_fmm.free()
-    fmm.free()
 
 
 

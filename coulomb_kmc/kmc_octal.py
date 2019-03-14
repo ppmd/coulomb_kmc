@@ -65,6 +65,7 @@ class LocalCellExpansions(LocalOctalBase):
         self._ltp = self.fmm.tree_plain[-1]
 
         self._win = None
+        self._win_ind = None
         
         self._ncomp = (self.fmm.L**2)*2
 
@@ -81,9 +82,15 @@ class LocalCellExpansions(LocalOctalBase):
         data_nbytes = self.fmm.tree_plain[-1][0,0,0,:].nbytes
         self._win = MPI.Win.Create(self._ltp, disp_unit=data_nbytes, comm=self.comm)
 
+        assert self._win_ind == None
+        self._win_ind = self.md.get_win_ind()
+
     def _free_wins(self):
-        self._win.Free()
+        if self._win is not None:
+            self._win.Free()
         self._win = None
+        self.md.free_win_ind()
+        self._win_ind = None
 
     def accept(self, movedata):
         self._accept(movedata)
@@ -364,14 +371,12 @@ class LocalCellExpansions(LocalOctalBase):
     def _get_local_expansions(self):
         # copy/get the local expansions required from the fmm instance
         self._create_wins()
-        self._win_ind = self.md.get_win_ind()
         rank = self.comm.rank
         ncomp = (self.fmm.L ** 2) * 2
 
         remote_cells = []
         
         self.comm.Barrier()
-        self._win_ind.Fence(MPI.MODE_NOPUT)
         
         lsd = self.local_store_dims
         lcl = self.cell_indices
@@ -395,16 +400,16 @@ class LocalCellExpansions(LocalOctalBase):
                 # these get calls are non blocking and are sync'd on the win fence call
 
                 gcellx = self._global_cell_xyz((cellx[2], cellx[1], cellx[0]))
-
+                
+                self._win_ind.Lock(owning_rank, MPI.LOCK_SHARED)
                 self._win_ind.Get(self.remote_inds[local_cellx[0], local_cellx[1], local_cellx[2], :],
                         owning_rank, target=gcellx)
+                self._win_ind.Unlock(owning_rank)
 
                 remote_cells.append((cellx, gcellx, owning_rank, local_cellx))
 
-        self._win_ind.Fence(MPI.MODE_NOPUT)
-        self.comm.Barrier()           
-        self._win.Fence(MPI.MODE_NOPUT)
-        
+        self.comm.Barrier()
+
         # get the remote data
         for cell_tup in remote_cells:
             
@@ -415,12 +420,13 @@ class LocalCellExpansions(LocalOctalBase):
             
             remote_ind = self.remote_inds[local_cellx[0], local_cellx[1], local_cellx[2], 0]
             assert remote_ind > -1
-
+            
+            # TODO THIS IS NOT TECHNICALLY PORTABLE IN MPI STANDARD
+            self._win.Lock(owning_rank, MPI.LOCK_SHARED)
             self._win.Get(
                     self.local_expansions[local_cellx[0], local_cellx[1], local_cellx[2], :],
                     owning_rank, target=remote_ind)
-
-        self._win.Fence(MPI.MODE_NOPUT)
+            self._win.Unlock(owning_rank)
 
         self.comm.Barrier()
         self._free_wins()

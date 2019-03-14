@@ -37,17 +37,19 @@ INT64 = ctypes.c_int64
 MPI = mpi.MPI
 
 
-
 @pytest.mark.parametrize("param_boundary", ('free_space', 'pbc', '27'))
-def test_kmc_fmm_dat_setup_prop_mpi_1(param_boundary):
+@pytest.mark.parametrize("R", (3, 4, 5))
+def test_kmc_fmm_dat_setup_prop_mpi_1(param_boundary, R):
     
     L = 14
-    R = 3
 
     N = 200
     E = 4.
     rc = E/4
     M = 8
+
+    if R < 4 and MPI.COMM_WORLD.size > 8:
+        return
 
 
     A = state.State()

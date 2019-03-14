@@ -177,8 +177,9 @@ class FMMMPIDecomp(LocalOctalBase):
         return self.win_ind
 
     def free_win_ind(self):
-        self.win_ind.Free()
-        self.win_ind = None
+        if self.win_ind is not None:
+            self.win_ind.Free()
+            self.win_ind = None
 
 
     def setup_propose(self, moves):

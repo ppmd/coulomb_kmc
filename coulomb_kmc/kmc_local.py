@@ -92,8 +92,16 @@ class LocalParticleData(LocalOctalBase):
         ls = self.md.local_size
         lo = self.md.local_offset
         els = self.md.entry_local_size
+        
+        rbytes = ls[0]*ls[1]*ls[2]*1*ctypes.sizeof(INT64)
+        self._cell_occupancy_p = MPI.Alloc_mem(rbytes)
 
-        self.cell_occupancy = np.zeros((ls[0], ls[1], ls[2], 1), dtype=INT64)
+        assert self._cell_occupancy_p.nbytes == rbytes
+        pp = ctypes.cast(self._cell_occupancy_p.address, ctypes.POINTER(INT64))
+
+        self.cell_occupancy = np.ctypeslib.as_array(pp, shape=(ls[0], ls[1], ls[2], 1))
+
+
         self.entry_cell_occupancy = np.zeros(
             (els[0], els[1], els[2], 1), dtype=INT64)
         self.entry_cell_occupancy_send = np.zeros(
@@ -140,7 +148,11 @@ class LocalParticleData(LocalOctalBase):
             self._init_cuda_kernels()
         else:
             self._init_host_kernels()
-
+    
+    def __del__(self):
+        del self.cell_occupancy
+        MPI.Free_mem(self._cell_occupancy_p)
+    
 
     def _create_wins(self):
         assert self._occ_win == None
@@ -476,6 +488,8 @@ class LocalParticleData(LocalOctalBase):
         self.ids = ids
         self.group = self.positions.group
         self._win_ind = self.md.get_win_ind()
+
+        self.cell_occupancy.fill(0)
         
         self._create_wins()
 
@@ -498,7 +512,6 @@ class LocalParticleData(LocalOctalBase):
         els = self.md.entry_local_size
 
         self.comm.Barrier()
-        self._win_ind.Fence(MPI.MODE_NOPUT)
         
         for cellx in self._cell_map.keys():
 
@@ -507,8 +520,11 @@ class LocalParticleData(LocalOctalBase):
 
             owning_rank = self.fmm.tree[-1].owners[cellx[0], cellx[1], cellx[2]]
             gcellx = self._global_cell_xyz((cellx[2], cellx[1], cellx[0]))
+
+            self._win_ind.Lock(owning_rank, MPI.LOCK_SHARED)
             self._win_ind.Get(self.remote_inds[lcellx[0], lcellx[1], lcellx[2], :],
                 owning_rank, target=gcellx)
+            self._win_ind.Unlock(owning_rank)
         
         for lcellx in product(
                 range(self.local_store_dims[0]),
@@ -519,13 +535,13 @@ class LocalParticleData(LocalOctalBase):
             owning_rank = self.fmm.tree[-1].owners[gcellx[0], gcellx[1], gcellx[2]]
             gcellx = self._global_cell_xyz((gcellx[2], gcellx[1], gcellx[0]))
 
-
             if owning_rank != self.comm.rank:
+
+                self._win_ind.Lock(owning_rank, MPI.LOCK_SHARED)
                 self._win_ind.Get(self.remote_inds_particles[lcellx[0], lcellx[1], lcellx[2], :],
                     owning_rank, target=gcellx)
+                self._win_ind.Unlock(owning_rank)
 
-
-        self._win_ind.Fence(MPI.MODE_NOPUT)
         self.comm.Barrier()
         self._occ_win.Fence()
         
@@ -588,7 +604,19 @@ class LocalParticleData(LocalOctalBase):
 
                 self._win_global_store.Put(tmp[-1], owning_rank, offset)
 
-            else:
+        self._win_global_store.Fence()
+
+
+        for cellx in self._cell_map.keys():
+
+            owning_rank = self.fmm.tree[-1].owners[cellx[0], cellx[1], cellx[2]]
+            owning_offset = self.entry_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], 0]
+            lcellx = [cx - ox for cx, ox in zip(cellx, elo)]
+            
+            particle_inds = np.array(self._cell_map[cellx])
+            npart = particle_inds.shape[0]
+            
+            if owning_rank == self.comm.rank:
 
                 # case for copying data directly
 
@@ -602,8 +630,6 @@ class LocalParticleData(LocalOctalBase):
                     ids[particle_inds, 0]
 
 
-        self._win_global_store.Fence()
-
 
         # at this point all ranks are holding the particle data for the octal cells they own
 
@@ -615,9 +641,6 @@ class LocalParticleData(LocalOctalBase):
 
         self.comm.Barrier()
 
-
-
-        self._occ_win.Fence(0)
 
         for lcellx in product(
                 range(self.local_store_dims[0]),

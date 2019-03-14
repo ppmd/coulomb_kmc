@@ -747,6 +747,7 @@ class KMCFMM(_PY_KMCFMM):
 
         self.energy = self.fmm(positions=self.positions, charges=self.charges)
         
+
         self._check_ordering_dats()
 
         self.md.initialise(
@@ -768,7 +769,6 @@ class KMCFMM(_PY_KMCFMM):
             charges=self.charges,
             fmm_cells=self.group._fmm_cell
         )
-
 
         self._si.initialise()
 
