@@ -153,6 +153,7 @@ class LocalCellExpansions(LocalOctalBase):
 
 
     def _accept_py(self, movedata):
+        assert self.comm.size == 1
         realdata = movedata[:7].view(dtype=REAL)
 
         old_position = realdata[0:3:]

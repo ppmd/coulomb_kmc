@@ -207,7 +207,6 @@ class FullLongRangeEnergy(ProfInc):
 
 
     def accept(self, movedata):
-        assert self.domain.comm.size == 1, "need to MPI reduce coefficients"
 
         realdata = movedata[:7].view(dtype=REAL)
 
@@ -222,6 +221,7 @@ class FullLongRangeEnergy(ProfInc):
         # modify the dot product coefficients
         self._lee.dot_vec(spherical(tuple(old_position)), -charge, self.local_dot_coeffs)
         self._lee.dot_vec(spherical(tuple(new_position)),  charge, self.local_dot_coeffs)
+
 
     def eval_field(self, points, out):
         npoints = points.shape[0]

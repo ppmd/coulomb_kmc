@@ -704,10 +704,17 @@ class KMCFMM(_PY_KMCFMM):
         # past here all ranks have movedata
 
         assert self.comm.size == 1
-        # update the position assuming one rank for now
-        self.positions[move[0], :] = move[1]
-        # update the fmm cell
-        self.group._fmm_cell[move[0]] = new_fmm_cell
+
+        # Update the fmm cell (must be before the postion update)
+        # as the position modify view could move the data to a new
+        # MPI rank.
+        if move is not None:
+            self.group._fmm_cell[move[0]] = new_fmm_cell
+
+        # update the position
+        with self.positions.modify_view() as pm:
+            if move is not None:
+                pm[move[0], :] = move[1]
 
         self._profile_inc('propose_setup', time() - t0)
         
