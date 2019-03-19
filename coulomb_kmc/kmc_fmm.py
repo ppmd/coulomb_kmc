@@ -660,8 +660,8 @@ class KMCFMM(_PY_KMCFMM):
 
         t0 = time()
         
-        data = np.zeros(10 , dtype=INT64)
-        realdata = data[:7].view(dtype=REAL)
+        movedata = np.zeros(10 , dtype=INT64)
+        realdata = movedata[:7].view(dtype=REAL)
 
         if move is not None:
             old_position = self.positions[move[0], :]
@@ -675,17 +675,33 @@ class KMCFMM(_PY_KMCFMM):
             realdata[0:3:] = old_position
             realdata[3:6:] = new_position
             realdata[6]    = charge
-            data[7]        = gid
-            data[8]        = old_fmm_cell
-            data[9]        = new_fmm_cell
+            movedata[7]    = gid
+            movedata[8]    = old_fmm_cell
+            movedata[9]    = new_fmm_cell
             
             if compute_energy:
                 new_energy = self.propose((move,))[0][0]
                 self.energy = new_energy
 
-
+        
         # with parallel MPI the move needs to be communicated here
-        movedata = data.copy()
+        if self.comm.size > 1:
+            move_key = np.zeros(2, INT64)
+            move_recv = np.zeros_like(move_key)
+            if move is not None:
+                move_key[0] = 1
+                move_key[1] = self.comm.rank
+
+            self.comm.Allreduce(move_key, move_recv)
+            if move_recv[0] > 1:
+                raise RuntimeError("Multiple MPI ranks tried to accept moves.")
+            elif move_recv[0] < 1: 
+                raise RuntimeError("No moves to accept were passed.")
+
+            rank_with_move = move_recv[1]
+            self.comm.Bcast(movedata, rank_with_move)
+
+        # past here all ranks have movedata
 
         assert self.comm.size == 1
         # update the position assuming one rank for now
