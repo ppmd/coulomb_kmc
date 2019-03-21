@@ -112,9 +112,6 @@ class FMMMPIDecomp(LocalOctalBase):
         self.global_cell_size = csc
         self.cell_indices = cell_indices
 
-        print("cell_indices", self.cell_indices)
-        print("lower_allowed", self.lower_allowed)
-        print("upper_allowed", self.upper_allowed)
 
         # host copy of particle data for moves
         self._cuda_h = {}
@@ -231,12 +228,11 @@ class FMMMPIDecomp(LocalOctalBase):
             self._cuda_h['exclusive_sum'][movi, 0] = tmp_index
             tmp_index += num_movs
 
-            print(movs)
             
         self._cuda_h['exclusive_sum'][num_particles, 0] = tmp_index
         
-        for kx in self._cuda_h.keys():
-            print(kx, self._cuda_h[kx])
+        #for kx in self._cuda_h.keys():
+        #    print(kx, self._cuda_h[kx])
 
         if self.cuda_enabled:
             self._copy_to_device()
@@ -643,8 +639,6 @@ class FMMMPIDecomp(LocalOctalBase):
         # if a charge is sat right on the upper boundary we prevent it being binned into a cell
         # that is outside the domain.
         cells[:] = np.clip(cells, 0, ncps-1)
-
-        print("NEW cells xyz", cells)
 
         if self.boundary_condition is BCType.FREE_SPACE:
             return cells, positions, positions

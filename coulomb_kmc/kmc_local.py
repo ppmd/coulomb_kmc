@@ -176,12 +176,6 @@ class LocalParticleData(LocalOctalBase):
         old_fmm_cell = movedata[8]
         new_fmm_cell = movedata[9]
 
-        print("local accept new position", new_position)
-        print("old_position", old_position)
-        print("old_fmm_cell", old_fmm_cell)
-        print("new_fmm_cell", new_fmm_cell)
-
-
         new_cell_tuple = self._cell_lin_to_tuple_no_check(new_fmm_cell)
         old_cell_tuple = self._cell_lin_to_tuple_no_check(old_fmm_cell)
         
@@ -269,8 +263,6 @@ class LocalParticleData(LocalOctalBase):
 
             index = np.where(index)
 
-            print("FMM CELLS", old_fmm_cell, new_fmm_cell)
-            
 
             # this index should be unique, if not something else failed
             if len(index[0]) != 1 and old_fmm_cell != new_fmm_cell:
@@ -886,7 +878,6 @@ class LocalParticleData(LocalOctalBase):
                         const INT64 offset = jc * d_cell_stride;
                         const INT64 offset5 = 5 * jc * d_cell_stride;
                         tmp_div_count += d_cell_occ[jc];
-                        printf("OCC COUNT: cell %d | occ %d\n", jcx, d_cell_occ[jc] );
 
                         // loop over the particles in the j cell
                         for(INT64 jx=0 ; jx<d_cell_occ[jc] ; jx++){{            
@@ -904,7 +895,6 @@ class LocalParticleData(LocalOctalBase):
         # new/old part goes here ->
         common_2 = r"""
 
-                            printf("%f | %d %d | %f %f %f | %f %f %f \n", contrib, jcx, jx, ipx, ipy, ipz, jpx, jpy, jpz);
                         }}
                     }}
                     energy_red *= d_charges[idx];
