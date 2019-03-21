@@ -225,7 +225,7 @@ def test_pbc_mpi_accept_1(R):
     print("NEWLINE")
 
 
-    for rx in range(3):
+    for rx in range(200):
         print(rx, "-" * 60)
 
         gid = rng.randint(0, N-1)

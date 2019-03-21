@@ -652,14 +652,17 @@ class FMMMPIDecomp(LocalOctalBase):
             assert self.boundary_condition in (BCType.PBC, BCType.NEAREST)
 
             offset_cells = cells.copy()
+            offset_cells[:, 0] -= self.local_offset[2]
+            offset_cells[:, 1] -= self.local_offset[1]
+            offset_cells[:, 2] -= self.local_offset[0]
 
             offsets = np.zeros_like(cells)
-            offsets[cells[:, 0] < la[0], 0] =  1
-            offsets[cells[:, 0] > ua[0], 0] = -1
-            offsets[cells[:, 1] < la[1], 1] =  1
-            offsets[cells[:, 1] > ua[1], 1] = -1
-            offsets[cells[:, 2] < la[2], 2] =  1
-            offsets[cells[:, 2] > ua[2], 2] = -1
+            offsets[offset_cells[:, 0] < la[0], 0] =  1
+            offsets[offset_cells[:, 0] > ua[0], 0] = -1
+            offsets[offset_cells[:, 1] < la[1], 1] =  1
+            offsets[offset_cells[:, 1] > ua[1], 1] = -1
+            offsets[offset_cells[:, 2] < la[2], 2] =  1
+            offsets[offset_cells[:, 2] > ua[2], 2] = -1
             
             # map the position
             shift_pos[:, 0] = positions[:, 0] + offsets[:, 0]*extent[0]
@@ -682,6 +685,7 @@ class FMMMPIDecomp(LocalOctalBase):
 
 
             return cells, positions, shift_pos
+            #return cells, positions, shift_pos
 
     
     def _get_cell(self, position):
