@@ -209,6 +209,7 @@ class _PY_KMCFMM(object):
         cycz = (cc - cx) // sl
         cy = cycz % sl
         cz = (cycz - cy) // sl
+        print("_get_fmm_cell_xyz", cx, cy, cz)
         return cx, cy, cz
     
     def _get_lin_cell(self, position):
@@ -228,8 +229,11 @@ class _PY_KMCFMM(object):
         cell = [int(pcx / cwx) for pcx, cwx in zip(spos, cell_widths)]
         # truncate down if too high on axis, if way too high this should 
         # probably throw an error
+        cc = tuple([min(cx, (2**(self.fmm.R -1))-1) for cx in cell ])
 
-        return tuple([min(cx, (2**(self.fmm.R -1))-1) for cx in cell ])
+        print("_get_cell", position, cell, cc)
+
+        return cc
 
 
     def _charge_indirect_energy_new(self, ix, prop_pos):
@@ -685,6 +689,8 @@ class KMCFMM(_PY_KMCFMM):
                 new_energy = self.propose((move,))[0][0]
                 self.energy = new_energy
 
+            print("new_fmm_cell", new_fmm_cell)
+
         
         # with parallel MPI the move needs to be communicated here
         if self.comm.size > 1:
@@ -926,8 +932,8 @@ class KMCFMM(_PY_KMCFMM):
                 - 2.0 * self._tmp_energies[_ENERGY.U0_INDIRECT] \
                 - self._tmp_energies[_ENERGY.U01_SELF]
         
-        #for keyx in self._tmp_energies.keys():
-        #    print(keyx, self._tmp_energies[keyx])
+        for keyx in self._tmp_energies.keys():
+            print(keyx, self._tmp_energies[keyx])
 
 
         prop_energy = []

@@ -176,6 +176,12 @@ class LocalParticleData(LocalOctalBase):
         old_fmm_cell = movedata[8]
         new_fmm_cell = movedata[9]
 
+        print("local accept new position", new_position)
+        print("old_position", old_position)
+        print("old_fmm_cell", old_fmm_cell)
+        print("new_fmm_cell", new_fmm_cell)
+
+
         new_cell_tuple = self._cell_lin_to_tuple_no_check(new_fmm_cell)
         old_cell_tuple = self._cell_lin_to_tuple_no_check(old_fmm_cell)
         
@@ -207,6 +213,7 @@ class LocalParticleData(LocalOctalBase):
                 di, dims in enumerate(self.cell_indices)]
         else:
             raise RuntimeError("Bad/not implemented boundary condition")
+        
 
         # add the new data if the new position is on this rank
         if (len(new_locs[0]) > 0) and (len(new_locs[1]) > 0) and (len(new_locs[2]) > 0):
@@ -225,7 +232,9 @@ class LocalParticleData(LocalOctalBase):
             store_index3 = np.ix_(new_locs[0], new_locs[1], new_locs[2], (old_occupancy,), (3,))
             store_index4 = np.ix_(new_locs[0], new_locs[1], new_locs[2], (old_occupancy,), (4,))
             
-            self.local_cell_occupancy[occ_index] += 1
+            self.local_cell_occupancy[occ_index] = possible_new_max
+            
+
             self.local_particle_store_ids[store_id_index] = gid
             self.local_particle_store[store_index0] = new_position[0]
             self.local_particle_store[store_index1] = new_position[1]
@@ -240,12 +249,15 @@ class LocalParticleData(LocalOctalBase):
             if self.boundary_condition in (BCType.PBC, BCType.NEAREST):
                 extent = self.domain.extent
                 for cellx in product(*new_locs):
+
                     xshift = self.periodic_factors[2][cellx[2]] * extent[0]
                     yshift = self.periodic_factors[1][cellx[1]] * extent[1]
                     zshift = self.periodic_factors[0][cellx[0]] * extent[2]
                     self.local_particle_store[cellx[0], cellx[1], cellx[2], old_occupancy, 0] += xshift
                     self.local_particle_store[cellx[0], cellx[1], cellx[2], old_occupancy, 1] += yshift
                     self.local_particle_store[cellx[0], cellx[1], cellx[2], old_occupancy, 2] += zshift
+
+
 
         # check this rank has relevevant cells for the old location
         if (len(old_locs[0]) > 0) and (len(old_locs[1]) > 0) and (len(old_locs[2]) > 0):
@@ -256,6 +268,8 @@ class LocalParticleData(LocalOctalBase):
                 old_locs[0][0], old_locs[1][0], old_locs[2][0], :old_occupancy] == gid
 
             index = np.where(index)
+
+            print("FMM CELLS", old_fmm_cell, new_fmm_cell)
             
 
             # this index should be unique, if not something else failed
@@ -285,15 +299,15 @@ class LocalParticleData(LocalOctalBase):
             store_indexi4 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (index,), (4,))
 
             # set new occupancy
-            self.local_cell_occupancy[occ_index] -= 1
-
+            self.local_cell_occupancy[occ_index] = old_occupancy - 1
+            
             # get the end data
-            gidi = self.local_particle_store_ids[store_id_index]
-            pos0 = self.local_particle_store[store_index0]
-            pos1 = self.local_particle_store[store_index1]
-            pos2 = self.local_particle_store[store_index2]
-            char = self.local_particle_store[store_index3]
-            gido = self.local_particle_store[store_index4]
+            gidi = self.local_particle_store_ids[store_id_index].copy()
+            pos0 = self.local_particle_store[store_index0].copy()
+            pos1 = self.local_particle_store[store_index1].copy()
+            pos2 = self.local_particle_store[store_index2].copy()
+            char = self.local_particle_store[store_index3].copy()
+            gido = self.local_particle_store[store_index4].copy()
             
             # shuffle the data down
             self.local_particle_store_ids[store_id_indexi] = gidi 
@@ -302,6 +316,7 @@ class LocalParticleData(LocalOctalBase):
             self.local_particle_store[store_indexi2] = pos2
             self.local_particle_store[store_indexi3] = char
             self.local_particle_store[store_indexi4] = gido
+
 
 
     def propose(self, total_movs, num_particles, host_data, cuda_data):
@@ -871,6 +886,7 @@ class LocalParticleData(LocalOctalBase):
                         const INT64 offset = jc * d_cell_stride;
                         const INT64 offset5 = 5 * jc * d_cell_stride;
                         tmp_div_count += d_cell_occ[jc];
+                        printf("OCC COUNT: cell %d | occ %d\n", jcx, d_cell_occ[jc] );
 
                         // loop over the particles in the j cell
                         for(INT64 jx=0 ; jx<d_cell_occ[jc] ; jx++){{            
@@ -883,9 +899,12 @@ class LocalParticleData(LocalOctalBase):
                             const REAL dz = ipz - jpz;
                             const REAL r2 = dx*dx + dy*dy + dz*dz;
                             const REAL contrib = jch / sqrt(r2);
+
         """.format()
         # new/old part goes here ->
         common_2 = r"""
+
+                            printf("%f | %d %d | %f %f %f | %f %f %f \n", contrib, jcx, jx, ipx, ipy, ipz, jpx, jpy, jpz);
                         }}
                     }}
                     energy_red *= d_charges[idx];

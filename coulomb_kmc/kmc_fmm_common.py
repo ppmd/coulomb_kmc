@@ -20,6 +20,8 @@ class LocalOctalBase(ProfInc):
         cc = cell_map[ix][0]
         cx, cy, cz = self._cell_lin_to_tuple(cc)
 
+        print("old cell xyz", cx, cy, cz) 
+
         if not slow_to_fast:
             return cx, cy, cz
         else:

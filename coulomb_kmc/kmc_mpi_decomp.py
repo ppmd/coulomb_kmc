@@ -112,6 +112,10 @@ class FMMMPIDecomp(LocalOctalBase):
         self.global_cell_size = csc
         self.cell_indices = cell_indices
 
+        print("cell_indices", self.cell_indices)
+        print("lower_allowed", self.lower_allowed)
+        print("upper_allowed", self.upper_allowed)
+
         # host copy of particle data for moves
         self._cuda_h = {}
         self._cuda_h['new_ids']           = np.zeros((1, 1), dtype=INT64)
@@ -226,11 +230,13 @@ class FMMMPIDecomp(LocalOctalBase):
 
             self._cuda_h['exclusive_sum'][movi, 0] = tmp_index
             tmp_index += num_movs
+
+            print(movs)
             
         self._cuda_h['exclusive_sum'][num_particles, 0] = tmp_index
-
-        #for kx in self._cuda_h.keys():
-        #    print(kx, self._cuda_h[kx])
+        
+        for kx in self._cuda_h.keys():
+            print(kx, self._cuda_h[kx])
 
         if self.cuda_enabled:
             self._copy_to_device()
@@ -638,10 +644,14 @@ class FMMMPIDecomp(LocalOctalBase):
         # that is outside the domain.
         cells[:] = np.clip(cells, 0, ncps-1)
 
+        print("NEW cells xyz", cells)
+
         if self.boundary_condition is BCType.FREE_SPACE:
             return cells, positions, positions
         else:
             assert self.boundary_condition in (BCType.PBC, BCType.NEAREST)
+
+            offset_cells = cells.copy()
 
             offsets = np.zeros_like(cells)
             offsets[cells[:, 0] < la[0], 0] =  1
@@ -650,23 +660,26 @@ class FMMMPIDecomp(LocalOctalBase):
             offsets[cells[:, 1] > ua[1], 1] = -1
             offsets[cells[:, 2] < la[2], 2] =  1
             offsets[cells[:, 2] > ua[2], 2] = -1
-
+            
+            # map the position
             shift_pos[:, 0] = positions[:, 0] + offsets[:, 0]*extent[0]
             shift_pos[:, 1] = positions[:, 1] + offsets[:, 1]*extent[1]
             shift_pos[:, 2] = positions[:, 2] + offsets[:, 2]*extent[2]
+            
+            # map the fmm cell 
+            for dx in range(3):
+                cells[:, dx] += offsets[:, dx] * ncps
 
-            cell_bin[:, 0] = shift_pos[:, 0] / cell_widths[0]
-            cell_bin[:, 2] = shift_pos[:, 2] / cell_widths[1]
-            cell_bin[:, 1] = shift_pos[:, 1] / cell_widths[2]
-
+            
+            # check the new fmm cells are valid
             offsets[cells[:, 0] < la[0], 0] =  1
             offsets[cells[:, 0] > ua[0], 0] =  1
             offsets[cells[:, 1] < la[1], 1] =  1
             offsets[cells[:, 1] > ua[1], 1] =  1
             offsets[cells[:, 2] < la[2], 2] =  1
             offsets[cells[:, 2] > ua[2], 2] =  1
-
             assert not np.all(offsets)
+
 
             return cells, positions, shift_pos
 

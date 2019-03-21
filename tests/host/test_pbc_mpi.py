@@ -222,8 +222,12 @@ def test_pbc_mpi_accept_1(R):
     def _direct():
         return PBCD(N, ppi, qi)
 
+    print("NEWLINE")
 
-    for rx in range(200):
+
+    for rx in range(3):
+        print(rx, "-" * 60)
+
         gid = rng.randint(0, N-1)
         pid = np.where(A.GID.view == gid)
 
