@@ -316,8 +316,8 @@ def test_kmc_fmm_nearest_27_1():
     mgid = np.where(B.GID[:] == mid)[0][0]
     assert mgid == 2
 
-    old_pos = B.P[pid, :]
-    old_mpos = B.P[mgid, :]
+    old_pos = B.P[pid, :].copy()
+    old_mpos = B.P[mgid, :].copy()
 
     print("-"*60)
     print(pid, mgid)
@@ -366,8 +366,8 @@ def test_kmc_fmm_nearest_27_1():
     print("ERR = attempt - phi_1 = ", abs(attempt - phi_1))
 
 
-    B.P[pid, :] = old_pos
-    B.P[mgid, :] = old_mpos
+    B.P[pid, :] = old_pos.copy()
+    B.P[mgid, :] = old_mpos.copy()
 
     for rx in range(N):
         pid = rng.randint(0, N-1)
@@ -384,8 +384,8 @@ def test_kmc_fmm_nearest_27_1():
         bbp  = _b_bp((pos,     mpos    ), (old_pos, old_mpos))
         ss   = 2*bbp - bpbp - bb
 
-        old_pos = B.P[pid, :]
-        old_mpos = B.P[mgid, :]
+        old_pos = B.P[pid, :].copy()
+        old_mpos = B.P[mgid, :].copy()
         B.P[pid, :] = pos
         B.P[mgid, :] = mpos
 
@@ -536,8 +536,8 @@ def test_kmc_fmm_nearest_27_1(direction):
         pos = _make_prop_pos()
         mpos = np.array(_mirror_pos(pos))
 
-        old_pos = B.P[pid, :]
-        old_mpos = B.P[mgid, :]
+        old_pos = B.P[pid, :].copy()
+        old_mpos = B.P[mgid, :].copy()
         B.P[pid, :] = pos
         B.P[mgid, :] = mpos
 

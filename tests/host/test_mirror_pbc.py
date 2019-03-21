@@ -171,8 +171,8 @@ def test_kmc_fmm_pbc_1(direction):
                 pos = movs[mxi, :]
                 mpos = np.array(_mirror_pos(pos))
 
-                old_pos = B.P[pid, :]
-                old_mpos = B.P[mgid, :]
+                old_pos = B.P[pid, :].copy()
+                old_mpos = B.P[mgid, :].copy()
                 B.P[pid, :] = pos
                 B.P[mgid, :] = mpos
                 correct = fmm(B.P, B.Q)
@@ -317,8 +317,8 @@ def test_kmc_fmm_pbc_2(direction):
         pos = _make_prop_pos()
         mpos = np.array(_mirror_pos(pos))
 
-        old_pos = B.P[pid, :]
-        old_mpos = B.P[mgid, :]
+        old_pos = B.P[pid, :].copy()
+        old_mpos = B.P[mgid, :].copy()
 
         B.P[pid, :] = pos
         B.P[mgid, :] = mpos

@@ -433,12 +433,12 @@ def test_kmc_local_collection_3():
 
 
 
-def test_kmc_local_collection_4():
+@pytest.mark.parametrize("R", (3, 4, 5))
+def test_kmc_local_collection_4(R):
     # tests the redistribution of particle data post collection
     eps = 10.**-5
     L = 12
     ncomp = L*L*2
-    R = 4
     E = 4.
 
     rng = np.random.RandomState(seed=8657)

@@ -24,8 +24,8 @@ class LocalOctalBase(ProfInc):
             return cx, cy, cz
         else:
             return cz, cy, cx
-    
-    def _cell_lin_to_tuple(self, cc):
+ 
+    def _cell_lin_to_tuple_no_check(self, cc):
 
         R = self.fmm.R
         sl = 2 ** (R - 1)
@@ -33,7 +33,11 @@ class LocalOctalBase(ProfInc):
         cycz = (cc - cx) // sl
         cy = cycz % sl
         cz = (cycz - cy) // sl
-        
+        return cx, cy, cz
+
+    def _cell_lin_to_tuple(self, cc):
+
+        cx, cy, cz = self._cell_lin_to_tuple_no_check(cc)
         els = self.entry_local_size
         elo = self.entry_local_offset
 

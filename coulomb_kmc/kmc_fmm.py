@@ -214,6 +214,7 @@ class _PY_KMCFMM(object):
     def _get_lin_cell(self, position):
         cell_tuple = self._get_cell(position)
         cc = 2**(self.fmm.R -1)
+
         return cell_tuple[0] + cc * (cell_tuple[1] + cc * cell_tuple[2])
 
     def _get_cell(self, position):
@@ -227,7 +228,8 @@ class _PY_KMCFMM(object):
         cell = [int(pcx / cwx) for pcx, cwx in zip(spos, cell_widths)]
         # truncate down if too high on axis, if way too high this should 
         # probably throw an error
-        return tuple([min(cx, 2**(self.fmm.R -1)) for cx in cell ])
+
+        return tuple([min(cx, (2**(self.fmm.R -1))-1) for cx in cell ])
 
 
     def _charge_indirect_energy_new(self, ix, prop_pos):
@@ -671,7 +673,7 @@ class KMCFMM(_PY_KMCFMM):
             gid = self.md.ids[move[0], 0]
             old_fmm_cell = self.group._fmm_cell[move[0], 0]           
             new_fmm_cell = self._get_lin_cell(move[1])
-
+            
             realdata[0:3:] = old_position
             realdata[3:6:] = new_position
             realdata[6]    = charge
@@ -686,28 +688,53 @@ class KMCFMM(_PY_KMCFMM):
         
         # with parallel MPI the move needs to be communicated here
         if self.comm.size > 1:
-            move_key = np.zeros(2, INT64)
+            move_key = np.zeros(3 + 10, INT64)
             move_recv = np.zeros_like(move_key)
             if move is not None:
                 move_key[0] = 1
                 move_key[1] = self.comm.rank
 
+                # pack the new energy to pass to other ranks
+                assert ctypes.sizeof(REAL) == ctypes.sizeof(INT64)
+                move_key[2:3:].view(dtype=REAL)[0] = self.energy
+
+                # add in the move data
+                move_key[3:13:] = movedata.copy()
+
+            
+            # pass data to other ranks
             self.comm.Allreduce(move_key, move_recv)
+
+            # determine that only one rank accepts a move
             if move_recv[0] > 1:
                 raise RuntimeError("Multiple MPI ranks tried to accept moves.")
             elif move_recv[0] < 1: 
                 raise RuntimeError("No moves to accept were passed.")
 
-            rank_with_move = move_recv[1]
-            self.comm.Bcast(movedata, rank_with_move)
+            #rank_with_move = move_recv[1]
+            #self.comm.Bcast(movedata, rank_with_move)
+
+            movedata = move_recv[3:13:].copy()
+            realdata = movedata[:7].view(dtype=REAL)
+
+            # if this rank packed the data, check the recv is correct
+            if move is not None:
+                err = np.linalg.norm(movedata - move_key[3:13:], np.inf)
+                assert err < 10.**-16
+            
+            # set the new energy
+            bcast_energy = move_recv[2:3:].view(REAL)[0]
+            if move is not None:
+                assert abs(bcast_energy - new_energy) < 10.**-15
+            self.energy = bcast_energy
+
 
         # past here all ranks have movedata
-
-        assert self.comm.size == 1
 
         # Update the fmm cell (must be before the postion update)
         # as the position modify view could move the data to a new
         # MPI rank.
+        
         if move is not None:
             self.group._fmm_cell[move[0]] = new_fmm_cell
 
@@ -715,6 +742,8 @@ class KMCFMM(_PY_KMCFMM):
         with self.positions.modify_view() as pm:
             if move is not None:
                 pm[move[0], :] = move[1]
+
+
 
         self._profile_inc('propose_setup', time() - t0)
         
@@ -734,6 +763,10 @@ class KMCFMM(_PY_KMCFMM):
             t0 = time()
             self._lr_energy.accept(movedata)
             self._profile_inc('lr_energy_accept', time() - t0)
+
+
+
+
 
 
     def _check_ordering_dats(self):
@@ -766,11 +799,10 @@ class KMCFMM(_PY_KMCFMM):
 
     def initialise(self):
         t0 = time()
-        
+
 
         self.energy = self.fmm(positions=self.positions, charges=self.charges)
         
-
         self._check_ordering_dats()
 
         self.md.initialise(
@@ -894,11 +926,8 @@ class KMCFMM(_PY_KMCFMM):
                 - 2.0 * self._tmp_energies[_ENERGY.U0_INDIRECT] \
                 - self._tmp_energies[_ENERGY.U01_SELF]
         
-        
         #for keyx in self._tmp_energies.keys():
         #    print(keyx, self._tmp_energies[keyx])
-
-
 
 
         prop_energy = []

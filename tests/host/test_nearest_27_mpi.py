@@ -151,7 +151,7 @@ def test_nearest_27_mpi_1(R):
         
         #print(pid, gid, pos, MPIRANK)
 
-        old_pos = ppi[gid, :]
+        old_pos = ppi[gid, :].copy()
         ppi[gid, :] = pos
 
 

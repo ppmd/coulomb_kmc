@@ -107,8 +107,8 @@ class LocalCellExpansions(LocalOctalBase):
         new_fmm_cell = movedata[9]
         
         # these are xyz
-        new_cell_tuple = self._cell_lin_to_tuple(new_fmm_cell)
-        old_cell_tuple = self._cell_lin_to_tuple(old_fmm_cell)
+        new_cell_tuple = self._cell_lin_to_tuple_no_check(new_fmm_cell)
+        old_cell_tuple = self._cell_lin_to_tuple_no_check(old_fmm_cell)
 
         lsd = self.local_store_dims
         
@@ -163,8 +163,8 @@ class LocalCellExpansions(LocalOctalBase):
         old_fmm_cell = movedata[8]
         new_fmm_cell = movedata[9]
 
-        new_cell_tuple = self._cell_lin_to_tuple(new_fmm_cell)
-        old_cell_tuple = self._cell_lin_to_tuple(old_fmm_cell)
+        new_cell_tuple = self._cell_lin_to_tuple_no_check(new_fmm_cell)
+        old_cell_tuple = self._cell_lin_to_tuple_no_check(old_fmm_cell)
         
         old_tuple_s2f = tuple(reversed(old_cell_tuple))
         new_tuple_s2f = tuple(reversed(new_cell_tuple))

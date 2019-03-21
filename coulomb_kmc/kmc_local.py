@@ -68,6 +68,7 @@ _offsets = (
     (  1,  1,  1),
 )
 
+
 class LocalParticleData(LocalOctalBase):
 
     def __init__(self, mpi_decomp):
@@ -175,8 +176,8 @@ class LocalParticleData(LocalOctalBase):
         old_fmm_cell = movedata[8]
         new_fmm_cell = movedata[9]
 
-        new_cell_tuple = self._cell_lin_to_tuple(new_fmm_cell)
-        old_cell_tuple = self._cell_lin_to_tuple(old_fmm_cell)
+        new_cell_tuple = self._cell_lin_to_tuple_no_check(new_fmm_cell)
+        old_cell_tuple = self._cell_lin_to_tuple_no_check(old_fmm_cell)
         
         old_tuple_s2f = tuple(reversed(old_cell_tuple))
         new_tuple_s2f = tuple(reversed(new_cell_tuple))
@@ -255,6 +256,7 @@ class LocalParticleData(LocalOctalBase):
                 old_locs[0][0], old_locs[1][0], old_locs[2][0], :old_occupancy] == gid
 
             index = np.where(index)
+            
 
             # this index should be unique, if not something else failed
             if len(index[0]) != 1 and old_fmm_cell != new_fmm_cell:
@@ -587,19 +589,21 @@ class LocalParticleData(LocalOctalBase):
         for cellx in self._cell_map.keys():
 
             owning_rank = self.fmm.tree[-1].owners[cellx[0], cellx[1], cellx[2]]
-            owning_offset = self.entry_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], 0]
-            lcellx = [cx - ox for cx, ox in zip(cellx, elo)]
-            
-            particle_inds = np.array(self._cell_map[cellx])
-            npart = particle_inds.shape[0]
-            
+
             if owning_rank != self.comm.rank:
+
+                lcellx = [cx - ox for cx, ox in zip(cellx, elo)]
+                owning_offset = self.entry_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], 0]
+                
+                particle_inds = np.array(self._cell_map[cellx])
+                npart = particle_inds.shape[0]
+
                 # case for putting data
                 tmp.append(np.zeros((npart, 5), dtype=REAL))
                 # copy positons, charges, ids
-                tmp[-1][:,0:3:] = positions[particle_inds, :]
-                tmp[-1][:,3] = charges[particle_inds, 0]
-                tmp[-1][:,4].view(dtype=INT64)[:] = ids[particle_inds, 0]
+                tmp[-1][:,0:3:] = positions[particle_inds, :].copy()
+                tmp[-1][:,3] = charges[particle_inds, 0].copy()
+                tmp[-1][:,4].view(dtype=INT64)[:] = ids[particle_inds, 0].copy()
                 
                 # compute offset in remote buffer
                 offset = self.remote_inds[lcellx[0], lcellx[1], lcellx[2], 0]
@@ -609,18 +613,18 @@ class LocalParticleData(LocalOctalBase):
                 self._win_global_store.Put(tmp[-1], owning_rank, offset)
 
         self._win_global_store.Fence()
-
-
+        
         for cellx in self._cell_map.keys():
 
             owning_rank = self.fmm.tree[-1].owners[cellx[0], cellx[1], cellx[2]]
-            owning_offset = self.entry_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], 0]
-            lcellx = [cx - ox for cx, ox in zip(cellx, elo)]
-            
-            particle_inds = np.array(self._cell_map[cellx])
-            npart = particle_inds.shape[0]
             
             if owning_rank == self.comm.rank:
+
+                lcellx = [cx - ox for cx, ox in zip(cellx, elo)]
+                owning_offset = self.entry_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], 0]
+                
+                particle_inds = np.array(self._cell_map[cellx])
+                npart = particle_inds.shape[0]
 
                 # case for copying data directly
 
@@ -628,20 +632,14 @@ class LocalParticleData(LocalOctalBase):
                 e = s + npart
 
                 llcellx = [cx - ox for cx, ox in zip(cellx, lo)]
-                self._owner_store[llcellx[0], llcellx[1], llcellx[2], s:e:, 0:3: ] = positions[particle_inds, :]
-                self._owner_store[llcellx[0], llcellx[1], llcellx[2], s:e:, 3 ] = charges[particle_inds, 0]
+                self._owner_store[llcellx[0], llcellx[1], llcellx[2], s:e:, 0:3: ] = positions[particle_inds, :].copy()
+                self._owner_store[llcellx[0], llcellx[1], llcellx[2], s:e:, 3 ] = charges[particle_inds, 0].copy()
                 self._owner_store[llcellx[0], llcellx[1], llcellx[2], s:e:, 4 ].view(dtype=INT64)[:] = \
-                    ids[particle_inds, 0]
-
+                    ids[particle_inds, 0].copy()
 
 
         # at this point all ranks are holding the particle data for the octal cells they own
-
-
-
-
         # loop over required cells and copy particle data
- 
 
         self.comm.Barrier()
 
@@ -659,10 +657,10 @@ class LocalParticleData(LocalOctalBase):
                 # do direct copy
                 llcellx = [cx - ox for cx, ox in zip(gcellx, lo)]
                 self.local_particle_store[lcellx[0], lcellx[1], lcellx[2], : , : ] = \
-                        self._owner_store[llcellx[0], llcellx[1], llcellx[2], :, : ]
+                        self._owner_store[llcellx[0], llcellx[1], llcellx[2], :, : ].copy()
 
                 self.local_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], :] = \
-                    self.cell_occupancy[llcellx[0], llcellx[1], llcellx[2], 0]
+                    self.cell_occupancy[llcellx[0], llcellx[1], llcellx[2], 0].copy()
 
             else:
                 # case to issue MPI_Get
@@ -691,6 +689,7 @@ class LocalParticleData(LocalOctalBase):
 
         self._free_wins()
         self.md.free_win_ind()
+
 
         # apply periodic boundary conditions
         for lcellx in product(
@@ -721,6 +720,7 @@ class LocalParticleData(LocalOctalBase):
             self._cuda_d_pdata = gpuarray.to_gpu(self.local_particle_store)
         else:
             self.local_particle_store_ids[:,:,:,:] = np.copy(self.local_particle_store[:,:,:,:,4].view(dtype=INT64))
+
 
     def _init_cuda_kernels(self):
         assert self.cuda_enabled

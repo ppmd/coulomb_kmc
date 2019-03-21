@@ -114,7 +114,7 @@ def test_kmc_fmm_nearest_27_1():
         pid = rng.randint(0, N-1)
         pos = rng.uniform(low=-0.5*E, high=0.5*E, size=3)
 
-        old_pos = B.P[pid, :]
+        old_pos = B.P[pid, :].copy()
         B.P[pid, :] = pos
         phi_direct = _direct()
         B.P[pid, :] = old_pos 

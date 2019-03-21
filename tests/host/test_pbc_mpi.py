@@ -37,7 +37,7 @@ ox_range = tuple(range(-1, 2))
 from kmc_test_common import *
 
 @pytest.mark.parametrize("R", (3, 4, 5))
-def test_pbc_mpi_1(R):
+def test_pbc_mpi_propose_1(R):
     """
     Tests proposed moves one by one against direct calculation.
     """
@@ -122,7 +122,7 @@ def test_pbc_mpi_1(R):
         
         #print(pid, gid, pos, MPIRANK)
 
-        old_pos = ppi[gid, :]
+        old_pos = ppi[gid, :].copy()
         ppi[gid, :] = pos
 
 
@@ -148,7 +148,136 @@ def test_pbc_mpi_1(R):
     kmc_fmm.free()
 
 
+@pytest.mark.parametrize("R", (3, 4, 5))
+def test_pbc_mpi_accept_1(R):
+    """
+    Tests proposed moves one by one against direct calculation.
+    """
 
+    if R < 4 and MPISIZE > 8:
+        return
+
+    eps = 10.**-4
+
+    L = 12
+
+    N = 54
+    E = 2*3.1416
+    rc = E/4
+
+    max_move = E / 4
+    max_move_fixed = 0.9999 * 2*3.1416 / 4
+    assert max_move_fixed <= max_move
+
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    A.npart = N
+
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+    A.GID = data.ParticleDat(ncomp=1, dtype=INT64)
+
+
+    B = state.State()
+    B.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    B.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    B.npart = N
+    B.P = data.PositionDat(ncomp=3)
+    B.Q = data.ParticleDat(ncomp=1)
+    
+
+    PBCD = PBCDirect(E, A.domain, L)
+
+    rng = np.random.RandomState(seed=9184)
+
+    pi = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
+    ppi = pi.copy()
+
+    qi = np.zeros((N, 1))
+    for px in range(N):
+        qi[px,0] = (-1.0)**(px+1)
+    #bias = np.sum(qi[:N:, 0])/N
+    #qi -= bias
+    
+    qi[0,0] = 0
+
+    A.P[:] = pi
+    A.Q[:] = qi
+    A.GID[:, 0] = np.arange(N)
+
+    B.P[:] = A.P[:]
+    B.Q[:] = A.Q[:]
+
+
+    A.scatter_data_from(0)
+    B.scatter_data_from(0)
+ 
+
+    kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
+        domain=A.domain, r=R, l=L, boundary_condition='pbc', max_move=max_move)
+
+    kmc_fmm.initialise()
+
+    def _direct():
+        return PBCD(N, ppi, qi)
+
+
+    for rx in range(200):
+        gid = rng.randint(0, N-1)
+        pid = np.where(A.GID.view == gid)
+
+        offset_vector = rng.uniform(low=-1.0, high=1.0, size=3)
+        offset_vector /= np.linalg.norm(offset_vector)
+        assert abs(np.linalg.norm(offset_vector) - 1.0) < 10.**-15
+        offset_size = rng.uniform(low=0.01 * max_move_fixed, high=0.99*max_move_fixed)
+        offset_vector *= offset_size
+        
+        pos = ppi[gid, :].copy() + offset_vector
+
+
+        for dimx in range(3):
+            pos[dimx] = np.fmod(pos[dimx] + 1.5*E, E) - 0.5*E
+
+
+        if len(pid[0]) > 0:
+            pid = pid[0][0]
+            ctrl_rank = True
+        else:
+            ctrl_rank = False
+
+        old_pos = ppi[gid, :].copy()
+        ppi[gid, :] = pos
+        phi_direct = _direct()
+        ppi[gid, :] = old_pos
+
+        rel = abs(phi_direct)
+        rel = 1.0 if rel == 0 else rel
+        
+        if ctrl_rank:
+            
+            move = (pid, pos)
+            #if A.GID[pid, 0] == 26:
+            prop_energy = kmc_fmm.propose(
+                moves=(move,)
+            )
+            
+            assert abs(phi_direct) > 0
+            assert (abs(prop_energy[0][0] - phi_direct)/rel < eps) or (abs(prop_energy[0][0] - phi_direct) < eps)
+
+        else:
+            move = None
+        
+
+        kmc_fmm.accept(move)
+        
+        assert (abs(kmc_fmm.energy - phi_direct)/rel < eps) or (abs(kmc_fmm.energy - phi_direct) < eps)
+        
+        old_pos = ppi[gid, :].copy()
+        ppi[gid, :] = pos       
+
+
+    kmc_fmm.free()
 
 
 

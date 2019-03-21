@@ -181,7 +181,6 @@ class FMMMPIDecomp(LocalOctalBase):
             self.win_ind.Free()
             self.win_ind = None
 
-
     def setup_propose(self, moves):
         total_movs = 0
         for movx in moves:
@@ -196,15 +195,20 @@ class FMMMPIDecomp(LocalOctalBase):
         tmp_index = 0
         for movi, movx in enumerate(moves):
             movs = np.atleast_2d(movx[1])
+            
             num_movs = movs.shape[0]
             pid = movx[0]
             
             ts = tmp_index
             te = ts + num_movs
+
+            old_position = self.positions.data[pid, :]
+            self._check_move_valid(old_position, movs)
+
             self._cuda_h['new_ids'][ts:te:, 0]       = self.ids.data[pid, 0]
             self._cuda_h['new_charges'][ts:te:, :]   = self.charges.data[pid, 0]
 
-            self._cuda_h['old_positions'][movi, :] = self.positions.data[pid, :]
+            self._cuda_h['old_positions'][movi, :] = old_position
             self._cuda_h['old_charges'][movi, :]   = self.charges.data[pid, 0]
             self._cuda_h['old_fmm_cells'][movi, 0] = self._gcell_to_lcell(
                 self._get_fmm_cell(pid, self.fmm_cells)
@@ -213,6 +217,7 @@ class FMMMPIDecomp(LocalOctalBase):
             self._cuda_h['old_ids'][movi, 0]       = self.ids.data[pid, 0]
 
             cells, positions, shift_pos = self._vector_get_cell(movs)
+
             s = tmp_index
             e = tmp_index + num_movs
             self._cuda_h['new_positions'][s:e:, :] = positions
@@ -224,12 +229,31 @@ class FMMMPIDecomp(LocalOctalBase):
             
         self._cuda_h['exclusive_sum'][num_particles, 0] = tmp_index
 
+        #for kx in self._cuda_h.keys():
+        #    print(kx, self._cuda_h[kx])
+
         if self.cuda_enabled:
             self._copy_to_device()
 
-        
         return total_movs, num_particles, self._cuda_h, self._cuda_d
+    
+    def _check_move_valid(self, old_pos, new_pos):
 
+        e = self.domain.extent
+
+        for dimx in range(3):
+            if np.any(new_pos[:, dimx] < -0.5 * e[dimx]): raise RuntimeError('Proposed position is outside simulation domain.')
+            if np.any(new_pos[:, dimx] >  0.5 * e[dimx]): raise RuntimeError('Proposed position is outside simulation domain.')
+
+        for mx in new_pos:
+            rvec = mx - old_pos
+            if self.boundary_condition in (BCType.PBC, BCType.NEAREST):
+                for dimx in range(3):
+                    if rvec[dimx] < (e[dimx] * (-0.5)): rvec[dimx] += e[dimx]
+                    if rvec[dimx] > (e[dimx] *  (0.5)): rvec[dimx] -= e[dimx]
+            rvec = np.abs(rvec)
+            for dimx in range(3):
+                if rvec[dimx] > self.max_move: raise RuntimeError('Proposed move violates max_move.')
 
 
     def _create_dat_lib(self):
@@ -241,6 +265,7 @@ class FMMMPIDecomp(LocalOctalBase):
             shifted_position[1] = position[1];
             shifted_position[2] = position[2];
             '''
+            check_mod = r''
         else:
             assert self.boundary_condition in (BCType.PBC, BCType.NEAREST)
 
@@ -251,15 +276,23 @@ class FMMMPIDecomp(LocalOctalBase):
             offsets[1] = (cell[1] < lower_allowed[1]) ? 1.0 : 0.0;
             offsets[2] = (cell[2] < lower_allowed[2]) ? 1.0 : 0.0;
 
-            if (cell[0] > upper_allowed[0]) {{ offsets[0] = -1.0; }};
-            if (cell[1] > upper_allowed[1]) {{ offsets[1] = -1.0; }};
-            if (cell[2] > upper_allowed[2]) {{ offsets[2] = -1.0; }};
+            if (cell[0] > upper_allowed[0]) { offsets[0] = -1.0; };
+            if (cell[1] > upper_allowed[1]) { offsets[1] = -1.0; };
+            if (cell[2] > upper_allowed[2]) { offsets[2] = -1.0; };
 
             shifted_position[0] = position[0] + offsets[0] * extent[0];
             shifted_position[1] = position[1] + offsets[1] * extent[1];
             shifted_position[2] = position[2] + offsets[2] * extent[2];
             '''
 
+            check_mod = r'''
+            if (d0 < (0.5*extent[0])) { d0 += extent[0]; }
+            if (d1 < (0.5*extent[1])) { d1 += extent[1]; }
+            if (d2 < (0.5*extent[2])) { d2 += extent[2]; }
+            if (d0 > (0.5*extent[0])) { d0 -= extent[0]; }
+            if (d1 > (0.5*extent[1])) { d1 -= extent[1]; }
+            if (d2 > (0.5*extent[2])) { d2 -= extent[2]; }
+            '''
 
 
         src = r'''
@@ -288,6 +321,10 @@ class FMMMPIDecomp(LocalOctalBase):
             cell[2] = (INT64) (shifted_position[2] * w2);
 
             {CELL_GEN}
+
+            if (cell[0] >= fmm_cells_per_side[0]) {{ cell[0] = fmm_cells_per_side[0] - 1; }}
+            if (cell[1] >= fmm_cells_per_side[1]) {{ cell[1] = fmm_cells_per_side[1] - 1; }}
+            if (cell[2] >= fmm_cells_per_side[2]) {{ cell[2] = fmm_cells_per_side[2] - 1; }}
 
             return;
 
@@ -319,6 +356,32 @@ class FMMMPIDecomp(LocalOctalBase):
             const INT64 c1 = cell[1] + cell_data_offset[1];
             const INT64 c2 = cell[2] + cell_data_offset[0];
             return c0 + local_store_dims[2] * ( c1 + local_store_dims[1] * c2 );
+        }}
+
+        
+        static inline void check_move(
+            const REAL * RESTRICT extent,
+            const REAL * RESTRICT p,
+            const REAL * RESTRICT pp,
+            int * RESTRICT err
+        ){{
+            
+            if (pp[0] < -0.5 * extent[0]) {{ err[0]++; printf("ERROR: Proposed position is outside domain. %f %f %f -> %f %f %f\n", p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
+            if (pp[1] < -0.5 * extent[1]) {{ err[0]++; printf("ERROR: Proposed position is outside domain. %f %f %f -> %f %f %f\n", p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
+            if (pp[2] < -0.5 * extent[2]) {{ err[0]++; printf("ERROR: Proposed position is outside domain. %f %f %f -> %f %f %f\n", p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
+            if (pp[0] >  0.5 * extent[0]) {{ err[0]++; printf("ERROR: Proposed position is outside domain. %f %f %f -> %f %f %f\n", p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
+            if (pp[1] >  0.5 * extent[1]) {{ err[0]++; printf("ERROR: Proposed position is outside domain. %f %f %f -> %f %f %f\n", p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
+            if (pp[2] >  0.5 * extent[2]) {{ err[0]++; printf("ERROR: Proposed position is outside domain. %f %f %f -> %f %f %f\n", p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
+            
+            REAL d0 = p[0] - pp[0];
+            REAL d1 = p[1] - pp[1];
+            REAL d2 = p[2] - pp[2];
+
+            {CHECK_MOD}
+
+            if ( (d0*d0) > ({MAX_MOVE_2}) ){{ err[0]++; printf("ERROR: Proposed move violates max_move. %f %f %f -> %f %f %f\n", p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
+            if ( (d1*d1) > ({MAX_MOVE_2}) ){{ err[0]++; printf("ERROR: Proposed move violates max_move. %f %f %f -> %f %f %f\n", p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
+            if ( (d2*d2) > ({MAX_MOVE_2}) ){{ err[0]++; printf("ERROR: Proposed move violates max_move. %f %f %f -> %f %f %f\n", p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
         }}
 
 
@@ -353,7 +416,8 @@ class FMMMPIDecomp(LocalOctalBase):
             const INT64 * RESTRICT upper_allowed,
             const INT64 * RESTRICT lower_allowed
         ){{
-
+            
+            int err = 0;
             INT64 es_tmp = 0;
             INT64 old_ind = 0;
             for(INT64 px=0 ; px<npart_local ; px++){{
@@ -383,7 +447,7 @@ class FMMMPIDecomp(LocalOctalBase):
             *total_movs = es_tmp;
 
             // now move the data
-            #pragma omp parallel for schedule(dynamic)
+            #pragma omp parallel for schedule(dynamic) reduction(+:err)
             for(INT64 oind=0 ; oind<old_ind; oind++ ){{
                 const INT64 px = old_ids[oind];
                 old_positions[oind*3 + 0] = current_positions[px*3 + 0];
@@ -408,6 +472,8 @@ class FMMMPIDecomp(LocalOctalBase):
                         new_positions[nind*3 + 1] = prop_positions[prop_ind + 1];
                         new_positions[nind*3 + 2] = prop_positions[prop_ind + 2];
 
+                        check_move(extent, &current_positions[px*3], &prop_positions[prop_ind], &err);
+
                         INT64 tmp_cell[3] = {{0,0,0}};
                         REAL tmp_pos[3] = {{0.0, 0.0, 0.0}};
                         
@@ -428,11 +494,13 @@ class FMMMPIDecomp(LocalOctalBase):
                 }}
             }}
 
-            return 0;
+            return err;
         }}
 
         '''.format(
-            CELL_GEN=cell_gen
+            CELL_GEN=cell_gen,
+            CHECK_MOD=check_mod,
+            MAX_MOVE_2=str(self.max_move * self.max_move)
         )
 
         header = r'''
@@ -472,7 +540,7 @@ class FMMMPIDecomp(LocalOctalBase):
         
         total_movs = INT64(0)
         num_particles = INT64(0)
-        self._dat_lib(
+        err = self._dat_lib(
             INT64(self.positions.npart_local),
             INT64(prop_masks.ncomp),
             site_max_counts.ctypes_data,
@@ -503,6 +571,9 @@ class FMMMPIDecomp(LocalOctalBase):
             self.upper_allowed_arr.ctypes.get_as_parameter(),
             self.lower_allowed_arr.ctypes.get_as_parameter()
         )
+
+        if err > 0:
+            raise RuntimeError('Bad proposed move was detected.')
 
         if self.cuda_enabled:
             self._copy_to_device()
@@ -563,6 +634,9 @@ class FMMMPIDecomp(LocalOctalBase):
         cells = np.zeros(cell_bin.shape, dtype=INT64)
         cells[:] = cell_bin[:]
 
+        # if a charge is sat right on the upper boundary we prevent it being binned into a cell
+        # that is outside the domain.
+        cells[:] = np.clip(cells, 0, ncps-1)
 
         if self.boundary_condition is BCType.FREE_SPACE:
             return cells, positions, positions
