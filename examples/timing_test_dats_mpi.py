@@ -78,7 +78,7 @@ def time_test_dats_1(N=1000, nprop=6, nsample=20000):
     
     bcs = (False, 'pbc')
     
-    max_move = E/10.
+    max_move = 10.
 
 
     kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
