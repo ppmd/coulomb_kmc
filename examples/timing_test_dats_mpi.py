@@ -33,7 +33,7 @@ import cProfile
 #p = psutil.Process()
 
 
-def time_test_dats_1(N=1000, nprop=2, nsample=20000):
+def time_test_dats_1(N=1000, nprop=6, nsample=20000):
     
     nsample = min(N, nsample)
     assert N >= nsample
@@ -54,12 +54,14 @@ def time_test_dats_1(N=1000, nprop=2, nsample=20000):
     A.npart = N
     A.P = data.PositionDat(ncomp=3)
     A.Q = data.ParticleDat(ncomp=1)
+    A.GID = data.ParticleDat(ncomp=1, dtype=INT64)
     A.prop_masks = data.ParticleDat(ncomp=M, dtype=INT64)
     A.prop_positions = data.ParticleDat(ncomp=M*3)
     A.prop_diffs = data.ParticleDat(ncomp=M)
     A.sites = data.ParticleDat(ncomp=1, dtype=INT64)
 
     rng = np.random.RandomState(seed=1234)
+    accept_rng = np.random.RandomState(seed=34372)
 
     site_max_counts = data.ScalarArray(ncomp=8, dtype=INT64)
     site_max_counts[:] = nprop
@@ -69,125 +71,73 @@ def time_test_dats_1(N=1000, nprop=2, nsample=20000):
         A.Q[px,0] = (-1.0)**(px+1)
     bias = np.sum(A.Q[:N:, 0])/N
     A.Q[:, 0] -= bias
-    
+    A.GID[:, 0] = np.arange(N)
+
+
     A.scatter_data_from(0)
     
     bcs = (False, 'pbc')
-    bcs = (False, 'free_space')
     
     max_move = E/10.
-    
 
 
     kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
         domain=A.domain, r=R, l=L, boundary_condition=bcs[1], max_move=max_move)
-
-
     kmc_fmm.initialise()
     
 
+    # make  some random proposed moves
 
-    #MPIBARRIER()
-    #print("---------- del call in script", N, MPIRANK)
-    #del kmc_fmm
-    #print("========== del call in script", N, MPIRANK)
-    #MPIBARRIER()
-
-    #if MPIRANK == 0:
-    #    print("returning early"); 
-    #kmc_fmm.free()
-    #return (0, 1, R, 0, 1)
-
-
-
-    #print("-" * 80)
-    #del kmc_fmm
-    #print("=" * 80)
-    #
+    nm = 0
+    t_propose = 0.0
     
-    # make  some random proposed moves
-    order = rng.permutation(range(A.npart_local))
-    nm = 0
-    nsample = min(nsample, A.npart_local)
-    for px in range(nsample):
-        mp = site_max_counts[A.sites[px,0]]
-        for propx in range(mp):
-            nm += 1
-            direction = rng.uniform(low=-1.0, high=1.0, size=3)
-            direction /= np.linalg.norm(direction)
-            direction *= max_move * rng.uniform(0, 1)
-            prop_pos = A.P.view[px, :] + direction
-            A.prop_masks[px, propx] = 1
-            A.prop_positions[px, propx*3:propx*3+3:] = prop_pos
+    for runx in range(4):
+        order = rng.permutation(range(A.npart_local))
+        nsample = min(nsample, A.npart_local)
 
-    pr = cProfile.Profile()
-    pr.enable()
-    to_test =  kmc_fmm.propose_with_dats(site_max_counts, A.sites,
-        A.prop_positions, A.prop_masks, A.prop_diffs, diff=True)
-    pr.disable()
-    pr.dump_stats('/tmp/propose.prof')
+        for px in range(nsample):
+            mp = site_max_counts[A.sites[px,0]]
+            for propx in range(mp):
+                nm += 1
+                direction = rng.uniform(low=-1.0, high=1.0, size=3)
+                direction /= np.linalg.norm(direction)
+                direction *= max_move * rng.uniform(0, 1)
+                prop_pos = A.P.view[px, :] + direction
+                for dimx in range(3):
+                    prop_pos[dimx] = np.fmod(prop_pos[dimx] + 1.5*E, E) - 0.5*E
 
+                A.prop_masks[px, propx] = 1
+                A.prop_positions[px, propx*3:propx*3+3:] = prop_pos
 
-    # make  some random proposed moves
-    order = rng.permutation(range(A.npart_local))
-    nm = 0
-    nsample = min(nsample, A.npart_local)
-    for px in range(nsample):
-        mp = site_max_counts[A.sites[px,0]]
-        for propx in range(mp):
-            nm += 1
-            direction = rng.uniform(low=-1.0, high=1.0, size=3)
-            direction /= np.linalg.norm(direction)
-            direction *= max_move * rng.uniform(0, 1)
-            prop_pos = A.P.view[px, :] + direction
-            A.prop_masks[px, propx] = 1
-            A.prop_positions[px, propx*3:propx*3+3:] = prop_pos
+        A.domain.comm.Barrier()
+        t0 = time.time()
+        to_test =  kmc_fmm.propose_with_dats(site_max_counts, A.sites,
+            A.prop_positions, A.prop_masks, A.prop_diffs, diff=True)
+        A.domain.comm.Barrier()
+        t1 = time.time()
+        t_propose += t1 - t0
 
-
-    A.domain.comm.Barrier()
-    t0 = time.time()
-    to_test =  kmc_fmm.propose_with_dats(site_max_counts, A.sites,
-        A.prop_positions, A.prop_masks, A.prop_diffs, diff=True)
-    A.domain.comm.Barrier()
-    t1 = time.time()
  
-
-    pr = cProfile.Profile()
-    pr.enable()   
-
-    naccept = 0
-    nsample2 = 2
-
-    for px in range(N):
-        if naccept == nsample2:
-            break
-        for propx in range(M):
-            # MPI ACCEPT NOT IMPLEMENTED
-            #kmc_fmm.accept((px, A.prop_positions[px, propx*3: (propx+1)*3:]))
-            naccept+=1
-            if naccept == nsample2:
-                break
-
-    pr.disable()
-    pr.dump_stats('/tmp/accept.prof')
-
-
-
-    naccept = 0
-    nsample2 = 10
-
+    nsample2 = 100
     A.domain.comm.Barrier()
     t2 = time.time()
-    
-    for px in range(nsample2, N):
-        if naccept == nsample2:
-            break
-        for propx in range(M):
-            # MPI ACCEPT NOT IMPLEMENTED
-            #kmc_fmm.accept((px, A.prop_positions[px, propx*3: (propx+1)*3:]))
-            naccept+=1
-            if naccept == nsample2:
-                break
+    for ax in range(nsample2):
+        gid = accept_rng.randint(0, N-1)
+        lid = np.where(A.GID.view[:A.npart_local:, 0] == gid)
+        if len(lid[0]) > 0:
+            pid = lid[0][0]
+
+            direction = rng.uniform(low=-1.0, high=1.0, size=3)
+            direction /= np.linalg.norm(direction)
+            direction *= max_move * rng.uniform(0, 1)
+            prop_pos = A.P.view[pid, :] + direction
+            for dimx in range(3):
+                prop_pos[dimx] = np.fmod(prop_pos[dimx] + 1.5*E, E) - 0.5*E
+
+            move = (pid, prop_pos)
+            kmc_fmm.accept(move)
+        else:
+            kmc_fmm.accept(None)
 
     A.domain.comm.Barrier()
     t3 = time.time()
@@ -199,12 +149,14 @@ def time_test_dats_1(N=1000, nprop=2, nsample=20000):
     
     kmc_fmm.free()
 
-    return (t1-t0, nm, R, t3 - t2, nsample2)
+    return (t_propose, nm, R, t3 - t2, nsample2)
 
 if __name__ == '__main__':
-    #nset = np.logspace(3, log(1000001, 10), 30)
-    #nset = (1000,)
-    nset = tuple([int(ix) for ix in sys.argv[1:]])
+
+    if len(sys.argv) > 1:
+        nset = tuple([int(ix) for ix in sys.argv[1:]])
+    else:
+        nset = np.logspace(3, log(1000001, 10), 30)
     
     top_bar = '{: ^10} {: ^12} {: ^12} {: ^4}' .format('N', 'T_prop', 'T_accept', 'R')
     if MPIRANK == 0:

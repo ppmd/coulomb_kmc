@@ -233,10 +233,7 @@ def test_pbc_mpi_accept_1(R):
         assert abs(np.linalg.norm(offset_vector) - 1.0) < 10.**-15
         offset_size = rng.uniform(low=0.01 * max_move_fixed, high=0.99*max_move_fixed)
         offset_vector *= offset_size
-        
         pos = ppi[gid, :].copy() + offset_vector
-
-
         for dimx in range(3):
             pos[dimx] = np.fmod(pos[dimx] + 1.5*E, E) - 0.5*E
 

@@ -36,8 +36,8 @@ def test_kmc_fmm_dat_setup_prop_1(param_boundary, R):
 
     L = 4
 
-    N = 8
-    E = 4.
+    N = 100
+    E = 4.123
     rc = E/4
     M = 6
 
@@ -93,8 +93,7 @@ def test_kmc_fmm_dat_setup_prop_1(param_boundary, R):
     prop = []
     
     nmov = 0
-    # for px in range(N):
-    for px in range(N):
+    for px in range(A.npart_local):
         tmp = []
         masks = np.zeros(M)
         masks[:site_max_counts[A.sites[px,0]]:] = 1
@@ -211,10 +210,244 @@ def test_kmc_fmm_dat_setup_prop_1(param_boundary, R):
 
 
 
-@pytest.mark.skipif("MPISIZE > 1")
 @pytest.mark.parametrize("param_boundary", ('free_space', 'pbc', '27'))
 @pytest.mark.parametrize("R", (3, 4, 5))
 def test_kmc_fmm_dat_setup_prop_2(param_boundary, R):
+
+    L = 4
+
+    N = 100
+    E = 4.
+    rc = E/4
+    M = 6
+
+    max_move = E*0.255
+    max_move_setup = 1.01 * max_move
+
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    A.npart = N
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+    A.prop_masks = data.ParticleDat(ncomp=M, dtype=INT64)
+    A.prop_positions = data.ParticleDat(ncomp=M*3)
+    A.prop_diffs = data.ParticleDat(ncomp=M)
+    A.sites = data.ParticleDat(ncomp=1, dtype=INT64)
+
+    B = state.State()
+    B.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    B.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    B.npart = N
+    B.P = data.PositionDat(ncomp=3)
+    B.Q = data.ParticleDat(ncomp=1)
+
+    rng  = np.random.RandomState(seed=8657*R)
+
+    site_max_counts = data.ScalarArray(ncomp=8, dtype=INT64)
+    site_max_counts[:] = rng.randint(0, 10, size=8)
+
+    A.P[:] = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
+    for px in range(N):
+        A.Q[px,0] = (-1.0)**(px+1)
+    bias = np.sum(A.Q[:N:, 0])/N
+    A.Q[:, 0] -= bias
+    A.sites[:, 0] = rng.randint(0, 8, size=N)
+    
+    A.P[0,:] = ( 0.499999*E, 0, 0)
+    A.P[1,:] = (-0.499999*E, 0, 0)
+    A.P[2,:] = (0,  0.499999*E, 0)
+    A.P[3,:] = (0, -0.499999*E, 0)
+    A.P[4,:] = (0, 0,  0.499999*E)
+    A.P[5,:] = (0, 0, -0.499999*E)    
+
+    
+    B.P[:] = A.P.data.copy()
+    B.Q[:] = A.Q.data.copy()
+
+    A.scatter_data_from(0)
+    B.scatter_data_from(0)
+
+    # create a kmc instance
+    kmc_fmmA = KMCFMM(positions=A.P, charges=A.Q, 
+        domain=A.domain, r=R, l=L, boundary_condition=param_boundary, max_move=max_move_setup)
+    kmc_fmmA.initialise()
+    
+    
+    # print("\n arggggg")
+
+    # for stepx in range(20):
+    prop = []
+    
+    nmov = 0
+    # for px in range(N):
+    for px in range(A.npart_local):
+        tmp = []
+        masks = np.zeros(M)
+        masks[:site_max_counts[A.sites[px,0]]:] = 1
+        masks = rng.permutation(masks)
+
+        for propx in range(M):
+            mask = masks[propx]
+
+
+            offset_vector = rng.uniform(low=-1.0, high=1.0, size=3)
+            offset_vector /= np.linalg.norm(offset_vector)
+            assert abs(np.linalg.norm(offset_vector) - 1.0) < 10.**-15
+            offset_size = rng.uniform(low=0.01 * max_move, high=0.99*max_move)
+            offset_vector *= offset_size
+            pos = A.P[px, :].copy() + offset_vector
+
+            
+            if param_boundary in ('pbc', '27'):
+                for dimx in range(3):
+                    pos[dimx] = np.fmod(pos[dimx] + 1.5*E, E) - 0.5*E
+            elif param_boundary == 'free_space':
+                flush = 0.5
+                for dimx in range(3):
+                    pos[dimx] = min(pos[dimx], E*flush)
+                    pos[dimx] = max(pos[dimx], E*(-flush))
+            else:
+                raise RuntimeError('Bad boundary condition')
+
+            prop_pos = pos
+
+            A.prop_masks[px, propx] = mask
+            A.prop_positions[px, propx*3:propx*3+3:] = prop_pos
+            
+            if mask > 0:
+                tmp.append(list(prop_pos))
+                nmov += 1
+        if len(tmp) > 0:
+            prop.append((px, np.array(tmp)))
+
+    cf = kmc_fmmA.md.setup_propose(prop)
+    
+    # we have to resue the same kmc to avoid race conditin in the gids assigned by
+    # the kmc instance.
+    # cf is a reference, we need to copy the values
+    correct = [cf[0], cf[1], dict()]
+    for kx in cf[2].keys():
+        correct[2][kx] = cf[2][kx].copy()
+
+
+    to_test =  kmc_fmmA.md.setup_propose_with_dats(site_max_counts, A.sites,
+        A.prop_positions, A.prop_masks, A.prop_diffs)
+    
+
+    assert to_test[0] == correct[0]
+    assert to_test[1] == correct[1]
+    
+    total_movs = correct[0]
+    num_particles = correct[1]
+
+    tind = 0
+    for px in range(A.npart_local):
+        for prop_pos in range(M):
+            if A.prop_masks[px, prop_pos] > 0:
+                assert to_test[2]['rate_location'][tind, 0] == px*M+prop_pos
+                tind += 1
+
+    if A.npart_local > 0:
+        err = np.linalg.norm(
+            correct[2]['exclusive_sum'][:num_particles:, :].ravel() - \
+            to_test[2]['exclusive_sum'][:num_particles:, :].ravel(),
+            np.inf
+        )
+        assert err < 10.**-15
+       
+        err = np.linalg.norm(
+            correct[2]['old_positions'][:num_particles:, :].ravel() - \
+            to_test[2]['old_positions'][:num_particles:, :].ravel(),
+            np.inf
+        )
+        assert err < 10.**-15
+
+        err = np.linalg.norm(
+            correct[2]['old_charges'][:num_particles:, :].ravel() - \
+            to_test[2]['old_charges'][:num_particles:, :].ravel(),
+            np.inf
+        )
+        assert err < 10.**-15
+
+        err = np.linalg.norm(
+            correct[2]['old_ids'][:num_particles:, :].ravel() - \
+            to_test[2]['old_ids'][:num_particles:, :].ravel(),
+            np.inf
+        )
+        assert err < 10.**-15
+
+        err = np.linalg.norm(
+            correct[2]['new_positions'][:total_movs:, :].ravel() - \
+            to_test[2]['new_positions'][:total_movs:, :].ravel(),
+            np.inf
+        )
+        assert err < 10.**-15
+
+        err = np.linalg.norm(
+            correct[2]['new_charges'][:total_movs:, :].ravel() - \
+            to_test[2]['new_charges'][:total_movs:, :].ravel(),
+            np.inf
+        )
+        assert err < 10.**-15
+
+        err = np.linalg.norm(
+            correct[2]['new_ids'][:total_movs:, :].ravel() - \
+            to_test[2]['new_ids'][:total_movs:, :].ravel(),
+            np.inf
+        )
+        assert err < 10.**-15
+
+        
+        err = np.linalg.norm(
+            correct[2]['old_fmm_cells'][:total_movs:, :].ravel() - \
+            to_test[2]['old_fmm_cells'][:total_movs:, :].ravel(),
+            np.inf
+        )
+        assert err < 10.**-15
+
+        
+        err = np.linalg.norm(
+            correct[2]['new_fmm_cells'][:total_movs:, :].ravel() - \
+            to_test[2]['new_fmm_cells'][:total_movs:, :].ravel(),
+            np.inf
+        )
+        assert err < 10.**-15
+
+        
+        err = np.linalg.norm(
+            correct[2]['new_shifted_positions'][:total_movs:, :].ravel() - \
+            to_test[2]['new_shifted_positions'][:total_movs:, :].ravel(),
+            np.inf
+        )
+        assert err < 10.**-15
+
+    kmc_fmmA.free()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@pytest.mark.skipif("MPISIZE > 1")
+@pytest.mark.parametrize("param_boundary", ('free_space', 'pbc', '27'))
+@pytest.mark.parametrize("R", (3, 4, 5))
+def test_kmc_fmm_dat_setup_prop_3(param_boundary, R):
 
     L = 8
 
@@ -241,7 +474,7 @@ def test_kmc_fmm_dat_setup_prop_2(param_boundary, R):
     B.P = data.PositionDat(ncomp=3)
     B.Q = data.ParticleDat(ncomp=1)
 
-    rng  = np.random.RandomState(seed=8657)
+    rng  = np.random.RandomState(seed=8657*R)
 
     site_max_counts = data.ScalarArray(ncomp=8, dtype=INT64)
     site_max_counts[:] = rng.randint(0, 10, size=8)

@@ -51,6 +51,8 @@ class FMMMPIDecomp(LocalOctalBase):
         self.entry_local_offset = fmm.tree.entry_map.local_offset
         self.local_size = fmm.tree[-1].local_grid_cube_size
         self.local_offset = fmm.tree[-1].local_grid_offset
+        self._lo_array = np.array(self.local_offset, dtype=INT64)
+
 
         self.comm = fmm.tree.cart_comm
 
@@ -244,8 +246,11 @@ class FMMMPIDecomp(LocalOctalBase):
         e = self.domain.extent
 
         for dimx in range(3):
-            if np.any(new_pos[:, dimx] < -0.5 * e[dimx]): raise RuntimeError('Proposed position is outside simulation domain.')
-            if np.any(new_pos[:, dimx] >  0.5 * e[dimx]): raise RuntimeError('Proposed position is outside simulation domain.')
+            if np.any(new_pos[:, dimx] < -0.5 * e[dimx]):
+                raise RuntimeError('Proposed position is outside simulation domain. Extent {}, dimension {}, value {}.'.format(e, dimx, new_pos[:, dimx]))
+            if np.any(new_pos[:, dimx] >  0.5 * e[dimx]):
+                raise RuntimeError('Proposed position is outside simulation domain. Extent {}, dimension {}, value {}.'.format(e, dimx, new_pos[:, dimx]))
+
 
         for mx in new_pos:
             rvec = mx - old_pos
@@ -255,7 +260,8 @@ class FMMMPIDecomp(LocalOctalBase):
                     if rvec[dimx] > (e[dimx] *  (0.5)): rvec[dimx] -= e[dimx]
             rvec = np.abs(rvec)
             for dimx in range(3):
-                if rvec[dimx] > self.max_move: raise RuntimeError('Proposed move violates max_move.')
+                if rvec[dimx] > self.max_move:
+                    raise RuntimeError('Proposed move violates max_move. Old position {}, new position {}.'.format(old_pos, mx))
 
 
     def _create_dat_lib(self):
@@ -274,13 +280,17 @@ class FMMMPIDecomp(LocalOctalBase):
             cell_gen = r'''
             REAL offsets[3];
 
-            offsets[0] = (cell[0] < lower_allowed[0]) ? 1.0 : 0.0;
-            offsets[1] = (cell[1] < lower_allowed[1]) ? 1.0 : 0.0;
-            offsets[2] = (cell[2] < lower_allowed[2]) ? 1.0 : 0.0;
+            offsets[0] = ((cell[0] - local_offset[2]) < lower_allowed[0]) ? 1.0 : 0.0;
+            offsets[1] = ((cell[1] - local_offset[1]) < lower_allowed[1]) ? 1.0 : 0.0;
+            offsets[2] = ((cell[2] - local_offset[0]) < lower_allowed[2]) ? 1.0 : 0.0;
 
-            if (cell[0] > upper_allowed[0]) { offsets[0] = -1.0; };
-            if (cell[1] > upper_allowed[1]) { offsets[1] = -1.0; };
-            if (cell[2] > upper_allowed[2]) { offsets[2] = -1.0; };
+            if ((cell[0] - local_offset[2]) > upper_allowed[0]) { offsets[0] = -1.0; };
+            if ((cell[1] - local_offset[1]) > upper_allowed[1]) { offsets[1] = -1.0; };
+            if ((cell[2] - local_offset[0]) > upper_allowed[2]) { offsets[2] = -1.0; };
+
+            cell[0] += offsets[0] * fmm_cells_per_side[2];
+            cell[1] += offsets[1] * fmm_cells_per_side[1];
+            cell[2] += offsets[2] * fmm_cells_per_side[0];
 
             shifted_position[0] = position[0] + offsets[0] * extent[0];
             shifted_position[1] = position[1] + offsets[1] * extent[1];
@@ -307,6 +317,7 @@ class FMMMPIDecomp(LocalOctalBase):
             const INT64 * fmm_cells_per_side,
             const INT64 * RESTRICT upper_allowed,
             const INT64 * RESTRICT lower_allowed,
+            const INT64 * RESTRICT local_offset,
             INT64 * cell,
             REAL * shifted_position
         ){{
@@ -322,11 +333,12 @@ class FMMMPIDecomp(LocalOctalBase):
             cell[1] = (INT64) (shifted_position[1] * w1);
             cell[2] = (INT64) (shifted_position[2] * w2);
 
+            if (cell[0] >= fmm_cells_per_side[2]) {{ cell[0] = fmm_cells_per_side[2] - 1; }}
+            if (cell[1] >= fmm_cells_per_side[1]) {{ cell[1] = fmm_cells_per_side[1] - 1; }}
+            if (cell[2] >= fmm_cells_per_side[0]) {{ cell[2] = fmm_cells_per_side[0] - 1; }}
+
             {CELL_GEN}
 
-            if (cell[0] >= fmm_cells_per_side[0]) {{ cell[0] = fmm_cells_per_side[0] - 1; }}
-            if (cell[1] >= fmm_cells_per_side[1]) {{ cell[1] = fmm_cells_per_side[1] - 1; }}
-            if (cell[2] >= fmm_cells_per_side[2]) {{ cell[2] = fmm_cells_per_side[2] - 1; }}
 
             return;
 
@@ -416,7 +428,8 @@ class FMMMPIDecomp(LocalOctalBase):
             const INT64 * RESTRICT cell_data_offset,
             const INT64 * RESTRICT local_store_dims,
             const INT64 * RESTRICT upper_allowed,
-            const INT64 * RESTRICT lower_allowed
+            const INT64 * RESTRICT lower_allowed,
+            const INT64 * RESTRICT local_offset
         ){{
             
             int err = 0;
@@ -480,7 +493,7 @@ class FMMMPIDecomp(LocalOctalBase):
                         REAL tmp_pos[3] = {{0.0, 0.0, 0.0}};
                         
                         get_cell( &prop_positions[prop_ind], extent, fmm_cells_per_side,
-                            upper_allowed, lower_allowed, &tmp_cell[0], &tmp_pos[0]);
+                            upper_allowed, lower_allowed, local_offset, &tmp_cell[0], &tmp_pos[0]);
 
                         new_fmm_cells[nind] = gcell_to_lcell(cell_data_offset, local_store_dims, &tmp_cell[0]);
 
@@ -571,7 +584,8 @@ class FMMMPIDecomp(LocalOctalBase):
             self.cell_data_offset.ctypes.get_as_parameter(),
             self.local_store_dims_arr.ctypes.get_as_parameter(),
             self.upper_allowed_arr.ctypes.get_as_parameter(),
-            self.lower_allowed_arr.ctypes.get_as_parameter()
+            self.lower_allowed_arr.ctypes.get_as_parameter(),
+            self._lo_array.ctypes.get_as_parameter()
         )
 
         if err > 0:
@@ -625,13 +639,13 @@ class FMMMPIDecomp(LocalOctalBase):
         
         shift_pos = positions.copy()
         shift_pos[:, 0] += 0.5*extent[0]
-        shift_pos[:, 2] += 0.5*extent[1]
-        shift_pos[:, 1] += 0.5*extent[2]
+        shift_pos[:, 1] += 0.5*extent[1]
+        shift_pos[:, 2] += 0.5*extent[2]
         
         cell_bin = np.zeros_like(shift_pos)
         cell_bin[:, 0] = shift_pos[:, 0] / cell_widths[0]
-        cell_bin[:, 2] = shift_pos[:, 2] / cell_widths[1]
-        cell_bin[:, 1] = shift_pos[:, 1] / cell_widths[2]
+        cell_bin[:, 1] = shift_pos[:, 1] / cell_widths[1]
+        cell_bin[:, 2] = shift_pos[:, 2] / cell_widths[2]
 
         cells = np.zeros(cell_bin.shape, dtype=INT64)
         cells[:] = cell_bin[:]
