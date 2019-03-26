@@ -681,19 +681,23 @@ class FMMMPIDecomp(LocalOctalBase):
             for dx in range(3):
                 cells[:, dx] += offsets[:, dx] * ncps
 
-            
-            # check the new fmm cells are valid
-            offsets[cells[:, 0] < la[0], 0] =  1
-            offsets[cells[:, 0] > ua[0], 0] =  1
-            offsets[cells[:, 1] < la[1], 1] =  1
-            offsets[cells[:, 1] > ua[1], 1] =  1
-            offsets[cells[:, 2] < la[2], 2] =  1
-            offsets[cells[:, 2] > ua[2], 2] =  1
-            assert not np.all(offsets)
+            offset_cells = cells.copy()
+            offset_cells[:, 0] -= self.local_offset[2]
+            offset_cells[:, 1] -= self.local_offset[1]
+            offset_cells[:, 2] -= self.local_offset[0]
 
+            offsets[:] = 1
+            # check the new fmm cells are valid
+            offsets[offset_cells[:, 0] < la[0], 0] =  0
+            offsets[offset_cells[:, 0] > ua[0], 0] =  0
+            offsets[offset_cells[:, 1] < la[1], 1] =  0
+            offsets[offset_cells[:, 1] > ua[1], 1] =  0
+            offsets[offset_cells[:, 2] < la[2], 2] =  0
+            offsets[offset_cells[:, 2] > ua[2], 2] =  0
+            if not np.all(offsets):
+                raise RuntimeError('bad new cells')
 
             return cells, positions, shift_pos
-            #return cells, positions, shift_pos
 
     
     def _get_cell(self, position):
