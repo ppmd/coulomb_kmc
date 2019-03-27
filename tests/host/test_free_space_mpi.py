@@ -426,7 +426,7 @@ def test_mpi_free_space_realistic_1(R, nset):
     rc = E/4
     M = 4
     
-    tol_kmc = 2*10.**-5
+    tol_kmc = 10.**-4
     
     max_move = 4.12561
 
