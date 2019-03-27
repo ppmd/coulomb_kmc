@@ -158,7 +158,14 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         nset = tuple([int(ix) for ix in sys.argv[1:]])
     else:
-        nset = np.logspace(3, log(1000001, 10), 30)
+        if MPISIZE < 8:
+            s = 3
+        elif MPISIZE < 512:
+            s = 4
+        else:
+            s = 5
+
+        nset = np.logspace(s, log(1000001, 10), 30)
     
     top_bar = '{: ^10} {: ^12} {: ^12} {: ^4}' .format('N', 'T_prop', 'T_accept', 'R')
     if MPIRANK == 0:

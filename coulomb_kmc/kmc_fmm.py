@@ -593,6 +593,9 @@ class KMCFMM(_PY_KMCFMM):
             prop_positions, prop_masks, prop_energy_diffs)
 
         num_particles = cmove_data[1]
+        if num_particles == 0:
+            return
+
         max_num_moves = np.max(site_max_counts[:])
         self._tmp_energy_check((num_particles, max_num_moves))
 

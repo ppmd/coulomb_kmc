@@ -197,10 +197,9 @@ def test_pbc_mpi_accept_1(R):
     qi = np.zeros((N, 1))
     for px in range(N):
         qi[px,0] = (-1.0)**(px+1)
-    #bias = np.sum(qi[:N:, 0])/N
-    #qi -= bias
+    bias = np.sum(qi[:N:, 0])/N
+    qi -= bias
     
-    qi[0,0] = 0
 
     A.P[:] = pi
     A.Q[:] = qi
@@ -283,6 +282,185 @@ def test_pbc_mpi_accept_1(R):
 
 
 
+@pytest.mark.parametrize("R", (3, 4, 5))
+@pytest.mark.parametrize("nset", 
+    (
+        (100, 10),
+        (30, 100),
+        (2, 400)
+    )
+)
+def test_mpi_pbc_realistic_1(R, nset):
+    
+    param_boundary = 'pbc'
+
+    if R < 4 and MPISIZE > 8:
+        return
+
+    
+    L = 12
+    
+    N = nset[0]
+    N_steps = nset[1]
+
+    E = 31.
+    rc = E/4
+    M = 4
+    
+    tol_kmc = 2*10.**-5
+        
+    max_move = 4.12561
+
+
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    A.npart = N
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+    A.prop_masks = data.ParticleDat(ncomp=M, dtype=INT64)
+    A.prop_positions = data.ParticleDat(ncomp=M*3)
+    A.prop_diffs = data.ParticleDat(ncomp=M)
+    A.sites = data.ParticleDat(ncomp=1, dtype=INT64)
+    A.GID = data.ParticleDat(ncomp=1, dtype=INT64)
+
+    rng  = np.random.RandomState(seed=817235)
+    accept_rng = np.random.RandomState(seed=19512)
+
+
+
+    site_max_counts = data.ScalarArray(ncomp=8, dtype=INT64)
+    site_max_counts[:] = rng.randint(0, 10, size=8)
+
+
+    pi = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
+    ppi = pi.copy()
+
+    qi = np.zeros((N, 1))
+    for px in range(N):
+        qi[px,0] = (-1.0)**(px+1)
+    bias = np.sum(qi[:N:, 0])/N
+    qi -= bias
+    
+
+    A.P[:] = pi
+    A.Q[:] = qi
+    A.GID[:, 0] = np.arange(N)
+
+    A.scatter_data_from(0)
+
+    # create a kmc instance
+    kmc_fmmA = KMCFMM(positions=A.P, charges=A.Q, domain=A.domain, r=R, l=L,
+        boundary_condition=param_boundary, max_move=max_move)
+
+    kmc_fmmA.initialise()
+    
+
+    PBCD = PBCDirect(E, A.domain, L)
+    def _direct():
+        return PBCD(N, ppi, qi)    
+
+    
+    def _check_system_energy():
+
+        init_energy = _direct()
+
+        rel = abs(init_energy)
+        rel = rel if rel > 0 else 1.0
+        err = abs(init_energy - kmc_fmmA.energy) / rel
+
+        assert err < tol_kmc
+
+    _check_system_energy()
+
+    
+    for testx in range(N_steps):
+
+        prop = []
+        nmov = 0
+        for px in range(A.npart_local):
+            tmp = []
+            masks = np.zeros(M)
+            masks[:site_max_counts[A.sites[px,0]]:] = 1
+            masks = rng.permutation(masks)
+
+            for propx in range(M):
+                mask = masks[propx]
+
+                direction = rng.uniform(low=-1.0, high=1.0, size=3)
+                direction /= np.linalg.norm(direction)
+                direction *= max_move * rng.uniform(0, 1)
+                prop_pos = A.P.view[px, :] + direction
+                for dimx in range(3):
+                    prop_pos[dimx] = np.fmod(prop_pos[dimx] + 1.5*E, E) - 0.5*E
+
+
+                A.prop_masks[px, propx] = mask
+                A.prop_positions[px, propx*3:propx*3+3:] = prop_pos
+                
+                if mask > 0:
+                    tmp.append(list(prop_pos))
+                    nmov += 1
+
+            if len(tmp) > 0:
+                prop.append((px, np.array(tmp)))
+
+
+        to_test =  kmc_fmmA.propose_with_dats(site_max_counts, A.sites,
+            A.prop_positions, A.prop_masks, A.prop_diffs, diff=True)
+
+
+        found_movs = 0
+        for propi, propx in enumerate(prop):
+            pid = propx[0]
+            movs = propx[1]
+            for pmi in range(M):
+                if A.prop_masks[pid, pmi] > 0:
+                    mov = A.prop_positions[pid, pmi*3:(pmi+1)*3:]
+                    gid = A.GID[pid, 0]
+                    
+                    ppi[gid, :] = mov
+                    correct_energy = _direct()
+                    ppi[gid, :] = A.P[pid, :]
+
+                    to_test_energy = A.prop_diffs[pid, pmi] + kmc_fmmA.energy
+                    
+                    rel = 1.0 if abs(correct_energy) < 1 else abs(correct_energy)
+                    err = abs(correct_energy - to_test_energy) / rel
+                    
+                    assert err < tol_kmc
+
+                    found_movs += 1
+
+        assert found_movs == nmov
+
+
+        # pick random accept
+        gid = accept_rng.randint(0, N-1)
+
+        direction = accept_rng.uniform(low=-1.0, high=1.0, size=3)
+        direction /= np.linalg.norm(direction)
+        direction *= max_move * accept_rng.uniform(0, 1)
+        prop_pos = ppi[gid, :] + direction
+        for dimx in range(3):
+            prop_pos[dimx] = np.fmod(prop_pos[dimx] + 1.5*E, E) - 0.5*E
+
+        lid = np.where(A.GID.view[:A.npart_local:, 0] == gid)
+        # does this rank own the charge
+        if len(lid[0]) > 0:
+            pid = lid[0][0]
+            move = (pid, prop_pos)
+            kmc_fmmA.accept(move)
+        else:
+            kmc_fmmA.accept(None)
+
+        ppi[gid] = prop_pos
+
+        _check_system_energy()
+
+
+
+    kmc_fmmA.free()
 
 
 
