@@ -152,8 +152,7 @@ def time_test_dats_1(N=1000, nprop=2, nsample=1000):
     kmc_fmm.free()
 
 
-
-    return (t1-t0, nm, kmc_fmm.fmm.R, t3 - t2, nsample2)
+    return (t1-t0, nm, R, t3 - t2, nsample2)
 
 if __name__ == '__main__':
     nset = np.logspace(3, log(1000001, 10), 30)
