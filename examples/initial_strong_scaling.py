@@ -22,17 +22,19 @@ MPIRANK = mpi.MPI.COMM_WORLD.Get_rank()
 MPIBARRIER = mpi.MPI.COMM_WORLD.Barrier
 
 
-ParticleLoop = loop.ParticleLoopOMP
 ParticleDat = data.ParticleDat
 PositionDat = data.PositionDat
 ScalarArray = data.ScalarArray
+GlobalArray = data.GlobalArray
+
+ParticleLoop = loop.ParticleLoopOMP
 PairLoop = pairloop.CellByCellOMP
 
 
 Constant = kernel.Constant
+Header = kernel.Header
+
 from ppmd.access import *
-
-
 from coulomb_kmc import *
 
 
@@ -91,8 +93,12 @@ A.npart = N
 A.P = PositionDat(ncomp=3)
 A.Q = ParticleDat(ncomp=1)
 A.prop_masks = ParticleDat(ncomp=M, dtype=INT64)
+A.prop_rates = ParticleDat(ncomp=M, dtype=REAL)
+A.prop_rate_totals = ParticleDat(ncomp=1, dtype=REAL)
 A.prop_positions = ParticleDat(ncomp=M*3)
 A.prop_diffs = ParticleDat(ncomp=M)
+A.prop_inc_sum = ParticleDat(ncomp=M) 
+
 A.sites = ParticleDat(ncomp=1, dtype=INT64)
 
 site_max_counts = ScalarArray(ncomp=1, dtype=INT64)
@@ -160,10 +166,10 @@ prop_pos_kernel = kernel.Kernel(
 prop_pos = ParticleLoop(
     kernel=prop_pos_kernel, 
     dat_dict={
-        'P': A.P(READ),
-        'PP': A.prop_positions(WRITE),
-        'OA': offsets_sa(READ),
-        'MASK': A.prop_masks(WRITE)
+        'P'     : A.P(READ),
+        'PP'    : A.prop_positions(WRITE),
+        'OA'    : offsets_sa(READ),
+        'MASK'  : A.prop_masks(WRITE)
     }
 )
 
@@ -192,7 +198,7 @@ for (int mx=0 ; mx< M ; mx++){
     const double d2 = pj2 - n2;
     
     const double r2 = d0*d0 + d1*d1 + d2*d2;
-    MASK.i[mx] = (r2 < TOL) ? 0 :  MASK.i[mx];
+    MASK.i[mx] = (r2 < TOL) ? 0 : MASK.i[mx];
 }
 '''
 exclude_kernel = kernel.Kernel(
@@ -206,14 +212,121 @@ exclude_kernel = kernel.Kernel(
 exclude = PairLoop(
     kernel=exclude_kernel, 
     dat_dict={
-        'P': A.P(READ),
-        'OA': offsets_sa(READ),
-        'MASK': A.prop_masks(WRITE)
+        'P'     : A.P(READ),
+        'OA'    : offsets_sa(READ),
+        'MASK'  : A.prop_masks(WRITE)
     },
     shell_cutoff = max_move
 )
 
+# make rate kernel
 
+rate_kernel_src = r'''
+double charge_rate = 0.0;
+for (int mx=0 ; mx< M ; mx++){
+    const double rate = (MASK.i[mx] > 0) ? exp( -1.0 * DU.i[mx] ) : 0.0 ;
+    R.i[mx] = rate;
+    charge_rate += rate;
+    PIS.i[mx] = charge_rate;
+}
+
+RT.i[0] = charge_rate;
+'''
+
+rate_kernel = kernel.Kernel(
+    'rate_kernel',
+    rate_kernel_src,
+    constants=(
+        Constant('M', M),
+    ),
+    headers=(Header('math.h'),)
+)
+
+rate = ParticleLoop(
+    kernel=rate_kernel,
+    dat_dict={
+        'MASK'  : A.prop_masks(READ),
+        'DU'    : A.prop_diffs(READ),
+        'R'     : A.prop_rates(WRITE),
+        'RT'    : A.prop_rate_totals(WRITE),
+        'PIS'   : A.prop_inc_sum(WRITE)
+    }
+)
+
+
+def find_charge_to_move():
+    
+    # compute rates from differences
+    rate.execute()
+    
+    
+    local_inc_sum = np.cumsum(A.prop_rate_totals[:A.npart_local:, 0])
+    local_total = np.array(local_inc_sum[-1], REAL)
+
+
+    all_totals = np.zeros(MPISIZE, REAL)
+    A.domain.comm.Allgather(local_total, all_totals)
+    all_inc_sum = np.cumsum(all_totals)
+    
+    rate_total = all_inc_sum[-1]
+
+    accept_point = rng.uniform(0.0, rate_total - 4*10.**-16)
+    
+    if MPIRANK == 0:
+        low = 0.0
+    else:
+        low = all_inc_sum[MPIRANK - 1]
+    
+    high = all_inc_sum[MPIRANK]
+
+
+    if (accept_point >= low ) and (accept_point < high):
+        # this rank accepts
+        if A.npart_local == 0: raise RuntimeError('ERROR: this rank accepted but has no charges.')
+        
+        # offset accept point onto MPI rank
+        accept_point_local = accept_point - low
+
+        m = np.searchsorted(local_inc_sum, accept_point_local)
+        assert m >= 0
+        assert m < A.npart_local
+
+        
+        if m == 0:
+            charge_low = low
+        else:
+            charge_low = local_inc_sum[m - 1]
+
+
+
+        accept_point_charge = accept_point_local - charge_low
+
+
+        e = np.searchsorted(A.prop_inc_sum.view[m, :], accept_point_charge)
+
+        assert e >= 0
+        assert e < M
+        assert A.prop_masks[m, e] > 0
+        
+        move = (m, A.prop_positions[m, e*3:(e+1)*3:].copy())
+
+    else:
+        # rank does not accept
+        move = None
+
+    kmc_fmm.accept(move)
+
+
+print_str = r'{: 7d} | {: 12.8e}'
+
+PRINT = True
+
+
+if MPIRANK == 0:
+    print('-' * 80)
+    print('{:8s} | {:13s}'.format('step', 'energy'))
+    print('-' * 80)
+    print(print_str.format(-1, kmc_fmm.energy))
 
 
 MPIBARRIER()
@@ -226,14 +339,22 @@ for stepx in range(num_steps):
 
     kmc_fmm.propose_with_dats(site_max_counts, A.sites,
         A.prop_positions, A.prop_masks, A.prop_diffs, diff=True)
+    
+    find_charge_to_move()
 
-
-
-
+    if MPIRANK == 0 and PRINT:
+        print(print_str.format(stepx, kmc_fmm.energy))
 
 
 MPIBARRIER()
 t1 = time.time()
+
+
+if MPIRANK == 0:
+    print(print_str.format(stepx, kmc_fmm.energy))
+
+
+
 
 
 if MPIRANK == 0:
