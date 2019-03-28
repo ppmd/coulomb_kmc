@@ -92,6 +92,7 @@ A.domain.boundary_condition = domain.BoundaryTypePeriodic()
 A.npart = N
 A.P = PositionDat(ncomp=3)
 A.Q = ParticleDat(ncomp=1)
+A.GID = ParticleDat(ncomp=1, dtype=INT64)
 A.prop_masks = ParticleDat(ncomp=M, dtype=INT64)
 A.prop_rates = ParticleDat(ncomp=M, dtype=REAL)
 A.prop_rate_totals = ParticleDat(ncomp=1, dtype=REAL)
@@ -111,6 +112,7 @@ offsets_sa[:] = offsets_array.copy()
 A.P[:] = loaded_data['P'].copy()
 A.Q[:, 0] = loaded_data['Q'].copy()
 A.sites[:, 0] = 0
+A.GID[:, 0] = np.arange(N)
 A.scatter_data_from(0)
 
 
@@ -317,14 +319,14 @@ def find_charge_to_move():
     kmc_fmm.accept(move)
 
 
-print_str = r'{: 7d} | {: 12.8e}'
+print_str = r'{: 7d} | {: 20.16e}'
 
 PRINT = True
 
 
 if MPIRANK == 0:
     print('-' * 80)
-    print('{:8s} | {:13s}'.format('step', 'energy'))
+    print('{:7s} | {:20s}'.format('step', 'energy'))
     print('-' * 80)
     print(print_str.format(-1, kmc_fmm.energy))
 
@@ -354,9 +356,6 @@ if MPIRANK == 0:
     print(print_str.format(stepx, kmc_fmm.energy))
 
 
-
-
-
 if MPIRANK == 0:
 
     print('-' * 80)
@@ -366,7 +365,7 @@ if MPIRANK == 0:
     print("NSTEP:\t\t", num_steps)
 
     print('-' * 80)
-    opt.print_profile()
+    #opt.print_profile()
     print('-' * 80)
 
 
