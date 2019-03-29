@@ -372,7 +372,7 @@ if MPIRANK == 0:
     print("NSTEP:\t\t", num_steps)
 
     print('-' * 80)
-    #opt.print_profile()
+    opt.print_profile()
     print('-' * 80)
 
 
