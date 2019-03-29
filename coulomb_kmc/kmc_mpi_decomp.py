@@ -213,10 +213,21 @@ class FMMMPIDecomp(LocalOctalBase):
 
             self._cuda_h['old_positions'][movi, :] = old_position
             self._cuda_h['old_charges'][movi, :]   = self.charges.data[pid, 0]
-            self._cuda_h['old_fmm_cells'][movi, 0] = self._gcell_to_lcell(
-                self._get_fmm_cell(pid, self.fmm_cells)
-            )
             
+            try:
+                ct = self._get_fmm_cell(pid, self.fmm_cells)
+            except AssertionError as e:
+                print("FMM cell does not appear to exist on this ranks entry map.")
+                print("Local index", pid)
+                print("old_position", old_position)
+                print("fmm_cell", self.fmm_cells[pid, 0])
+                cell = self._cell_lin_to_tuple_no_check(self.fmm_cells[pid, 0])
+                print("tuple no check", cell)
+                print("ELO", self.entry_local_offset)
+                print("ELS", self.entry_local_size)
+                raise e
+
+            self._cuda_h['old_fmm_cells'][movi, 0] = self._gcell_to_lcell(ct)
             self._cuda_h['old_ids'][movi, 0]       = self.ids.data[pid, 0]
 
             cells, positions, shift_pos = self._vector_get_cell(movs)
