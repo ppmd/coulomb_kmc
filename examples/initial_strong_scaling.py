@@ -84,6 +84,13 @@ rng = np.random.RandomState(seed=1234)
 M = offsets_matrix.shape[0]
 
 
+if MPIRANK == 0:
+    print("N:\t", N)
+    print("R:\t", R)
+    print("L:\t", L)
+    print("E:\t", E)
+    print("M:\t", M)
+
 
 # setup the state
 A = state.State()
