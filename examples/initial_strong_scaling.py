@@ -85,11 +85,17 @@ M = offsets_matrix.shape[0]
 
 
 if MPIRANK == 0:
+
+    print('-' * 80)
     print("N:\t", N)
     print("R:\t", R)
     print("L:\t", L)
     print("E:\t", E)
     print("M:\t", M)
+
+    print('-' * 80)
+    opt.print_profile()
+    print('-' * 80)
 
 
 # setup the state
