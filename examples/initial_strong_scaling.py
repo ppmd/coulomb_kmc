@@ -20,6 +20,7 @@ from scipy.special import sph_harm, lpmv
 MPISIZE = mpi.MPI.COMM_WORLD.Get_size()
 MPIRANK = mpi.MPI.COMM_WORLD.Get_rank()
 MPIBARRIER = mpi.MPI.COMM_WORLD.Barrier
+NTHREADS = runtime.NUM_THREADS
 
 
 ParticleDat = data.ParticleDat
@@ -373,9 +374,9 @@ if MPIRANK == 0:
 
 
 if MPIRANK == 0:
-
+    time_taken = t1 - t0
     print('-' * 80)
-    print("Time taken: \t", t1 - t0)
+    print("Time taken: \t", time_taken)
     print("Time in accept:\t", move_logic_time)
     print("N:\t\t\t\t", N)
     print("M:\t\t\t\t", M)
@@ -385,8 +386,8 @@ if MPIRANK == 0:
     opt.print_profile()
     print('-' * 80)
 
-
-
+    with open('./timing_{}_{}_{}_{}.result'.format(MPISIZE, NTHREADS, N, num_steps), 'a') as fh:
+        fh.write(time_taken)
 
 kmc_fmm.free()
 
