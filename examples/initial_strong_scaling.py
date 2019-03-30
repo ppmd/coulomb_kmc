@@ -337,7 +337,7 @@ def find_charge_to_move():
 
 print_str = r'{: 7d} | {: 20.16e}'
 
-PRINT = True
+PRINT = False
 
 
 if MPIRANK == 0:
@@ -377,9 +377,9 @@ if MPIRANK == 0:
     print('-' * 80)
     print("Time taken: \t", t1 - t0)
     print("Time in accept:\t", move_logic_time)
-    print("N:\t\t", N)
-    print("M:\t\t", M)
-    print("NSTEP:\t\t", num_steps)
+    print("N:\t\t\t\t", N)
+    print("M:\t\t\t\t", M)
+    print("NSTEP:\t\t\t", num_steps)
 
     print('-' * 80)
     opt.print_profile()
