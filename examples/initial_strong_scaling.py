@@ -93,10 +93,6 @@ if MPIRANK == 0:
     print("E:\t", E)
     print("M:\t", M)
 
-    print('-' * 80)
-    opt.print_profile()
-    print('-' * 80)
-
 
 # setup the state
 A = state.State()
@@ -134,7 +130,10 @@ kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, domain=A.domain, r=R, l=L,
     boundary_condition='pbc', max_move=max_move_dim)
 kmc_fmm.initialise()
 
-
+if MPIRANK == 0:
+    print('-' * 80)
+    opt.print_profile()
+    print('-' * 80)
 
 
 # make proposed positions kernel
@@ -268,8 +267,10 @@ rate = ParticleLoop(
     }
 )
 
+move_logic_time = 0.0
 
 def find_charge_to_move():
+    mt0 = time.time()
     
     # compute rates from differences
     rate.execute()
@@ -330,6 +331,8 @@ def find_charge_to_move():
         move = None
 
     kmc_fmm.accept(move)
+    global move_logic_time
+    move_logic_time += time.time() - mt0
 
 
 print_str = r'{: 7d} | {: 20.16e}'
@@ -373,6 +376,7 @@ if MPIRANK == 0:
 
     print('-' * 80)
     print("Time taken: \t", t1 - t0)
+    print("Time in accept:\t", move_logic_time)
     print("N:\t\t", N)
     print("M:\t\t", M)
     print("NSTEP:\t\t", num_steps)

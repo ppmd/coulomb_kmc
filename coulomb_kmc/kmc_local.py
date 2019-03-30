@@ -510,7 +510,15 @@ class LocalParticleData(LocalOctalBase):
         cell_occ = 1
 
         for pid in range(positions.npart_local):
+            if self.comm.rank == 909 and pid == 5:
+                print("IN LOCAL INIT")
+                print(positions[pid, :])
+                print(fmm_cells[pid, 0])
+                print("-------------")
+
             cell = self._get_fmm_cell(pid, fmm_cells, slow_to_fast=True)
+            
+
             
             
             if cell in self._cell_map.keys():
