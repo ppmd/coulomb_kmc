@@ -372,8 +372,6 @@ t1 = time.time()
 if MPIRANK == 0:
     print(print_str.format(stepx, kmc_fmm.energy))
 
-
-if MPIRANK == 0:
     time_taken = t1 - t0
     print('-' * 80)
     print("Time taken: \t", time_taken)
@@ -389,6 +387,8 @@ if MPIRANK == 0:
     with open('./timing_{}_{}_{}_{}.result'.format(MPISIZE, NTHREADS, N, num_steps), 'a') as fh:
         fh.write(str(time_taken))
 
+
+MPIBARRIER()
 kmc_fmm.free()
 
 
