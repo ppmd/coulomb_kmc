@@ -621,6 +621,8 @@ class KMCFMM(_PY_KMCFMM):
         )
 
         t1 = time()
+        
+        self._profile_inc('propose_count', cmove_data[0])
         self._profile_inc('propose_with_dats', t1 - t0)
 
 
@@ -871,7 +873,7 @@ class KMCFMM(_PY_KMCFMM):
         
         self._profile_inc('c-direct', td1 - td0)
         self._profile_inc('c-indirect', ti1 - ti0)
-
+        self._profile_inc('propose_count', cmove_data[0])
 
         tpd0 = time()
 
