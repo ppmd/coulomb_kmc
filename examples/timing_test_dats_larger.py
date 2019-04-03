@@ -113,10 +113,8 @@ def time_test_dats_1(N=1000, nprop=2, nsample=1000):
 
     pr = cProfile.Profile()
     pr.enable()   
-
     naccept = 0
     nsample2 = 2
-
     for px in range(N):
         if naccept == nsample2:
             break

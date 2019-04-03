@@ -385,7 +385,7 @@ if MPIRANK == 0:
     print('-' * 80)
 
     with open('./timing_{}_{}_{}_{}.result'.format(MPISIZE, NTHREADS, N, num_steps), 'a') as fh:
-        fh.write(str(time_taken))
+        fh.write(str(time_taken) + '\n')
 
 
 MPIBARRIER()
