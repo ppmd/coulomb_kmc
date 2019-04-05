@@ -85,7 +85,6 @@ M = offsets_matrix.shape[0]
 
 
 if MPIRANK == 0:
-
     print('-' * 80)
     print("N:\t", N)
     print("R:\t", R)
@@ -120,6 +119,8 @@ offsets_sa[:] = offsets_array.copy()
 
 # create the lattice local this rank
 
+MPIBARRIER()
+create_t0 = time.time()
 def ind_to_pos(px):
     s = 0.5 * E / Ns
     return (px * la) - 0.5 * E + s
@@ -169,6 +170,11 @@ high = low + N_local
 A.GID[:N_local, 0] = np.arange(low, high)
 
 A.filter_on_domain_boundary()
+
+MPIBARRIER()
+create_t1 = time.time()
+if MPIRANK == 0:
+    print("State creation time:", create_t1 - create_t0)
 
 
 # create kmc instance
