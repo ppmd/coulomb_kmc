@@ -79,20 +79,23 @@ with open(filename, 'rb') as fh:
 num_steps = int(sys.argv[2])
 N = loaded_data['P'].shape[0]
 L = 12
-R = max(3, int(log(0.5*N, 8)))
+alpha = float(sys.argv[3])
+R = max(3, int(log(alpha*N, 8)))
 E = loaded_data['E']
 rng = np.random.RandomState(seed=1234)
 M = offsets_matrix.shape[0]
 
 
 if MPIRANK == 0:
-
     print('-' * 80)
     print("N:\t", N)
+    print("alpha:\t", alpha)
     print("R:\t", R)
     print("L:\t", L)
     print("E:\t", E)
     print("M:\t", M)
+    print("max_move", max_move)
+    print("max_move_dim", max_move_dim)
 
 
 # setup the state

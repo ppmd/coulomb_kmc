@@ -79,7 +79,9 @@ N = Ns * Ns * Ns
 E = la * Ns
 
 L = 12
-R = max(3, int(log(0.5*N, 8)))
+
+alpha = float(sys.argv[3])
+R = max(3, int(log(alpha*N, 8)))
 rng = np.random.RandomState(seed=1234)
 M = offsets_matrix.shape[0]
 
@@ -87,6 +89,7 @@ M = offsets_matrix.shape[0]
 if MPIRANK == 0:
     print('-' * 80)
     print("N:\t", N)
+    print("alpha:\t", alpha)
     print("R:\t", R)
     print("L:\t", L)
     print("E:\t", E)
