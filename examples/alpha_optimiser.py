@@ -33,7 +33,7 @@ import cProfile
 #p = psutil.Process()
 
 
-def time_test_dats_1(N=1000, nprop=6, nsample=20000, R=None):
+def time_test_dats_1(N=1000, nprop=6, nsample=1000, R=None):
     
     nsample = min(N, nsample)
     assert N >= nsample
@@ -122,7 +122,7 @@ def time_test_dats_1(N=1000, nprop=6, nsample=20000, R=None):
         t_propose += t1 - t0
 
  
-    nsample2 = 20
+    nsample2 = 8
     A.domain.comm.Barrier()
     t2 = time.time()
     for ax in range(nsample2):
