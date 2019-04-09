@@ -174,14 +174,18 @@ if __name__ == '__main__':
 
     times = []
     for nx in nset:
-        ti, ni, ri, tai, nsample2 = time_test_dats_1(N=int(nx), nprop=10, R=R1)
-        E1 = nx * Nprop * (ti/ni) + (tai/nsample2)
-        ti, ni, ri, tai, nsample2 = time_test_dats_1(N=int(nx), nprop=10, R=R2)
-        E2 = nx * Nprop * (ti/ni) + (tai/nsample2)
 
-        alpha = (1.0 / nx) * (8 ** (R2))
+        ti, ni, ri, tai, nsample2 = time_test_dats_1(N=int(nx), nprop=10, R=R1)
+        if MPIRANK == 0:
+            E1 = nx * Nprop * (ti/ni) + (tai/nsample2)
+
+        ti, ni, ri, tai, nsample2 = time_test_dats_1(N=int(nx), nprop=10, R=R2)
+        if MPIRANK == 0:
+            E2 = nx * Nprop * (ti/ni) + (tai/nsample2)
 
         if MPIRANK == 0:
+
+            alpha = (1.0 / nx) * (8 ** (R2))
             times.append((int(nx), ti/ni, tai/(nsample2*nx)))
             print('{: 8.2e} {: 8.4e} {: 8.4e} {: ^12} {: 12.8f}'.format(int(nx), E1, E2, str(E1 <= E2), alpha))
 
