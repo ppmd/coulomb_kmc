@@ -91,6 +91,8 @@ if MPIRANK == 0:
     print("L:\t", L)
     print("E:\t", E)
     print("M:\t", M)
+    print("max_move", max_move)
+    print("max_move_dim", max_move_dim)
 
 
 # setup the state
