@@ -159,13 +159,12 @@ if __name__ == '__main__':
     N1 = int(sys.argv[1])
     N2 = int(sys.argv[2])
 
-    R1 = int(sys.argv[3])
-    R2 = int(sys.argv[4])
-    
+    nset = np.linspace(N1, N2, int(sys.argv[3]))
+
+    R1 = int(sys.argv[4])
+    R2 = int(sys.argv[5])
+
     Nprop = 14
-
-    nset = np.linspace(N1, N2, 30)
-
     
     top_bar = '{: ^10} {: ^12} {: ^12} {: ^12} {: ^12}' .format('N', 'T_R1', 'T_R2', 'R1 <= R2 ?', 'a')
     if MPIRANK == 0:
