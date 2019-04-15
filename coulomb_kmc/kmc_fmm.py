@@ -16,7 +16,7 @@ from scipy.special import lpmv
 # ppmd imports
 from ppmd.coulomb.fmm import PyFMM
 from ppmd.pairloop import StateHandler
-from ppmd.mpi import MPI
+from ppmd.mpi import MPI, AllocMem
 from ppmd.data import ParticleDat
 
 # coulomb_kmc imports
@@ -508,9 +508,14 @@ class KMCFMM(_PY_KMCFMM):
             _ENERGY.U01_SELF    : np.zeros((1, 1), dtype=REAL)
         }
 
-        self._ordering_buf = np.zeros(1, dtype=INT64)
+        self._ordering_buf = AllocMem((1,), dtype=INT64)
+
+
         self._ordering_win = None
         self._diff_lib = self._create_diff_lib()
+    
+    def __del__(self):
+        del self._ordering_buf
 
 
     def _create_diff_lib(self):
@@ -784,13 +789,13 @@ class KMCFMM(_PY_KMCFMM):
         
         nlocal = self.positions.npart_local
         
-        sbuf = np.zeros_like(self._ordering_buf)
+        sbuf = np.zeros_like(self._ordering_buf.array)
         sbuf[0] = nlocal
-        rbuf = np.zeros_like(self._ordering_buf)
+        rbuf = np.zeros_like(self._ordering_buf.array)
 
         assert self._ordering_win is None
-        self._ordering_win = MPI.Win.Create(self._ordering_buf,
-            disp_unit=self._ordering_buf[0].nbytes,
+        self._ordering_win = MPI.Win.Create(self._ordering_buf.array,
+            disp_unit=self._ordering_buf.array.itemsize,
             comm=self.comm
         )
         self._ordering_win.Lock(0, MPI.LOCK_SHARED)

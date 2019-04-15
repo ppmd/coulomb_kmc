@@ -95,7 +95,7 @@ class LocalParticleData(LocalOctalBase):
         lo = self.md.local_offset
         els = self.md.entry_local_size
         
-        self.cell_occupancy = AllocMem(pp, shape=(ls[0], ls[1], ls[2], 1), dtype=INT64)
+        self.cell_occupancy = AllocMem(shape=(ls[0], ls[1], ls[2], 1), dtype=INT64)
 
 
         self.entry_cell_occupancy = np.zeros(
