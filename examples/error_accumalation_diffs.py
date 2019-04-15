@@ -173,9 +173,9 @@ class ErrorPropDiff:
 if __name__ == '__main__':
 
     N = int(sys.argv[1])
+    L = int(sys.argv[2])
 
-
-    proposer = ErrorPropDiff(N, 12)
+    proposer = ErrorPropDiff(N, L)
     print("=" * 80)
     print("N:\t\t", N)
     print("Extent:\t", proposer.E)
@@ -196,81 +196,8 @@ if __name__ == '__main__':
         
         print("{: 5d} | {: 16.8e} {: 16.8e} | {: 8.2e}".format(*([tx] + list(e))))
     
-
-    np.save('./error_data_raw_{}.npy'.format(N), data)
+    np.save('./error_data_raw_{}_{}.npy'.format(N, L), data)
     proposer.free()
-
-
-
-
-#if __name__ == '__main__':
-#
-#    N = int(sys.argv[1])
-#
-#    data_list = []
-#    def save_data_list():
-#        data = np.array(data_list)
-#        np.save('./error_data_{}.npy'.format(N), data)
-#    
-#
-#    proposer = ErrorPropDiff(N, 12)
-#    print("=" * 80)
-#    print("N:\t\t", N)
-#    print("Extent:\t", proposer.E)
-#    print("=" * 80)
-#    niter = 10**4
-#
-#    m_tmp = 0.0
-#    m2_tmp = 0.0
-#    
-#    err_max = -1
-#    err_min = 100
-#
-#    mean_energy_tmp = 0.0
-#    mean_diff_energy_tmp = 0.0
-#
-#    mean_energy = 0.0
-#    mean_diff_energy = 0.0
-#
-#    def get_data_tuple():
-#        return tx, e[0], e[1], m, v, err_min, err_max, e[2], mean_diff_energy, mean_energy
-#
-#    def append_data_tuple(t):
-#        data_list.append(t)
-#
-#
-#    for tx in range(niter):
-#        if (tx > 0) and (tx % 100 == 0):
-#            proposer.random_initialise()
-#
-#        proposer.random_propose()
-#        e = proposer.diff_error
-#
-#
-#        m_tmp += e[1]
-#        m2_tmp += e[1]*e[1]
-#
-#        m = m_tmp / (tx + 1)
-#        v = (m2_tmp/ (tx  + 1)) - (m)**2.0
-#        err_max = max(err_max, e[1])
-#        err_min = min(err_min, e[1])
-#        
-#        mean_energy_tmp += abs(e[2])
-#        mean_diff_energy_tmp += abs(e[0])
-#
-#        mean_energy = mean_energy_tmp / (tx + 1)
-#        mean_diff_energy = mean_diff_energy_tmp / (tx + 1)
-#
-#
-#        t = get_data_tuple()
-#        append_data_tuple(t)
-#        
-#        print("{: 12d} | {: 8.2e} {: 8.2e} | {: 8.2e} {: 8.2e} | {: 8.2e} {: 8.2e} | {: 8.2e} | m_diff {: 8.2e} m_energy {: 8.2e} ".format(*t))
-#    
-#    save_data_list()
-#    proposer.free()
-#
-
 
 
 

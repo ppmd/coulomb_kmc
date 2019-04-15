@@ -155,6 +155,7 @@ def time_test_dats_1(N=1000, nprop=6, nsample=1000, R=None):
 
     return (t_propose, nm, R, t3 - t2, nsample2)
 
+
 if __name__ == '__main__':
     N1 = int(sys.argv[1])
     N2 = int(sys.argv[2])
@@ -182,12 +183,23 @@ if __name__ == '__main__':
         ti, ni, ri, tai, nsample2 = time_test_dats_1(N=int(nx), nprop=10, R=R2)
         if MPIRANK == 0:
             E2 = nx * Nprop * (ti/ni) + (tai/nsample2)
-
+        
+        b = 0
         if MPIRANK == 0:
 
             alpha = (1.0 / nx) * (8 ** (R2))
             times.append((int(nx), ti/ni, tai/(nsample2*nx)))
+            
             print('{: 8.2e} {: 8.4e} {: 8.4e} {: ^12} {: 12.8f}'.format(int(nx), E1, E2, str(E1 <= E2), alpha))
+
+            b = int(not (E1 <= E2))
+        
+        b = np.array((b,), INT64)
+        mpi.MPI.COMM_WORLD.Bcast(b, 0), 
+        
+        if b[0]:
+            break
+
 
     if MPIRANK == 0:
         times = np.array(times)

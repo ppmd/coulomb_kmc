@@ -23,6 +23,7 @@ from ppmd.lib import build
 
 
 MPI = mpi.MPI
+AllocMem = mpi.AllocMem
 
 if ppmd.cuda.CUDA_IMPORT:
     cudadrv = ppmd.cuda.cuda_runtime.cudadrv
@@ -94,13 +95,7 @@ class LocalParticleData(LocalOctalBase):
         lo = self.md.local_offset
         els = self.md.entry_local_size
         
-        rbytes = ls[0]*ls[1]*ls[2]*1*ctypes.sizeof(INT64)
-        self._cell_occupancy_p = MPI.Alloc_mem(rbytes)
-
-        assert self._cell_occupancy_p.nbytes == rbytes
-        pp = ctypes.cast(self._cell_occupancy_p.address, ctypes.POINTER(INT64))
-
-        self.cell_occupancy = np.ctypeslib.as_array(pp, shape=(ls[0], ls[1], ls[2], 1))
+        self.cell_occupancy = AllocMem(pp, shape=(ls[0], ls[1], ls[2], 1), dtype=INT64)
 
 
         self.entry_cell_occupancy = np.zeros(
@@ -152,14 +147,13 @@ class LocalParticleData(LocalOctalBase):
     
     def __del__(self):
         del self.cell_occupancy
-        MPI.Free_mem(self._cell_occupancy_p)
     
 
     def _create_wins(self):
         assert self._occ_win == None
         self._occ_win = MPI.Win.Create(
-            self.cell_occupancy,
-            disp_unit=self.cell_occupancy.itemsize,
+            self.cell_occupancy.array,
+            disp_unit=self.cell_occupancy.array.itemsize,
             comm=self.comm
         )
 
@@ -502,7 +496,7 @@ class LocalParticleData(LocalOctalBase):
         self.group = self.positions.group
         self._win_ind = self.md.get_win_ind()
 
-        self.cell_occupancy.fill(0)
+        self.cell_occupancy.array.fill(0)
         
         self._create_wins()
 
@@ -583,7 +577,7 @@ class LocalParticleData(LocalOctalBase):
         self.comm.Barrier()
  
 
-        red_max_occ = np.array([np.max(self.cell_occupancy[:,:,:,0])], dtype=INT64)
+        red_max_occ = np.array([np.max(self.cell_occupancy.array[:,:,:,0])], dtype=INT64)
         red_val = np.zeros_like(red_max_occ)
         self.comm.Allreduce(red_max_occ, red_val, MPI.MAX)
         self._check_owner_store(max_cell_occ=red_val[0])
@@ -668,7 +662,7 @@ class LocalParticleData(LocalOctalBase):
                         self._owner_store[llcellx[0], llcellx[1], llcellx[2], :, : ].copy()
 
                 self.local_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], :] = \
-                    self.cell_occupancy[llcellx[0], llcellx[1], llcellx[2], 0].copy()
+                    self.cell_occupancy.array[llcellx[0], llcellx[1], llcellx[2], 0].copy()
 
             else:
                 # case to issue MPI_Get
