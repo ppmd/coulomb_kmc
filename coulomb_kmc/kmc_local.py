@@ -144,10 +144,7 @@ class LocalParticleData(LocalOctalBase):
             self._init_cuda_kernels()
         else:
             self._init_host_kernels()
-    
-    def __del__(self):
-        del self.cell_occupancy
-    
+
 
     def _create_wins(self):
         assert self._occ_win == None
@@ -417,20 +414,22 @@ class LocalParticleData(LocalOctalBase):
         assert self._win_global_store == None
 
         if self._owner_store is None or \
-                max_cell_occ > self._owner_store.shape[3]:
+                max_cell_occ > self._owner_store.array.shape[3]:
 
             if self._win_global_store is not None:
                 self._win_global_store.Free()
                 self.comm.Barrier()
 
             ls = self.local_size
-            self._owner_store = np.zeros(
+            
+            self._owner_store = AllocMem(
                 (ls[0], ls[1], ls[2], max_cell_occ, 5), 
                 dtype=REAL
             )
-            nbytes = self._owner_store[0,0,0,0,:].nbytes
+
+            nbytes = self._owner_store.array[0,0,0,0,:].nbytes
             self._win_global_store = MPI.Win.Create(
-                self._owner_store,
+                self._owner_store.array,
                 disp_unit=nbytes,
                 comm=self.comm
             )
@@ -634,9 +633,9 @@ class LocalParticleData(LocalOctalBase):
                 e = s + npart
 
                 llcellx = [cx - ox for cx, ox in zip(cellx, lo)]
-                self._owner_store[llcellx[0], llcellx[1], llcellx[2], s:e:, 0:3: ] = positions[particle_inds, :].copy()
-                self._owner_store[llcellx[0], llcellx[1], llcellx[2], s:e:, 3 ] = charges[particle_inds, 0].copy()
-                self._owner_store[llcellx[0], llcellx[1], llcellx[2], s:e:, 4 ].view(dtype=INT64)[:] = \
+                self._owner_store.array[llcellx[0], llcellx[1], llcellx[2], s:e:, 0:3: ] = positions[particle_inds, :].copy()
+                self._owner_store.array[llcellx[0], llcellx[1], llcellx[2], s:e:, 3 ] = charges[particle_inds, 0].copy()
+                self._owner_store.array[llcellx[0], llcellx[1], llcellx[2], s:e:, 4 ].view(dtype=INT64)[:] = \
                     ids[particle_inds, 0].copy()
 
 
@@ -659,7 +658,7 @@ class LocalParticleData(LocalOctalBase):
                 # do direct copy
                 llcellx = [cx - ox for cx, ox in zip(gcellx, lo)]
                 self.local_particle_store[lcellx[0], lcellx[1], lcellx[2], : , : ] = \
-                        self._owner_store[llcellx[0], llcellx[1], llcellx[2], :, : ].copy()
+                        self._owner_store.array[llcellx[0], llcellx[1], llcellx[2], :, : ].copy()
 
                 self.local_cell_occupancy[lcellx[0], lcellx[1], lcellx[2], :] = \
                     self.cell_occupancy.array[llcellx[0], llcellx[1], llcellx[2], 0].copy()
