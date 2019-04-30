@@ -12,11 +12,7 @@ Requires the PPMD project found here:
 
 https://bitbucket.org/wrs20/ppmd/
 
-To install PPMD with pip,
-
-``pip install git+https://bitbucket.org/wrs20/ppmd@master``
-
-then install coulomb_kmc
+Install coulomb_kmc with:
 
 ``pip install git+https://bitbucket.org/wrs20/coulomb_kmc@master``
 
