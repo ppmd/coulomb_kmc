@@ -817,7 +817,7 @@ class LocalCellExpansions(LocalOctalBase):
         _t = self.flop_count_accept
         tf = sum([_tx for _tx in _t.values()])
         self._profile_inc('c_accept_flop_count_local_create', tf)
-        self._accept_lib = build.simple_lib_creator(header_code=' ', src_code=src)['accept_local_exp']
+        self._accept_lib = build.simple_lib_creator(header_code=' ', src_code=src, name='octal_accept_lib')['accept_local_exp']
 
 
 
