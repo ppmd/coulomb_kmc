@@ -8,4 +8,3 @@ pytest-xdist
 pymbolic
 ConfigParser
 transforms3d
-git+https://bitbucket.org/wrs20/ppmd
