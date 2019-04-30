@@ -21,7 +21,6 @@ setup(
    url="https://bitbucket.org/wrs20/coulomb_kmc",
    packages=find_packages(),
    install_requires=install_requires,
-   dependency_links=['git+https://bitbucket.org/wrs20/ppmd@master'],
    scripts=[],
    include_package_data=True
 )
