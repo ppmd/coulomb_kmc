@@ -2,11 +2,10 @@
 
 Introduction
 ------------
-Git repository for FMM based KMC algorithms.
+Git repository for FMM-KMC implementation based on the algorithm in <paper link>.
 
 Installation
 ------------
-
 
 Requires the PPMD project found here:
 
