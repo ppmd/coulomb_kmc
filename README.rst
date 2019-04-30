@@ -22,8 +22,4 @@ then install coulomb_kmc
 
 
 
-The contents of this git repository should be placed somewhere found by the ``PYTHONPATH`` environment variable.
-
-
-
 
