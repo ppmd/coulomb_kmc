@@ -468,9 +468,6 @@ if MPIRANK == 0:
     opt.print_profile()
     print('-' * 80)
 
-    with open('./timing_{}_{}_{}_{}.result'.format(MPISIZE, NTHREADS, N, num_steps), 'a') as fh:
-        fh.write(str(time_taken) + '\n')
-
 
 MPIBARRIER()
 kmc_fmm.free()
