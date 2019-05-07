@@ -447,6 +447,7 @@ class KMCFMM(_PY_KMCFMM):
     :arg float energy_unit: Energy unit to use, defaults to 1.0.
     :arg bool _debug: Debugging flag for FMM solver, can be ignored.
     :arg int l: Number of expansion terms to use for FMM solve and propose/accept operations.
+    :arg float max_move: Maximum distance of a proposed move.
     :arg bool cuda_direct: Enable CUDA offloading of direct interactions (work in progress).
     :arg tuple mirror_direction: Tuple of bools, e.g. (True, False, False) to enable mirror charge handling for Dirichlet boundary conditions (work in progress).
     """

@@ -12,6 +12,7 @@ FMM-KMC Documentation
     
    installation
    kmc_fmm
+   example_simple
    example_general
     
 
