@@ -39,13 +39,6 @@ First we create a state ``A`` with the ``ParticleDats`` and ``ScalarArrays`` req
     A.prop_masks = ParticleDat(ncomp=M, dtype=INT64)
     # ParticleDat for ``prop_energy_diffs``
     A.prop_diffs = ParticleDat(ncomp=M)
-    
-
-    # ParticleDats to use to compute rates
-    A.prop_inc_sum = ParticleDat(ncomp=M) 
-    A.prop_rates = ParticleDat(ncomp=M, dtype=REAL)
-    A.prop_rate_totals = ParticleDat(ncomp=1, dtype=REAL)
-
 
     # ScalarArray that holds the number of moves per site type
     # this example uses a cubic lattice with one site type,
@@ -64,13 +57,25 @@ The charge properties should now be initialised. After particle positions and ch
     kmc_fmm.initialise()
 
 
-Algorithm 2 in  *Fast electrostatic solvers for kinetic Monte Carlo simulations* describes a sufficient method to populate the ``prop_positions`` and ``prop_masks`` ParticleDats. The ``propose_with_dats_example.py`` example contains an implementation of this algorithm. Note: this algorithm (and implementation) can be readily extended to only consider charges that are close to an accepted move, this reduces the number of redundant bookkeeping operations.
+Algorithm 2 in  *Fast electrostatic solvers for kinetic Monte Carlo simulations* describes a sufficient method to populate the ``prop_positions`` and ``prop_masks`` ParticleDats.
+See the :ref:`Bookkeeping` section for more details. The ``propose_with_dats_example.py`` example contains an implementation of this algorithm. Note: this algorithm (and implementation) can be readily extended to only consider charges that are close to an accepted move, this reduces the number of redundant bookkeeping operations.
 After this bookkeeping is performed, the change in system energy for the set of all proposed moves is computed by the call to ``propose_with_dats``.
 
 ::
 
     kmc_fmm.propose_with_dats(site_max_counts, A.sites, A.prop_positions,
         A.prop_masks, A.prop_diffs, diff=True)
+
+
+The computed energy difference are stored in the ``A.prop_diffs`` ParticleDat. By using a ParticleLoop or by using NumPy calls rates can be computed. Once a move is chosen to be accepted it should be passed to the ``accept``  method of the ``KMCFMM`` instance. This call will update the ``KMCFMM`` instance and update the particle position in the PositionDat the ``KMCFMM`` instance was created with.
+
+The ``accept`` method is called with a tuple ``(id, np.array((r_x, r_y, r_z)))`` of local particle id and new position. By "local particle id" we require the local index of the particle to move on the owning MPI rank. In the provided example we use the ``np.where`` to locate a particle using its global id stored in ``A.GID``.
+
+::
+
+    kmc_fmm.accept(move)
+
+Only one MPI rank should call ``accept`` with a tuple, all other ranks should pass ``None``.
 
 
 
