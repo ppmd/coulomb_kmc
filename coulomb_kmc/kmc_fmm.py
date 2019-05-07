@@ -1,3 +1,7 @@
+"""
+The KMCFMM class is the user facing interface to this implementation of the FMM-KMC algorithm.
+"""
+
 from __future__ import division, print_function, absolute_import
 __author__ = "W.R.Saunders"
 
@@ -420,14 +424,34 @@ class _PY_KMCFMM(object):
 
 
 class KMCFMM(_PY_KMCFMM):
+    """
+    TODO
+
+    :arg PositionDat positions: PositionDat(ncomp=3, dtype=ctypes.c_double) containing charge positions.
+    :arg ParticleDat charges: ParticleDat(ncomp=1, dtype=ctypes.c_int64) containing charge values.
+    :arg int N: Number of charges.
+    :arg str boundary_condition: Specific boundary condition as one of: 'pbc' for periodic boundary conditions, 'free_space' for the simulation cell in a vacuum or '27' for the simulation cell and the nearest 26 periodic images in a vacuum.
+    :arg int r: Number of FMM levels (overrides heuristic choice using N).
+    :arg float shell_width: Additional argument for FMM solver, can be left at the default of 0.0.
+    :arg float energy_unit: Energy unit to use, defaults to 1.0.
+    :arg bool _debug: Debugging flag for FMM solver, can be ignored.
+    :arg int l: Number of expansion terms to use for FMM solve and propose/accept operations.
+    :arg bool cuda_direct: Enable CUDA offloading of direct interactions (work in progress).
+    :arg tuple mirror_direction: Tuple of bools, e.g. (True, False, False) to enable mirror charge handling for Dirichlet boundary conditions (work in progress).
+    """
 
     def free(self):
+        """
+        Free the KMCFMM instance. Should be called before program termination. Failure to call this method may result in subsequent MPI race conditions.
+        """
+
         self.fmm.free()
         del self.fmm
 
     def __init__(self, positions, charges, domain, N=None, boundary_condition='pbc',
         r=None, shell_width=0.0, energy_unit=1.0,
         _debug=False, l=None, max_move=None, cuda_direct=False, mirror_direction=None):
+
 
         # horrible workaround to convert sensible boundary condition
         # parameter format to what exists for PyFMM
@@ -576,11 +600,21 @@ class KMCFMM(_PY_KMCFMM):
     def propose_with_dats(self, site_max_counts, current_sites,
             prop_positions, prop_masks, prop_energy_diffs, diff=True):
         """
-        site_max_counts:    ScalarArray, dtype=c_int64      Input
-        current_sites:      ParticleDat, dtype=c_int64      Input
-        prop_positions:     ParticleDat, dtype=c_double     Input
-        prop_masks:         ParticleDat, dtype=c_int64      Input
-        prop_energy_diffs:  ParticleDat, dtype=c_double     Output
+        Compute the energy difference that would occur if a proposed move was performed. For this interface each 
+        charge exists at a site type. Each site type has a maximum number of proposed moves associated with it.
+        The proposed moves are passed in a ParticleDat along with a mask. The change in system energy is returned in
+        the ParticleDat prop_energy_diffs.
+
+        A detailed explanation of this interface, including example bookkeeping algorithms, is given in the paper
+        "Fast electrostatic solvers for kinetic Monte Carlo simulations".
+
+
+        :arg ScalarArray site_max_counts:    ScalarArray(dtype=c_int64)      (Input). Max moves associated with site type.
+        :arg ParticleDat current_sites:      ParticleDat(dtype=c_int64)      (Input). Store which site each charge is currently on.
+        :arg ParticleDat prop_positions:     ParticleDat(dtype=c_double)     (Input). Set of proposed positions for each charge.
+        :arg ParticleDat prop_masks:         ParticleDat(dtype=c_int64)      (Input). Energy is computed for moves with mask > 0.
+        :arg ParticleDat prop_energy_diffs:  ParticleDat(dtype=c_double)     (Output. Energy (difference) of each proposed move with mask > 0.
+        :arg bool diff: default True. If diff is True then the prop_energy_diffs ParticleDat is populated with energy differences.
         """
         
         self._assert_init()
@@ -635,9 +669,11 @@ class KMCFMM(_PY_KMCFMM):
     def propose(self, moves):
         """
         Propose moves by providing the local index of the particle and proposed new sites.
-        Returns system energy of proposed moves.
-        e.g. moves = ((0, np.array(((1, 0, 0), (0, 1, 0), (0, 0, 1)))), )
-        should return (np.array((0.1, 0.2, 0.3)), )
+        NB. Returns system energy of proposed moves.
+        
+        
+        :arg tuple moves: Tuple of moves where each element is a pair (id, moves_id) where id is a particle id and moves_id is a NumPy array of new positions.
+
         """
         self._assert_init()
         t0 = time()
@@ -658,7 +694,7 @@ class KMCFMM(_PY_KMCFMM):
         of moves.
         (42, np.array(1.0, 2.0, 3.0)), (84, np.array(-1.0, 2.0, 3.0))
 
-        :arg move: move to accept
+        :arg tuple move: move to accept
         """
 
         if self.mirror_direction is None:
@@ -809,6 +845,12 @@ class KMCFMM(_PY_KMCFMM):
 
 
     def initialise(self):
+        """
+        Perform the initial FMM solve and initialise the KMCFMM instance. Must be called before propose or accept can be called.
+
+        """
+
+
         t0 = time()
 
 
