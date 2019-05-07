@@ -1,10 +1,16 @@
-.. FMM-KMC documentation master file, created by
-   sphinx-quickstart on Tue May  7 10:27:18 2019.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
-
 FMM-KMC Documentation
 =====================
+
+This is the documentation for the reference implementation of the FMM-KMC algorithm described in *Fast electrostatic solvers for kinetic Monte Carlo simulations*.
+
+There exists a main Python class ``FMMKMC`` that provides the interface to our implementation.
+After initialisation, this class provides methods to propose and accept particle moves using the method we describe in the above paper.
+
+This implementation supports MPI and OpenMP parallelism and is applicable to cubic systems with fully periodic, free space and Dirichlet (plate like, work in progress) boundary conditions.
+
+We provide this implementation as an extension to the performance-portable Molecular Dynamics framework (PPMD): https://bitbucket.org/wrs20/ppmd.
+
+
 
 .. toctree::
    :maxdepth: 2
