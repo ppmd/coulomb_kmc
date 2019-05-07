@@ -1,5 +1,5 @@
-Main Interface
-==============
+FMM-KMC Interface
+=================
 
 .. automodule:: coulomb_kmc.kmc_fmm
 

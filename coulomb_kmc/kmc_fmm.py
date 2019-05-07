@@ -1,5 +1,6 @@
 """
-The KMCFMM class is the user facing interface to this implementation of the FMM-KMC algorithm.
+The KMCFMM class is the user facing interface to this implementation of the FMM-KMC algorithm. The underlying algorithm
+of this implementation is described in *Fast electrostatic solvers for kinetic Monte Carlo simulations*.
 """
 
 from __future__ import division, print_function, absolute_import
@@ -425,7 +426,17 @@ class _PY_KMCFMM(object):
 
 class KMCFMM(_PY_KMCFMM):
     """
-    TODO
+    This class provides the methods required for the electrostatic energy component in a Kinetic Monte Carlo simulation.
+    It is applicable to systems that are cubic with free space, fully periodic and (plate like) Dirichlet boundary
+    conditions (work in progress).
+
+    A KMCFMM instance should be initialised, which performs the initial FMM solve, by calling the **initialise** 
+    method. Furthermore a KMCFMM instance should be freed by calling the **free** method.
+
+    After **initialise** is called the current system energy is given by the **energy** property. Moves can be proposed
+    with the **propose** or **propose_with_dats** methods. A move can be accepted by calling the **accept** method.
+    When a move is accepted with the **accept** method the move is also enacted in the position PositionDat that
+    the KMCFMM instance is initialised with.
 
     :arg PositionDat positions: PositionDat(ncomp=3, dtype=ctypes.c_double) containing charge positions.
     :arg ParticleDat charges: ParticleDat(ncomp=1, dtype=ctypes.c_int64) containing charge values.
@@ -478,6 +489,8 @@ class KMCFMM(_PY_KMCFMM):
         self.positions = positions
         self.charges = charges
         self.energy = None
+        """Total system energy, valid after a call to **initialise**."""
+
         self.group = positions.group
         self.energy_unit = energy_unit
         self.comm = self.fmm.tree.cart_comm
@@ -606,7 +619,7 @@ class KMCFMM(_PY_KMCFMM):
         the ParticleDat prop_energy_diffs.
 
         A detailed explanation of this interface, including example bookkeeping algorithms, is given in the paper
-        "Fast electrostatic solvers for kinetic Monte Carlo simulations".
+        *Fast electrostatic solvers for kinetic Monte Carlo simulations*.
 
 
         :arg ScalarArray site_max_counts:    ScalarArray(dtype=c_int64)      (Input). Max moves associated with site type.

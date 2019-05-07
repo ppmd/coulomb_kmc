@@ -3,14 +3,16 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to FMM-KMC's documentation!
-===================================
+FMM-KMC Documentation
+=====================
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
-
+    
+   installation
    kmc_fmm
+   example_general
     
 
 Indices and tables
