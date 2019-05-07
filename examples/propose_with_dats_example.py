@@ -1,3 +1,17 @@
+"""
+Script is called with 3 arguments.
+1) Number of charges to form cubic lattice from N, may be rounded up to nearest cube number.
+2) Number of KMC steps
+3) Alpha to determine number of FMM levels R = max(3, log_8(alpha * N)).
+
+
+In this example charges exist on a cubic lattice with spacing 1.1. The simulation is initialised with a cubic
+lattice of ~N charges with a spacing of 3.3. 
+"""
+
+
+
+
 from __future__ import print_function, division
 
 __author__ = "W.R.Saunders"
@@ -21,7 +35,6 @@ MPISIZE = mpi.MPI.COMM_WORLD.Get_size()
 MPIRANK = mpi.MPI.COMM_WORLD.Get_rank()
 MPIBARRIER = mpi.MPI.COMM_WORLD.Barrier
 NTHREADS = runtime.NUM_THREADS
-
 
 
 ParticleDat = data.ParticleDat
@@ -64,6 +77,8 @@ offsets_matrix *= la / 3.
 
 offsets_array = offsets_matrix.ravel()
 
+
+# determine the maximum distance a charge may move
 max_move = 0
 for ox in range(offsets_matrix.shape[0]):
     max_move = max(max_move, np.linalg.norm(offsets_matrix[ox, :]))
@@ -78,10 +93,14 @@ Ns = int(math.ceil(N**(1./3.)))
 N = Ns * Ns * Ns
 E = la * Ns
 
+# number of expansion terms
 L = 12
 
+# number of FMM levels
 alpha = float(sys.argv[3])
 R = max(3, int(log(alpha*N, 8)))
+
+# common RNG for accepts
 rng = np.random.RandomState(seed=1234)
 M = offsets_matrix.shape[0]
 
@@ -122,7 +141,7 @@ offsets_sa = ScalarArray(ncomp=offsets_array.shape[0], dtype=REAL)
 offsets_sa[:] = offsets_array.copy()
 
 
-# create the lattice local this rank
+# create the lattice local to this rank
 
 MPIBARRIER()
 create_t0 = time.time()
@@ -159,21 +178,23 @@ del pi
 A.Q[:N_local, :] = qi.copy()
 del qi
 
+# all particles are of site type 0
 A.sites[:N_local, 0] = 0
 
+
+# compute unique global ids
 all_totals = np.zeros(MPISIZE, INT64)
 A.domain.comm.Allgather(np.array(N_local, INT64), all_totals)
 all_inc_sum = np.cumsum(all_totals)
-
 if MPIRANK == 0:
     low = 0
 else:
     low = all_inc_sum[MPIRANK - 1]
-
 high = low + N_local
-
 A.GID[:N_local, 0] = np.arange(low, high)
 
+
+# setup ppmd data distribution
 A.filter_on_domain_boundary()
 
 MPIBARRIER()
@@ -407,14 +428,21 @@ if MPIRANK == 0:
 MPIBARRIER()
 t0 = time.time()
 
+
+# main KMC loop
 for stepx in range(num_steps):
     
+    # compute proposed move (wrapped into domain)
     prop_pos.execute()
-    exclude.execute()
 
+    # mask of overlapping moves
+    exclude.execute()
+    
+    # get new energies
     kmc_fmm.propose_with_dats(site_max_counts, A.sites,
         A.prop_positions, A.prop_masks, A.prop_diffs, diff=True)
     
+    # find a charge to move and call accept
     find_charge_to_move()
 
     if MPIRANK == 0 and PRINT:

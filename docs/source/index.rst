@@ -14,6 +14,8 @@ FMM-KMC Documentation
    kmc_fmm
    example_general
    example_bookkeeping
+   example_simple
+   example_accept
     
 
 Indices and tables
