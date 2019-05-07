@@ -1,5 +1,5 @@
-**propose_with_dats** Example
-=============================
+**propose_with_dats**
+=====================
 
 .. highlight:: python
 
@@ -60,6 +60,8 @@ The charge properties should now be initialised. After particle positions and ch
 Algorithm 2 in  *Fast electrostatic solvers for kinetic Monte Carlo simulations* describes a sufficient method to populate the ``prop_positions`` and ``prop_masks`` ParticleDats.
 See the :ref:`Bookkeeping` section for more details. The ``propose_with_dats_example.py`` example contains an implementation of this algorithm. Note: this algorithm (and implementation) can be readily extended to only consider charges that are close to an accepted move, this reduces the number of redundant bookkeeping operations.
 After this bookkeeping is performed, the change in system energy for the set of all proposed moves is computed by the call to ``propose_with_dats``.
+
+The ``KMCFMM`` implementation expects all proposed positions to be inside the simulation domain.
 
 ::
 
