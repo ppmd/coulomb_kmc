@@ -18,7 +18,7 @@ setup(
    long_description=long_description,
    author='William R Saunders',
    author_email='W.R.Saunders@bath.ac.uk',
-   url="https://bitbucket.org/wrs20/coulomb_kmc",
+   url="https://github.com/ppmd/coulomb_kmc",
    packages=find_packages(),
    install_requires=install_requires,
    scripts=[],

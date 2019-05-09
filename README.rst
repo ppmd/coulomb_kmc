@@ -9,11 +9,11 @@ Installation
 
 Requires the PPMD project found here:
 
-https://bitbucket.org/wrs20/ppmd/
+https://github.com/ppmd/coulomb_kmc
 
 Install coulomb_kmc with:
 
-``pip install git+https://bitbucket.org/wrs20/coulomb_kmc@master``
+``pip install git+https://github.com/ppmd/coulomb_kmc@master``
 
 
 

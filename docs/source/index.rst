@@ -8,9 +8,9 @@ After initialisation, this class provides methods to propose and accept particle
 
 This implementation supports MPI and OpenMP parallelism and is applicable to cubic systems with fully periodic, free space and Dirichlet (plate like, work in progress) boundary conditions.
 
-We provide this implementation as an extension to the performance-portable Molecular Dynamics framework (PPMD): https://bitbucket.org/wrs20/ppmd. 
+We provide this implementation as an extension to the performance-portable Molecular Dynamics framework (PPMD): https://github.com/ppmd/ppmd. 
 
-The source code will be made available at https://bitbucket.org/wrs20/coulomb_kmc.
+The source code will be made available at https://github.com/ppmd/coulomb_kmc.
 
 
 

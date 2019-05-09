@@ -4,7 +4,7 @@ Bookkeeping
 .. highlight:: python
 
 Here we describe how to implement Algorithm 2 in  *Fast electrostatic solvers for kinetic Monte Carlo simulations* with a ParticleLoop and a PairLoop.
-The ParticleLoop and PairLoop are the fundamental looping operations of the performance-portable framework for Molecular Dynamics (PPMD) https://bitbucket.org/wrs20/ppmd.
+The ParticleLoop and PairLoop are the fundamental looping operations of the performance-portable framework for Molecular Dynamics (PPMD) https://github.com/ppmd/ppmd.
 We use the following definitions for ParticleLoop and PairLoop.
 
 :: 
