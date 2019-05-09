@@ -15,7 +15,7 @@ Installation
 
 Requires the PPMD project found here:
 
-https://github.com/ppmd/coulomb_kmc
+https://github.com/ppmd/ppmd
 
 Install coulomb_kmc with:
 
