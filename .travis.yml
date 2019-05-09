@@ -1,0 +1,29 @@
+dist:  bionic
+language: python
+python:
+    - "3.7"
+
+before_install:
+    - sudo apt update
+    - sudo apt install -y libopenmpi-dev openmpi-bin mpi-default-bin
+    - pip install git+https://bitbucket.org/wrs20/ppmd@master
+
+install:
+    - pip install git+https://bitbucket.org/wrs20/coulomb_kmc@master
+
+script:
+    - cd docs
+    - make html
+    - touch build/html/.nojekyll
+    - ls -l build/html/.nojekyll
+
+deploy:
+    provider: pages
+    repo: ppmd/coulomb_kmc
+    target-branch: gh-pages
+    local-dir: docs/build/html
+    github_token: $GITHUB_TOKEN
+    skip-cleanup: true
+    on:
+      branch: master
+      python: 3.7
