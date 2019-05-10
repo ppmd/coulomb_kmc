@@ -18,6 +18,7 @@ install:
 
 script:
     - cd docs
+    - make -f Makefile_sphinxapi
     - make html
     - touch build/html/.nojekyll
     - ls -l build/html/.nojekyll

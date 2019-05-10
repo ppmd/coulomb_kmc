@@ -24,7 +24,16 @@ The source code will be made available at https://github.com/ppmd/coulomb_kmc.
    example_bookkeeping
    example_simple
    example_accept
+ 
+
+Generated Documentation
+=======================
+
+
+.. toctree::
     
+    modules/coulomb_kmc
+
 
 Indices and tables
 ==================
