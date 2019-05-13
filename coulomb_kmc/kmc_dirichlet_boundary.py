@@ -1,5 +1,8 @@
 """
-Module to handle dirichlet boundary conditions.
+Module to handle Dirichlet boundary conditions. By using mirror charges mirror "plate like" boundary conditions are 
+achieved.
+
+This implementation allows for planes where the field is zero at either end and the middle of a domain in a direction.
 """
 __author__ = "W.R.Saunders"
 
@@ -18,13 +21,36 @@ class MirrorChargeSystem:
     """
     Class to create a cubic system of mirror charges from an initial system.
     The intent is that the potential field on the boundaries of the original
-    system are zero.
+    system are zero. The current implementation only allows for one direction
+    to have a zero field boundary condition.
+    
+    This class is initialised with a set of positions, charges and globals ids
+    to create a mirror charge system from. It is assumed that the global ids
+    are in [0, N-1] for N charges. The new global ids are in [N, 2N-1].
+
+    The new state contains a new ParticleDat (ncomp=2, dtype=c_int64) that
+    indicates if a particle is a mirror charge or an "original" charge.
+
+    # the 0-th component points to the new mirror for the original positions
+    mirror_map[:N:, 0] = new_ids[N:2*N:, 0]
+    # and to the original id for the mirrors
+    mirror_map[N:2*N:, 0] = new_ids[:N:, 0]
+    
+    The 1-th component indicates if the charge is a mirror.
+    mirror_maps[:N:, 1] = MIRROR_ORIG
+    if   dims_to_zero[0]: flag = MIRROR_X_REFLECT
+    elif dims_to_zero[1]: flag = MIRROR_Y_REFLECT
+    elif dims_to_zero[2]: flag = MIRROR_Z_REFLECT
+    mirror_maps[N:2*N:, 1] = flag
+
+    :param dims_to_zero: xyz tuple of directions to make zero on boundary. e.g. (True, False, False) for x-direction.
+    :param state: initial state to tile and reflect.
+    :param str position_name: Name of PositionDat instance in passed state.
+    :param str charge_name: Name of ParticleDat (ncomp=1, dtype=c_double) to use for charges.
+    :param str id_name: Name of ParticleDat (ncomp=1, dtype=c_int64) to use for global ids.
     """
+
     def __init__(self, dims_to_zero, state, position_name, charge_name, id_name):
-        """
-        :param dims_to_zero: xyz tuple of directions to make zero on boundary.
-        :param state: initial state to tile and reflect.
-        """
         
         map_name = 'mirror_map'
 
@@ -51,6 +77,7 @@ class MirrorChargeSystem:
                             'check input state.domain.extent.')
 
         self.mirror_state = md.state.State()
+        """Created state with 2N particles"""
         self.mirror_state.domain = type(state.domain)(extent=mirror_extent)
         self.mirror_state.domain.boundary_condition = type(state.domain.boundary_condition)()
 

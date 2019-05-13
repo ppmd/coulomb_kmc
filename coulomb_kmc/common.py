@@ -80,15 +80,24 @@ cell_offsets = (
 )
 
 def add_flop_dict(d1, d2):
+    """
+    Combines two FLOP counting dicts.
+    """
     for kx in ('+', '-', '*', '/'):
         d1[kx] += d2[kx]
     return d1
 
 def new_flop_dict():
+    """
+    Returns a new FLOP counting dict with zero counts.
+    """
     return {'+': 0, '-': 0, '*': 0, '/': 0}
 
 
 class ProfInc:
+    """
+    Base class to inherit that gives profiling methods.
+    """
     def _profile_inc(self, key, inc):
         key = self.__class__.__name__ + ':' + key
         if key not in PROFILE.keys():
