@@ -50,7 +50,7 @@ class _ENERGY(Enum):
     U01_SELF = 'u01_self'
 
 
-class _PY_KMCFMM(object):
+class _PY_KMCFMM:
     """
     This class contains python based test code and PoC code that is required by
     tests but is not the performant/MPI code path.

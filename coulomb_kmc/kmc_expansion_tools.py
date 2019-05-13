@@ -14,7 +14,14 @@ from ppmd.lib.build import simple_lib_creator
 from coulomb_kmc import common
 
 
-class LocalExpEval(object):
+class LocalExpEval:
+    """
+    Generates C code to manipulate and evaluate Multipole and Local expansions.
+    Also generates the C code for Multipole and Local expansion manipulation
+    used in other libraries.
+
+    :arg int L: Number of expansion terms.
+    """
     
     def __init__(self, L):
         self.L = L

@@ -24,6 +24,17 @@ if ppmd.cuda.CUDA_IMPORT:
 
 
 class FMMSelfInteraction:
+    """
+    Handles the self interaction between the new position and old position of a
+    proposed move.
+
+    :arg fmm: PyFMM instance to use.
+    :arg domain: domain to use.
+    :arg boundary_condition: Boundary condition of the KMC instance.
+    :arg local_exp_eval: LocalExpEval instance to use for expansion manipulation.
+    :arg mirror_direction: Mirror direction tuple for Dirichlet boundary conditions (default None).
+    """
+
     def __init__(self, fmm, domain, boundary_condition, local_exp_eval, mirror_direction=None):
         self.domain = domain
         self._lee = local_exp_eval
@@ -250,6 +261,10 @@ class FMMSelfInteraction:
         pass
 
     def propose(self, total_movs, num_particles, host_data, cuda_data, arr, use_python=False):
+        """
+        Propose a move using the coulomb_kmc internal proposed move data structures.
+        For details see `coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.setup_propose_with_dats`.
+        """
 
         es = host_data['exclusive_sum']
         old_pos = host_data['old_positions']

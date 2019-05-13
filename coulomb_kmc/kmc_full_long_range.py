@@ -19,6 +19,15 @@ from ppmd.coulomb.fmm_pbc import LongRangeMTL
 
 
 class FullLongRangeEnergy(ProfInc):
+    """
+    Class to apply the "far-field" operator R in *Fast electrostatic solvers for kinetic Monte Carlo simulations*.
+
+    :arg int L: Number of expansion terms.
+    :arg domain: domain to use.
+    :arg local_exp_eval: LocalExpEval instance to use for expansion manipulation.
+    :arg mirror_direction: Mirror direction tuple for Dirichlet boundary conditions (default None).
+    """
+
     def __init__(self, L, domain, local_exp_eval, mirror_direction=None):
         # this should be a full PBC fmm instance
         self.domain = domain
@@ -29,7 +38,6 @@ class FullLongRangeEnergy(ProfInc):
         self.half_ncomp = L**2
         
         self.lrc = LongRangeMTL(L, domain)
-
 
         self.multipole_exp = np.zeros(self.ncomp, dtype=REAL)
         self.local_dot_coeffs = np.zeros(self.ncomp, dtype=REAL)
@@ -61,6 +69,12 @@ class FullLongRangeEnergy(ProfInc):
 
 
     def initialise(self, positions, charges):
+        """
+        Initialise the data structures K and E (see paper).
+
+        :arg positions: Initial positions of charges.
+        :arg charges: Initial charge values.
+        """
 
         self.multipole_exp.fill(0)
         self.local_dot_coeffs.fill(0)
@@ -94,7 +108,11 @@ class FullLongRangeEnergy(ProfInc):
     
 
     def propose(self, total_movs, num_particles, host_data, cuda_data, arr, use_python=False):
-        
+        """
+        Propose a move using the coulomb_kmc internal proposed move data structures.
+        For details see `coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.setup_propose_with_dats`.
+        """        
+
         if use_python:
             self.py_propose(total_movs, num_particles, host_data, cuda_data, arr)
         else:
@@ -140,6 +158,12 @@ class FullLongRangeEnergy(ProfInc):
 
 
     def py_propose(self, total_movs, num_particles, host_data, cuda_data, arr, use_python=True):
+        """
+        Propose a move using the coulomb_kmc internal proposed move data structures.
+        For details see `coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.setup_propose_with_dats`.
+
+        Warning: uses Python and hence will be slow (for testing).
+        """       
         es = host_data['exclusive_sum']
         old_pos = host_data['old_positions']
         new_pos = host_data['new_positions']
@@ -207,6 +231,11 @@ class FullLongRangeEnergy(ProfInc):
 
 
     def accept(self, movedata):
+        """
+        Accept a move using the coulomb_kmc internal accepted move data structure.
+
+        :arg movedata: Move to accept.
+        """        
 
         realdata = movedata[:7].view(dtype=REAL)
 
@@ -224,6 +253,13 @@ class FullLongRangeEnergy(ProfInc):
 
 
     def eval_field(self, points, out):
+        """
+        Evaluate the far-field contribution to the potential field.
+
+        :arg points: Places to evaluate field.
+        :arg out: Array to populate with the far-field contribution to the field.
+        """
+
         npoints = points.shape[0]
         lexp = np.zeros(self.ncomp, REAL)
         self.lrc(self.multipole_exp, lexp)

@@ -31,9 +31,10 @@ class MirrorChargeSystem:
     The new state contains a new ParticleDat (ncomp=2, dtype=c_int64) that
     indicates if a particle is a mirror charge or an "original" charge.
 
-    # the 0-th component points to the new mirror for the original positions
+    The 0-th component points to the new mirror for the original positions
     
     ::
+
         mirror_map[:N:, 0] = new_ids[N:2*N:, 0]
         # and to the original id for the mirrors
         mirror_map[N:2*N:, 0] = new_ids[:N:, 0]

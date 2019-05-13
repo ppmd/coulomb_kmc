@@ -14,6 +14,10 @@ from coulomb_kmc.common import PROFILE, ProfInc
 
 
 class LocalOctalBase(ProfInc):
+    """
+    Base class that is inherited by local and octal classes.
+    Provides common methods, such as cell linear index to tuple index mapping.
+    """
 
     def _get_fmm_cell(self, ix, cell_map, slow_to_fast=False):
         # produces xyz tuple by default
