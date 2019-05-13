@@ -29,7 +29,6 @@ The source code will be made available at https://github.com/ppmd/coulomb_kmc.
 Generated Documentation
 =======================
 
-
 .. toctree::
     
     modules/coulomb_kmc

@@ -8,6 +8,8 @@ def spherical(xyz):
     """
     Converts the cartesian coordinates in xyz to spherical coordinates
     (radius, polar angle, longitude angle)
+    
+    :arg xyz: Input xyz coordinates as Numpy array or tuple/list.
     """
     if type(xyz) is tuple:
         sph = np.zeros(3)
@@ -33,9 +35,16 @@ def spherical(xyz):
 
 
 class BCType(Enum):
+    """
+    Enum to indicate boundary condition type.
+    """
+
     PBC = 'pbc'
+    """Fully periodic boundary conditions"""
     FREE_SPACE = 'free_space'
+    """Free-space, e.g. vacuum, boundary conditions."""
     NEAREST = '27'
+    """Primary image and the surrounding 26 nearest neighbours."""
 
 
 cell_offsets = (
