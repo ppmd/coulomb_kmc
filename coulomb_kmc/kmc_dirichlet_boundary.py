@@ -32,16 +32,21 @@ class MirrorChargeSystem:
     indicates if a particle is a mirror charge or an "original" charge.
 
     # the 0-th component points to the new mirror for the original positions
-    mirror_map[:N:, 0] = new_ids[N:2*N:, 0]
-    # and to the original id for the mirrors
-    mirror_map[N:2*N:, 0] = new_ids[:N:, 0]
+    
+    ::
+        mirror_map[:N:, 0] = new_ids[N:2*N:, 0]
+        # and to the original id for the mirrors
+        mirror_map[N:2*N:, 0] = new_ids[:N:, 0]
     
     The 1-th component indicates if the charge is a mirror.
-    mirror_maps[:N:, 1] = MIRROR_ORIG
-    if   dims_to_zero[0]: flag = MIRROR_X_REFLECT
-    elif dims_to_zero[1]: flag = MIRROR_Y_REFLECT
-    elif dims_to_zero[2]: flag = MIRROR_Z_REFLECT
-    mirror_maps[N:2*N:, 1] = flag
+
+    ::
+
+        mirror_maps[:N:, 1] = MIRROR_ORIG
+        if   dims_to_zero[0]: flag = MIRROR_X_REFLECT
+        elif dims_to_zero[1]: flag = MIRROR_Y_REFLECT
+        elif dims_to_zero[2]: flag = MIRROR_Z_REFLECT
+        mirror_maps[N:2*N:, 1] = flag
 
     :param dims_to_zero: xyz tuple of directions to make zero on boundary. e.g. (True, False, False) for x-direction.
     :param state: initial state to tile and reflect.
@@ -77,7 +82,13 @@ class MirrorChargeSystem:
                             'check input state.domain.extent.')
 
         self.mirror_state = md.state.State()
-        """Created state with 2N particles"""
+        """Created state with 2N particles.
+        `PositionDat` named `position_name`,
+        `ParticleDat` named `charge_name`,
+        `ParticleDat` named `id_name` and
+        `ParticleDat` named "mirror_map".
+        """
+
         self.mirror_state.domain = type(state.domain)(extent=mirror_extent)
         self.mirror_state.domain.boundary_condition = type(state.domain.boundary_condition)()
 
