@@ -580,6 +580,31 @@ class FMMMPIDecomp(LocalOctalBase):
         :arg prop_positions:     ParticleDat, dtype=c_double     Input
         :arg prop_masks:         ParticleDat, dtype=c_int64      Input
         :arg prop_energy_diffs:  ParticleDat, dtype=c_double     Output
+
+
+        Returns:
+            tuple -- (`total_moves`, `num_particles`, `host_data`, `cuda_data`),
+            where `total_moves` is the total number of proposed moves, 
+            `num_particles` is the number of particles (charges) with proposed
+            moves, `host_data` is the proposed move data on the host and
+            `cuda_data` is the proposed move data on a CUDA device (if
+            applicable).
+            
+            The `host_data` and `cuda_data` contain the following entries:
+
+            ======================= =========================================================
+            `rate_location`         Storage location of change in energy value.
+            `new_positions`         Proposed positions.
+            `new_charges`           Proposed charges.
+            `new_ids`               Global ids of proposed moves.
+            `new_fmm_cells`         New FMM cell containing proposed move.
+            `new_shifted_positions` Proposed position shifted into halo region on sub-domain.
+            `old_positions`         Original position.
+            `old_charges`           Original charge.
+            `old_ids`               Original global id.
+            `old_fmm_cells`         Original FMM cell.
+            `exclusive_sum`         Used as a map from old positions to new positions.
+            ======================= =========================================================
         """
         
         assert prop_positions.dtype == REAL
