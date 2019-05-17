@@ -1,7 +1,7 @@
 FMM-KMC Documentation
 =====================
 
-This is the documentation for the reference implementation of the FMM-KMC algorithm described in *Fast electrostatic solvers for kinetic Monte Carlo simulations*.
+This is the documentation for the reference implementation of the FMM-KMC algorithm described in *Fast electrostatic solvers for kinetic Monte Carlo simulations*, https://arxiv.org/pdf/1905.04065.pdf.
 
 There exists a main Python class ``FMMKMC`` that provides the interface to our implementation.
 After initialisation, this class provides methods to propose and accept particle moves using the method we describe in the above paper.
