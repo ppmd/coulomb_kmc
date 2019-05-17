@@ -1,3 +1,7 @@
+"""
+This module handles the direct interactions between charges.
+"""
+
 from __future__ import division, print_function, absolute_import
 __author__ = "W.R.Saunders"
 
@@ -71,6 +75,11 @@ _offsets = (
 
 
 class LocalParticleData(LocalOctalBase):
+    """
+    Class to handle the direct interactions. Both field evaluation for proposals and accepted moves.
+
+    :arg mpi_decomp: Instance of `coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp`.
+    """
 
     def __init__(self, mpi_decomp):
 
@@ -157,6 +166,11 @@ class LocalParticleData(LocalOctalBase):
 
 
     def accept(self, movedata):
+        """
+        Accept a move using the coulomb_kmc internal accepted move data structure.
+
+        :arg movedata: Move to accept.
+        """
 
         realdata = movedata[:7].view(dtype=REAL)
 
@@ -303,6 +317,10 @@ class LocalParticleData(LocalOctalBase):
 
 
     def propose(self, total_movs, num_particles, host_data, cuda_data):
+        """
+        Propose a move using the coulomb_kmc internal proposed move data structures.
+        For details see `coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.setup_propose_with_dats`.
+        """        
 
         t0 = time.time()
 
@@ -488,6 +506,15 @@ class LocalParticleData(LocalOctalBase):
 
     
     def initialise(self, positions, charges, fmm_cells, ids):
+        """
+        Initialise the data structures for the direct interactions.
+
+        :arg positions: Initial positions of charges.
+        :arg charges: Initial charge values.
+        :arg fmm_cells: FMM cells of the input charges.
+        :arg ids: Unique global ids of charges.
+        """
+
         self.positions = positions
         self.charges = charges
         self.fmm_cells = fmm_cells

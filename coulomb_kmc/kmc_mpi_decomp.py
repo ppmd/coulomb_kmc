@@ -30,6 +30,15 @@ if ppmd.cuda.CUDA_IMPORT:
 
 
 class FMMMPIDecomp(LocalOctalBase):
+    """
+    Class that handles the MPI decomposition and converts proposed moves into
+    the internal representation expected by the classes that handle the direct
+    and indirect interactions.
+
+    :arg fmm: FMM instance to use.
+    :arg float max_move: Maximum distance of any hop.
+    :arg boundary_condition: Boundary condition to use.
+    """
 
     def __init__(self, fmm, max_move, boundary_condition, cuda=False):
 
@@ -169,6 +178,15 @@ class FMMMPIDecomp(LocalOctalBase):
 
 
     def initialise(self, positions, charges, fmm_cells, ids):
+        """
+        Initialise the data structures for the direct interactions.
+
+        :arg positions: Initial positions of charges.
+        :arg charges: Initial charge values.
+        :arg fmm_cells: FMM cells of the input charges.
+        :arg ids: Unique global ids of charges.
+        """ 
+
         self.positions = positions
         self.charges = charges
         self.fmm_cells = fmm_cells
@@ -176,15 +194,28 @@ class FMMMPIDecomp(LocalOctalBase):
         self.group = self.positions.group
 
     def get_win_ind(self):
+        """
+        Create and return the MPI.Win for the global to local map for FMM cells.
+        """
         self._create_win()
         return self.win_ind
 
     def free_win_ind(self):
+        """
+        Free the MPI.Win for the global to local map for FMM cells.
+        """        
         if self.win_ind is not None:
             self.win_ind.Free()
             self.win_ind = None
 
     def setup_propose(self, moves):
+        """
+        Converts a tuple of proposed moves into the internal data structure for
+        proposed moves.
+
+        :arg moves: Proposed moves in tuple form. e.g. ((id, proposed_positions), ...).
+        """
+
         total_movs = 0
         for movx in moves:
             movs = np.atleast_2d(movx[1])
@@ -540,10 +571,15 @@ class FMMMPIDecomp(LocalOctalBase):
     def setup_propose_with_dats(self, site_max_counts, current_sites,
             prop_positions, prop_masks, prop_energy_diffs):
         """
-        current_sites:      ParticleDat, dtype=c_int64      Input
-        prop_positions:     ParticleDat, dtype=c_double     Input
-        prop_masks:         ParticleDat, dtype=c_int64      Input
-        prop_energy_diffs:  ParticleDat, dtype=c_double     Output
+        Converts proposed moves passed with the `propose_with_dats` interface
+        into the internal data structure for proposed moves that can be passed
+        to the classes for direct and indirect interactions.
+
+        :arg site_max_counts:    ScalarArray, dtype=c_int64      Input
+        :arg current_sites:      ParticleDat, dtype=c_int64      Input
+        :arg prop_positions:     ParticleDat, dtype=c_double     Input
+        :arg prop_masks:         ParticleDat, dtype=c_int64      Input
+        :arg prop_energy_diffs:  ParticleDat, dtype=c_double     Output
         """
         
         assert prop_positions.dtype == REAL

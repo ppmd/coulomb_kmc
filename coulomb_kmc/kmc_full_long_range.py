@@ -235,7 +235,7 @@ class FullLongRangeEnergy(ProfInc):
         Accept a move using the coulomb_kmc internal accepted move data structure.
 
         :arg movedata: Move to accept.
-        """        
+        """   
 
         realdata = movedata[:7].view(dtype=REAL)
 

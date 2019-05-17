@@ -93,6 +93,12 @@ class LocalCellExpansions(LocalOctalBase):
         self._win_ind = None
 
     def accept(self, movedata):
+        """
+        Accept a move using the coulomb_kmc internal accepted move data structure.
+
+        :arg movedata: Move to accept.
+        """
+
         self._accept(movedata)
         #self._accept_py(movedata)
 
@@ -281,11 +287,11 @@ class LocalCellExpansions(LocalOctalBase):
 
 
 
-
-
-
-
     def propose(self, total_movs, num_particles, host_data, cuda_data):
+        """
+        Propose a move using the coulomb_kmc internal proposed move data structures.
+        For details see `coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.setup_propose_with_dats`.
+        """
 
         u0 = None
         u1 = None
@@ -328,6 +334,14 @@ class LocalCellExpansions(LocalOctalBase):
 
 
     def initialise(self, positions, charges, fmm_cells):
+        """
+        Initialise the data structures for the indirect interactions.
+
+        :arg positions: Initial positions of charges.
+        :arg charges: Initial charge values.
+        :arg fmm_cells: FMM cells of the input charges.
+        """
+
         self.positions = positions
         self.charges = charges
         self.fmm_cells = fmm_cells
