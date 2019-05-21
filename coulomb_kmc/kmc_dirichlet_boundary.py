@@ -142,6 +142,7 @@ class MirrorChargeSystem:
         # set the global id assuming that the existing ids are 0,..,N-1
         getattr(self.mirror_state, id_name)[:N:, 0] = \
             getattr(state, id_name)[:N:, 0]
+
         getattr(self.mirror_state, id_name)[N:mirror_N:, 0] = \
             getattr(state, id_name)[:N:, 0] + N
         

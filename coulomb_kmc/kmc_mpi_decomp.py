@@ -292,10 +292,11 @@ class FMMMPIDecomp(LocalOctalBase):
                 raise RuntimeError('Proposed position is outside simulation domain. Extent {}, dimension {}, value {}.'.format(e, dimx, new_pos[:, dimx]))
             if np.any(new_pos[:, dimx] >  0.5 * e[dimx]):
                 raise RuntimeError('Proposed position is outside simulation domain. Extent {}, dimension {}, value {}.'.format(e, dimx, new_pos[:, dimx]))
-
+        
+        old_pos = np.atleast_2d(old_pos)
 
         for mx in new_pos:
-            rvec = mx - old_pos
+            rvec = mx - old_pos[0, :]
             if self.boundary_condition in (BCType.PBC, BCType.NEAREST):
                 for dimx in range(3):
                     if rvec[dimx] < (e[dimx] * (-0.5)): rvec[dimx] += e[dimx]

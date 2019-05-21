@@ -459,6 +459,7 @@ class KMCFMM(_PY_KMCFMM):
 
         self.fmm.free()
         del self.fmm
+        del self._ordering_buf
 
     def __init__(self, positions, charges, domain, N=None, boundary_condition='pbc',
         r=None, shell_width=0.0, energy_unit=1.0,
@@ -552,9 +553,6 @@ class KMCFMM(_PY_KMCFMM):
         self._ordering_win = None
         self._diff_lib = self._create_diff_lib()
     
-    def __del__(self):
-        del self._ordering_buf
-
 
     def _create_diff_lib(self):
         
