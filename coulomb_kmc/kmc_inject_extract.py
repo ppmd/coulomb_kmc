@@ -128,7 +128,26 @@ class InjectorExtractor(ProfInc):
         return -1.0 * AB_BB_energy + BB_energy - AB_BB_LR_energy
 
 
+    def propose_inject(self, positions, charges):
+        """
+        Propose the injection of a set of charges. Returns the change in system
+        energy if the set of charges were added.
 
+        :arg positions: New charge positions.
+        :arg charges: New charge values.
+        """
+
+        assert self.kmcfmm.comm.size == 1
+
+        N = positions.shape[0]
+
+        BB_energy = self.compute_energy(positions, charges)
+
+        field_values = self.kmcfmm.eval_field(positions).reshape(N)
+
+        AB_energy = float(np.sum(np.multiply(charges.reshape(N), field_values)))
+
+        return AB_energy + BB_energy
 
 
 
