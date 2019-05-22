@@ -1,3 +1,7 @@
+"""
+Module to handle injection and extraction of charges from a PyFMM instance.
+"""
+
 __author__ = "W.R.Saunders"
 
 
@@ -30,9 +34,9 @@ class InjectorExtractor(ProfInc):
     def __init__(self, kmcfmm):
         
         self.kmcfmm = kmcfmm
-        self._bc = kmcfmm.bc
+        self._bc = kmcfmm._bc
         self.fmm = kmcfmm.fmm
-        self.domain = kmc.domain
+        self.domain = kmcfmm.domain
         L = self.fmm.L
         self.L = L
         self.ncomp = 2*(L**2)
@@ -41,18 +45,17 @@ class InjectorExtractor(ProfInc):
         self._lee = LocalExpEval(self.L)
         self._lrc = LongRangeMTL(L, self.domain)
 
-
-        e = self.domain.extent[0]
+        e = self.domain.extent
         assert abs(e[0] - e[1]) < 10.**-15
         assert abs(e[0] - e[2]) < 10.**-15
-        if self._bc == BCType.NEAREST:
+        if self._bc == BCType.FREE_SPACE:
             self._direct = kmc_direct.FreeSpaceDirect()
         elif self._bc is BCType.NEAREST:
             self._direct = kmc_direct.NearestDirect(float(e[0]))
         elif self._bc is BCType.PBC:
-            self._direct = kmc_direct.PBCDirect(e, self.domain, L)
+            self._direct = kmc_direct.PBCDirect(float(e[0]), self.domain, L)
         else:
-            raise NotImplementedError('BCType unknown')
+            raise NotImplementedError('BCType unknown: ' + str(self._bc))
 
 
     def compute_energy(self, positions, charges):
@@ -78,6 +81,79 @@ class InjectorExtractor(ProfInc):
         phi = self._direct(N, positions, charges)
 
         return phi
+
+
+    def propose_extract(self, ids):
+        """
+        Propose the extraction of a set of charges by providing the local
+        particle ids. Returns the change of energy if the charges were
+        removed.
+
+        :arg ids: Iterable of local charge id to remove.
+        """
+        
+        assert self.kmcfmm.comm.size == 1
+
+        # code is written assuming the current state is A + B for A, B sets
+        # of charges. B is the set to remove. Hence energy is formed of the
+        # AA + AB + BB interactions.
+
+        ids = np.array(ids, dtype=INT64)
+
+        # BB interations (required to avoid double count of BB)
+        BB_energy = self.compute_energy(
+            self.kmcfmm.positions[ids, :], self.kmcfmm.charges[ids, :])
+
+        # AB + BB interactions
+        AB_BB_energy = 0.0
+        for ix in ids:
+            ix = int(ix)
+            AB_BB_energy += self.kmcfmm._charge_indirect_energy_old(ix) + \
+                self.kmcfmm._direct_contrib_old(ix)
+        
+        AB_BB_LR_energy = 0.0
+
+
+        if self._bc == BCType.PBC:
+            tmp_field = np.zeros(len(ids), REAL)
+            self.kmcfmm._lr_energy.eval_field(self.kmcfmm.positions.view[ids, :], tmp_field)
+
+            for ixi, ix in enumerate(ids):
+                tmp_field[ixi] *= self.kmcfmm.charges.view[ix, 0]
+
+            AB_BB_LR_energy = np.sum(tmp_field)
+
+
+
+        return -1.0 * AB_BB_energy + BB_energy - AB_BB_LR_energy
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

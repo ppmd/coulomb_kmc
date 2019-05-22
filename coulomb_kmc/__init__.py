@@ -1,5 +1,5 @@
 
-from coulomb_kmc import kmc_fmm, kmc_octal, kmc_local, common, kmc_fmm_common, kmc_dirichlet_boundary
+from coulomb_kmc import kmc_fmm, kmc_octal, kmc_local, common, kmc_fmm_common, kmc_dirichlet_boundary, kmc_direct, kmc_inject_extract
 
 KMCFMM = kmc_fmm.KMCFMM
 
