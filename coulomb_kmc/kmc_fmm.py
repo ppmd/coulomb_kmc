@@ -460,6 +460,11 @@ class KMCFMM(_PY_KMCFMM):
         self.fmm.free()
         del self.fmm
         del self._ordering_buf
+        self._ordering_buf = None
+    
+    def __del__(self):
+        if self._ordering_buf is not None:
+            del self._ordering_buf
 
     def __init__(self, positions, charges, domain, N=None, boundary_condition='pbc',
         r=None, shell_width=0.0, energy_unit=1.0,
