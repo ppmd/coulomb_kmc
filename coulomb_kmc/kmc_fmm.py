@@ -860,6 +860,12 @@ class KMCFMM(_PY_KMCFMM):
         self._ordering_win.Free()
         self._ordering_win = None
 
+    
+    def _check_potential_dat(self):
+
+        if not hasattr(self.group, '_kmc_fmm_potential'):
+            self.group._kmc_fmm_potential = ParticleDat(ncomp=1, dtype=REAL)
+
 
     def initialise(self):
         """
@@ -867,11 +873,14 @@ class KMCFMM(_PY_KMCFMM):
 
         """
 
-
         t0 = time()
 
-
-        self.energy = self.fmm(positions=self.positions, charges=self.charges)
+        self._check_potential_dat()
+        self.energy = self.fmm(
+            positions=self.positions,
+            charges=self.charges,
+            potential=self.group._kmc_fmm_potential
+        )
         
         self._check_ordering_dats()
 
