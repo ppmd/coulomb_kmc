@@ -104,35 +104,40 @@ def test_propose_extract_1(BC):
     for testx in range(20):
         # find a +ve/-ve pair of charges
 
-        ind = rng.randint(0, N)
-        while(A.Q[ind, 0] < 0):
-            ind = rng.randint(0, N)
-        ind_pos = ind
+        num_remove = rng.randint(1, 10)
 
-        ind = rng.randint(0, N)
-        while(A.Q[ind, 0] > 0):
-            ind = rng.randint(0, N)
-        ind_neg = ind
-
-        gid_pos = int(A.GID[ind_pos, 0])
-        gid_neg = int(A.GID[ind_neg, 0])
+        remove_inds = []
         
-        diff_extractor = EI.propose_extract((ind_pos, ind_neg))
+        for tx in range(num_remove):
+            ind = rng.randint(0, N)
+            while(A.Q[ind, 0] < 0):
+                ind = rng.randint(0, N)
+        remove_inds.append(ind)
+
+        for tx in range(num_remove):
+            ind = rng.randint(0, N)
+            while(A.Q[ind, 0] > 0):
+                ind = rng.randint(0, N)
+        remove_inds.append(ind)
+
+        gids = [int(A.GID[gx, 0]) for gx in remove_inds]
+
+        diff_extractor = EI.propose_extract(remove_inds)
 
         inds = set(range(N))
-        inds.remove(gid_pos)
-        inds.remove(gid_neg)
+        for gx in gids:
+            inds.remove(gx)
         inds = np.array(tuple(inds), 'int')
 
 
         # direct extract energy
-        phi_direct_1 = direct(N-2, pi[inds, :], qi[inds, :])
+        phi_direct_1 = direct(len(inds), pi[inds, :], qi[inds, :])
         diff_direct = phi_direct_1 - phi_direct_0
 
         err = abs(diff_extractor - diff_direct) / abs(diff_direct)
         # print(err, diff_extractor, diff_direct)
 
-        assert err < 3*10.**-4
+        assert err < 3.1*10.**-4
 
 
     
@@ -199,40 +204,37 @@ def test_extract_1(BC):
     for testx in range(70):
         # find a +ve/-ve pair of charges
 
-        ind = rng.randint(0, N)
-        while(A.Q[ind, 0] < 0):
-            ind = rng.randint(0, N)
-        ind_pos = ind
+        num_remove = rng.randint(1, 10)
 
-        ind = rng.randint(0, N)
-        while(A.Q[ind, 0] > 0):
-            ind = rng.randint(0, N)
-        ind_neg = ind
+        remove_inds = []
         
+        for tx in range(num_remove):
+            ind = rng.randint(0, N)
+            while(A.Q[ind, 0] < 0):
+                ind = rng.randint(0, N)
+        remove_inds.append(ind)
 
-        gid_pos = int(A.GID[ind_pos, 0])
-        gid_neg = int(A.GID[ind_neg, 0])
-        
-        diff_extractor = EI.propose_extract((ind_pos, ind_neg))
-        EI.extract((ind_pos, ind_neg))
+        for tx in range(num_remove):
+            ind = rng.randint(0, N)
+            while(A.Q[ind, 0] > 0):
+                ind = rng.randint(0, N)
+        remove_inds.append(ind)
 
-        phi_correct = phi_direct_0 + diff_extractor
-        phi_test = kmc.energy
+        gids = [int(A.GID[gx, 0]) for gx in remove_inds]
 
-        err = abs(phi_correct - phi_test) / abs(phi_correct)
-
-
-
-
+        diff_extractor = EI.propose_extract(remove_inds)
+        EI.extract(remove_inds)
 
         inds = set(range(N))
-        inds.remove(gid_pos)
-        inds.remove(gid_neg)
+        for gx in gids:
+            inds.remove(gx)
         inds = np.array(tuple(inds), 'int')
 
 
         # direct extract energy
-        phi_direct_1 = direct(N-2, pi[inds, :], qi[inds, :])
+        phi_correct = phi_direct_0 + diff_extractor
+        phi_test = kmc.energy
+        err = abs(phi_test - phi_correct) / abs(phi_correct)
 
 
         #print(err, phi_correct, phi_test)
