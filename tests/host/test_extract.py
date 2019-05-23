@@ -136,8 +136,124 @@ def test_propose_extract_1(BC):
 
 
     
+@pytest.mark.skipif('MPISIZE > 1')
+@pytest.mark.parametrize("BC", ('free_space', '27', 'pbc'))
+def test_extract_1(BC):
+    """
+    Tests extraction of charges, assumes propose_extract works (i.e passes above test).
+    """
 
 
+    L = 12
+
+    N = 20
+    E = 2*3.1416
+
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    A.npart = N
+
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+    A.GID = data.ParticleDat(ncomp=1, dtype=INT64)
+
+
+
+    rng = np.random.RandomState(3251)
+
+    pi = rng.uniform(low=-0.5*E, high=0.5*E, size=(N, 3))
+    qi = np.zeros((N,1), REAL)
+    assert N % 2 == 0
+    for px in range(N):
+        qi[px, 0] = (-1)**px
+    
+    gi = np.arange(N).reshape((N, 1))
+
+    with A.modify() as m:
+        if MPIRANK == 0:
+            m.add({
+                A.P: pi[:, :],
+                A.Q: qi[:, :],
+                A.GID: gi[:, :]
+            })
+
+
+    kmc = kmc_fmm.KMCFMM(
+        A.P, A.Q, A.domain, r=3, l=12, max_move=1.0, boundary_condition=BC)
+    kmc.initialise()
+
+
+    direct = _direct_chooser(BC, A.domain, L)
+    
+    # check initial energy agrees
+    phi_direct_0 = direct(N, pi, qi)
+    err = abs(kmc.energy - phi_direct_0) / abs(phi_direct_0)
+    assert err < 10.**-5
+    
+    EI = kmc_inject_extract.InjectorExtractor(kmc)
+
+
+
+    
+    for testx in range(70):
+        # find a +ve/-ve pair of charges
+
+        ind = rng.randint(0, N)
+        while(A.Q[ind, 0] < 0):
+            ind = rng.randint(0, N)
+        ind_pos = ind
+
+        ind = rng.randint(0, N)
+        while(A.Q[ind, 0] > 0):
+            ind = rng.randint(0, N)
+        ind_neg = ind
+        
+
+        gid_pos = int(A.GID[ind_pos, 0])
+        gid_neg = int(A.GID[ind_neg, 0])
+        
+        diff_extractor = EI.propose_extract((ind_pos, ind_neg))
+        EI.extract((ind_pos, ind_neg))
+
+        phi_correct = phi_direct_0 + diff_extractor
+        phi_test = kmc.energy
+
+        err = abs(phi_correct - phi_test) / abs(phi_correct)
+
+
+
+
+
+        inds = set(range(N))
+        inds.remove(gid_pos)
+        inds.remove(gid_neg)
+        inds = np.array(tuple(inds), 'int')
+
+
+        # direct extract energy
+        phi_direct_1 = direct(N-2, pi[inds, :], qi[inds, :])
+
+
+        #print(err, phi_correct, phi_test)
+
+        assert err < 3*10.**-4
+
+        with A.modify() as m:
+            m.remove(tuple(range(A.npart_local)))
+        assert A.npart == 0
+
+        with A.modify() as m:
+            if MPIRANK == 0:
+                m.add({
+                    A.P: pi[:, :],
+                    A.Q: qi[:, :],
+                    A.GID: gi[:, :]
+                })
+
+        kmc.initialise()
+        err = abs(kmc.energy - phi_direct_0) / abs(phi_direct_0)
+        assert err < 10.**-5
 
 
 

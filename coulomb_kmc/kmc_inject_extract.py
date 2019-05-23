@@ -111,19 +111,18 @@ class InjectorExtractor(ProfInc):
             AB_BB_energy += self.kmcfmm._charge_indirect_energy_old(ix) + \
                 self.kmcfmm._direct_contrib_old(ix)
         
-        AB_BB_LR_energy = 0.0
-
-
         if self._bc == BCType.PBC:
             tmp_field = np.zeros(len(ids), REAL)
-            self.kmcfmm._lr_energy.eval_field(self.kmcfmm.positions.view[ids, :], tmp_field)
+            self.kmcfmm._lr_energy.eval_field(
+                self.kmcfmm.positions.view[ids, :], tmp_field)
 
             for ixi, ix in enumerate(ids):
                 tmp_field[ixi] *= self.kmcfmm.charges.view[ix, 0]
 
             AB_BB_LR_energy = np.sum(tmp_field)
 
-
+        else:
+            AB_BB_LR_energy = 0.0
 
         return -1.0 * AB_BB_energy + BB_energy - AB_BB_LR_energy
 
@@ -140,18 +139,27 @@ class InjectorExtractor(ProfInc):
         assert self.kmcfmm.comm.size == 1
 
         N = positions.shape[0]
-
         BB_energy = self.compute_energy(positions, charges)
-
         field_values = self.kmcfmm.eval_field(positions).reshape(N)
-
         AB_energy = float(np.sum(np.multiply(charges.reshape(N), field_values)))
 
         return AB_energy + BB_energy
 
 
+    def extract(self, ids):
+        """
+        Extract the set of charges given by local ids.
 
+        :arg ids: Iterable of particle local ids to remove.
+        """
 
+        assert self.kmcfmm.comm.size == 1
+
+        with self.kmcfmm.group.modify() as m:
+            if ids is not None:
+                m.remove(ids)
+
+        self.kmcfmm.initialise()
 
 
 

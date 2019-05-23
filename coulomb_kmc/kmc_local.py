@@ -164,6 +164,16 @@ class LocalParticleData(LocalOctalBase):
         )
 
 
+    def _free_wins(self):
+
+        self._occ_win.Free()
+        self._occ_win = None
+
+        self._win_global_store.Free()
+        self._win_global_store = None
+        del self._owner_store
+        self._owner_store = None
+
 
     def accept(self, movedata):
         """
@@ -470,15 +480,6 @@ class LocalParticleData(LocalOctalBase):
             #self._owner_store.fill(0)
 
 
-    def _free_wins(self):
-
-        self._occ_win.Free()
-        self._occ_win = None
-
-        self._win_global_store.Free()
-        self._win_global_store = None
-        del self._owner_store
-        self._owner_store = None
 
 
     def _resize_particle_store(self, max_cell_occ):
