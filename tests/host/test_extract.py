@@ -105,20 +105,26 @@ def test_propose_extract_1(BC):
         # find a +ve/-ve pair of charges
 
         num_remove = rng.randint(1, 10)
-
         remove_inds = []
+        available = set(range(N))
         
         for tx in range(num_remove):
             ind = rng.randint(0, N)
-            while(A.Q[ind, 0] < 0):
+            while((A.Q[ind, 0] < 0) or (ind not in available)):
                 ind = rng.randint(0, N)
-        remove_inds.append(ind)
+        
+            remove_inds.append(ind)
+            available.remove(ind)
 
         for tx in range(num_remove):
             ind = rng.randint(0, N)
-            while(A.Q[ind, 0] > 0):
+            while((A.Q[ind, 0] > 0) or (ind not in available)):
+
                 ind = rng.randint(0, N)
-        remove_inds.append(ind)
+            remove_inds.append(ind)
+            available.remove(ind)
+
+        assert len(remove_inds) == 2*num_remove
 
         gids = [int(A.GID[gx, 0]) for gx in remove_inds]
 
@@ -205,20 +211,26 @@ def test_extract_1(BC):
         # find a +ve/-ve pair of charges
 
         num_remove = rng.randint(1, 10)
-
         remove_inds = []
+        available = set(range(N))
         
         for tx in range(num_remove):
             ind = rng.randint(0, N)
-            while(A.Q[ind, 0] < 0):
+            while((A.Q[ind, 0] < 0) or (ind not in available)):
                 ind = rng.randint(0, N)
-        remove_inds.append(ind)
+        
+            remove_inds.append(ind)
+            available.remove(ind)
 
         for tx in range(num_remove):
             ind = rng.randint(0, N)
-            while(A.Q[ind, 0] > 0):
+            while((A.Q[ind, 0] > 0) or (ind not in available)):
+
                 ind = rng.randint(0, N)
-        remove_inds.append(ind)
+            remove_inds.append(ind)
+            available.remove(ind)
+
+        assert len(remove_inds) == 2*num_remove
 
         gids = [int(A.GID[gx, 0]) for gx in remove_inds]
 

@@ -91,26 +91,37 @@ def test_propose_inject_1(BC):
     for testx in range(20):
 
 
-        # find a +ve/-ve pair of charges
-
-        ind = rng.randint(0, N)
-        while(qi[ind, 0] < 0):
+        num_add = rng.randint(1, 10)
+        add_inds = []
+        available = set(range(N))
+        
+        for tx in range(num_add):
             ind = rng.randint(0, N)
-        ind_pos = ind
+            while((qi[ind, 0] < 0) or (ind not in available)):
+                ind = rng.randint(0, N)
+        
+            add_inds.append(ind)
+            available.remove(ind)
 
-        ind = rng.randint(0, N)
-        while(qi[ind, 0] > 0):
+        for tx in range(num_add):
             ind = rng.randint(0, N)
-        ind_neg = ind
+            while((qi[ind, 0] > 0) or (ind not in available)):
 
-        gid_pos = int(gi[ind_pos, 0])
-        gid_neg = int(gi[ind_neg, 0])
+                ind = rng.randint(0, N)
+            add_inds.append(ind)
+            available.remove(ind)
+
+        assert len(add_inds) == 2*num_add
+
+
+        gids = [int(gi[gx, 0]) for gx in add_inds]
 
         inds = set(range(N))
-        inds.remove(gid_pos)
-        inds.remove(gid_neg)
-        inds = np.array(tuple(inds))
-        
+        for gx in gids:
+            inds.remove(gx)
+        inds = np.array(tuple(inds), 'int')
+
+
         with A.modify() as m:
             if MPIRANK == 0:
                 m.add({
@@ -130,8 +141,8 @@ def test_propose_inject_1(BC):
             
         
         diff_injector = EI.propose_inject(
-            pi[np.array((gid_pos, gid_neg)), :],
-            qi[np.array((gid_pos, gid_neg)), :],
+            pi[np.array(gids), :],
+            qi[np.array(gids), :],
         )
 
 
