@@ -1,5 +1,7 @@
 """
 Module to handle injection and extraction of charges from a PyFMM instance.
+
+Currently implemented for 1 MPI rank only.
 """
 
 __author__ = "W.R.Saunders"
@@ -160,6 +162,35 @@ class InjectorExtractor(ProfInc):
                 m.remove(ids)
 
         self.kmcfmm.initialise()
+
+
+    def inject(self, add):
+        """
+        Inject a set of charges. e.g.
+
+        ::
+            IE = InjectorExtractor(....)
+            IE.inject({
+                A.P: np.array((
+                    (r_x1, r_y1, r_z1),
+                    (r_x2, r_y2, r_z2),
+                )),
+                A.Q: np.array(((-1.0), (1.0))),
+                ...
+            })
+
+
+
+        :arg add: Dictonary of the style of `state.modifier.add`.
+        """
+
+        assert self.kmcfmm.comm.size == 1
+        with self.kmcfmm.group.modify() as m:
+            if add is not None:
+                m.add(add)
+
+        self.kmcfmm.initialise()
+
 
 
 

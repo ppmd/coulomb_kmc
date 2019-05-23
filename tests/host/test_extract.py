@@ -232,6 +232,7 @@ def test_extract_1(BC):
 
         assert len(remove_inds) == 2*num_remove
 
+
         gids = [int(A.GID[gx, 0]) for gx in remove_inds]
 
         diff_extractor = EI.propose_extract(remove_inds)

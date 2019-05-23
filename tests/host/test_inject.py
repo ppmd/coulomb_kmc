@@ -167,6 +167,109 @@ def test_propose_inject_1(BC):
 
 
 
+@pytest.mark.skipif('MPISIZE > 1')
+@pytest.mark.parametrize("BC", ('free_space', '27', 'pbc'))
+def test_inject_1(BC):
+
+
+    L = 12
+
+    N = 20
+    E = 2*3.1416
+
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    A.npart = N
+
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+    A.GID = data.ParticleDat(ncomp=1, dtype=INT64)
+
+    rng = np.random.RandomState(3251)
+
+    pi = np.array(rng.uniform(low=-0.5*E, high=0.5*E, size=(N, 3)), REAL)
+    qi = np.zeros((N,1), REAL)
+    assert N % 2 == 0
+    for px in range(N):
+        qi[px, 0] = (-1)**px
+    
+    gi = np.arange(N).reshape((N, 1))
+
+    kmc = kmc_fmm.KMCFMM(
+        A.P, A.Q, A.domain, r=3, l=12, max_move=1.0, boundary_condition=BC)
+
+    direct = _direct_chooser(BC, A.domain, L)
+
+    EI = kmc_inject_extract.InjectorExtractor(kmc)
+
+
+    phi_direct = direct(N, pi[:, :], qi[:, :])
+
+
+    for testx in range(20):
+
+
+        num_add = rng.randint(1, 10)
+        add_inds = []
+        available = set(range(N))
+        
+        for tx in range(num_add):
+            ind = rng.randint(0, N)
+            while((qi[ind, 0] < 0) or (ind not in available)):
+                ind = rng.randint(0, N)
+        
+            add_inds.append(ind)
+            available.remove(ind)
+
+        for tx in range(num_add):
+            ind = rng.randint(0, N)
+            while((qi[ind, 0] > 0) or (ind not in available)):
+
+                ind = rng.randint(0, N)
+            add_inds.append(ind)
+            available.remove(ind)
+
+        assert len(add_inds) == 2*num_add
+
+
+        gids = [int(gi[gx, 0]) for gx in add_inds]
+
+        inds = set(range(N))
+        for gx in gids:
+            inds.remove(gx)
+        inds = np.array(tuple(inds), 'int')
+
+
+        with A.modify() as m:
+            if MPIRANK == 0:
+                m.add({
+                    A.P: pi[inds, :],
+                    A.Q: qi[inds, :],
+                    A.GID: gi[inds, :]
+                })
+
+
+        kmc.initialise()
+        
+
+        i = np.array(add_inds, 'int')
+        EI.inject({
+            A.P: pi[i,:],
+            A.Q: qi[i,:],
+            A.GID: gi[i,:]
+        })
+
+        phi = kmc.energy
+        err = abs(phi - phi_direct) / abs(phi_direct)
+        
+        assert err < 10.**-5
+        
+
+        with A.modify() as m:
+            m.remove(tuple(range(A.npart_local)))
+        assert A.npart == 0
+
 
 
 
