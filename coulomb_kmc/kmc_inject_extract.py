@@ -94,6 +94,7 @@ class InjectorExtractor(ProfInc):
         :arg ids: Iterable of local charge id to remove.
         """
         
+        t0 = time.time()
         assert self.kmcfmm.comm.size == 1
 
         # code is written assuming the current state is A + B for A, B sets
@@ -125,7 +126,8 @@ class InjectorExtractor(ProfInc):
 
         else:
             AB_BB_LR_energy = 0.0
-
+        
+        self._profile_inc('InjectorExtractor.propose_extract', time.time() - t0)
         return -1.0 * AB_BB_energy + BB_energy - AB_BB_LR_energy
 
 
@@ -137,7 +139,8 @@ class InjectorExtractor(ProfInc):
         :arg positions: New charge positions.
         :arg charges: New charge values.
         """
-
+        
+        t0 = time.time()
         assert self.kmcfmm.comm.size == 1
 
         N = positions.shape[0]
@@ -145,6 +148,7 @@ class InjectorExtractor(ProfInc):
         field_values = self.kmcfmm.eval_field(positions).reshape(N)
         AB_energy = float(np.sum(np.multiply(charges.reshape(N), field_values)))
 
+        self._profile_inc('InjectorExtractor.propose_inject', time.time() - t0)
         return AB_energy + BB_energy
 
 
@@ -154,13 +158,15 @@ class InjectorExtractor(ProfInc):
 
         :arg ids: Iterable of particle local ids to remove.
         """
-
+        
+        t0 = time.time()
         assert self.kmcfmm.comm.size == 1
 
         with self.kmcfmm.group.modify() as m:
             if ids is not None:
                 m.remove(ids)
 
+        self._profile_inc('InjectorExtractor.extract', time.time() - t0)
         self.kmcfmm.initialise()
 
 
@@ -183,7 +189,8 @@ class InjectorExtractor(ProfInc):
 
         :arg add: Dictonary of the style of `state.modifier.add`.
         """
-
+        
+        t0 = time.time()
         assert self.kmcfmm.comm.size == 1
         with self.kmcfmm.group.modify() as m:
             if add is not None:
@@ -191,6 +198,7 @@ class InjectorExtractor(ProfInc):
 
         self.kmcfmm.initialise()
 
+        self._profile_inc('InjectorExtractor.inject', time.time() - t0)
 
 
 

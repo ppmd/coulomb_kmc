@@ -117,6 +117,8 @@ class FullLongRangeEnergy(ProfInc):
             self.py_propose(total_movs, num_particles, host_data, cuda_data, arr)
         else:
 
+            t0 = time.time()
+
             es = host_data['exclusive_sum']
             old_pos = host_data['old_positions']
             new_pos = host_data['new_positions']
@@ -137,7 +139,6 @@ class FullLongRangeEnergy(ProfInc):
             self.lrc(self.multipole_exp, L_tmp)
             old_energy = 0.5 * np.dot(L_tmp, self.local_dot_coeffs)
             
-            t0 = time.time()
             self._host_lib(
                 REAL(old_energy),
                 INT64(arr.shape[1]),
@@ -155,6 +156,8 @@ class FullLongRangeEnergy(ProfInc):
                 arr.ctypes.get_as_parameter()
             )
             t1 = time.time()
+
+            self._profile_inc('FullLongRangeEnergy.propose', t1 - t0)
 
 
     def py_propose(self, total_movs, num_particles, host_data, cuda_data, arr, use_python=True):
@@ -235,7 +238,8 @@ class FullLongRangeEnergy(ProfInc):
         Accept a move using the coulomb_kmc internal accepted move data structure.
 
         :arg movedata: Move to accept.
-        """   
+        """ 
+        t0 = time.time()
 
         realdata = movedata[:7].view(dtype=REAL)
 
@@ -251,6 +255,7 @@ class FullLongRangeEnergy(ProfInc):
         self._lee.dot_vec(spherical(tuple(old_position)), -charge, self.local_dot_coeffs)
         self._lee.dot_vec(spherical(tuple(new_position)),  charge, self.local_dot_coeffs)
 
+        self._profile_inc('FullLongRangeEnergy.accept', time.time() - t0)
 
     def eval_field(self, points, out):
         """
