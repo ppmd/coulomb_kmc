@@ -32,6 +32,7 @@ from coulomb_kmc.kmc_mpi_decomp import *
 from coulomb_kmc.kmc_full_long_range import FullLongRangeEnergy
 from coulomb_kmc.kmc_fmm_self_interaction import FMMSelfInteraction
 from coulomb_kmc.kmc_expansion_tools import LocalExpEval
+from coulomb_kmc.kmc_inject_extract import InjectorExtractor
 
 REAL = ctypes.c_double
 INT64 = ctypes.c_int64
@@ -424,7 +425,7 @@ class _PY_KMCFMM:
 
 
 
-class KMCFMM(_PY_KMCFMM):
+class KMCFMM(_PY_KMCFMM, InjectorExtractor):
     """
     This class provides the methods required for the electrostatic energy component in a Kinetic Monte Carlo simulation.
     It is applicable to systems that are cubic with free space, fully periodic and (plate like) Dirichlet boundary
@@ -557,6 +558,8 @@ class KMCFMM(_PY_KMCFMM):
 
         self._ordering_win = None
         self._diff_lib = self._create_diff_lib()
+
+        InjectorExtractor.__init__(self)
     
 
     def _create_diff_lib(self):

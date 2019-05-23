@@ -98,7 +98,6 @@ def test_propose_extract_1(BC):
     err = abs(kmc.energy - phi_direct_0) / abs(phi_direct_0)
     assert err < 10.**-5
     
-    EI = kmc_inject_extract.InjectorExtractor(kmc)
 
     
     for testx in range(20):
@@ -128,7 +127,7 @@ def test_propose_extract_1(BC):
 
         gids = [int(A.GID[gx, 0]) for gx in remove_inds]
 
-        diff_extractor = EI.propose_extract(remove_inds)
+        diff_extractor = kmc.propose_extract(remove_inds)
 
         inds = set(range(N))
         for gx in gids:
@@ -202,9 +201,6 @@ def test_extract_1(BC):
     err = abs(kmc.energy - phi_direct_0) / abs(phi_direct_0)
     assert err < 10.**-5
     
-    EI = kmc_inject_extract.InjectorExtractor(kmc)
-
-
 
     
     for testx in range(70):
@@ -235,8 +231,8 @@ def test_extract_1(BC):
 
         gids = [int(A.GID[gx, 0]) for gx in remove_inds]
 
-        diff_extractor = EI.propose_extract(remove_inds)
-        EI.extract(remove_inds)
+        diff_extractor = kmc.propose_extract(remove_inds)
+        kmc.extract(remove_inds)
 
         inds = set(range(N))
         for gx in gids:

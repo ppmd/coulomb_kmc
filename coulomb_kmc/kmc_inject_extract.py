@@ -28,25 +28,12 @@ from coulomb_kmc import kmc_direct
 
 class InjectorExtractor(ProfInc):
     """
-    Class to propose and accept the injection and extraction of charges.
-
-    :arg kmcfmm: PyFMM instance.
+    Class to propose and accept the injection and extraction of charges. 
+    Is inherited by KMCFMM.
     """
 
-    def __init__(self, kmcfmm):
+    def __init__(self):
         
-        self.kmcfmm = kmcfmm
-        self._bc = kmcfmm._bc
-        self.fmm = kmcfmm.fmm
-        self.domain = kmcfmm.domain
-        L = self.fmm.L
-        self.L = L
-        self.ncomp = 2*(L**2)
-        self.half_ncomp = L**2
-        
-        self._lee = LocalExpEval(self.L)
-        self._lrc = LongRangeMTL(L, self.domain)
-
         e = self.domain.extent
         assert abs(e[0] - e[1]) < 10.**-15
         assert abs(e[0] - e[2]) < 10.**-15
@@ -55,7 +42,7 @@ class InjectorExtractor(ProfInc):
         elif self._bc is BCType.NEAREST:
             self._direct = kmc_direct.NearestDirect(float(e[0]))
         elif self._bc is BCType.PBC:
-            self._direct = kmc_direct.PBCDirect(float(e[0]), self.domain, L)
+            self._direct = kmc_direct.PBCDirect(float(e[0]), self.domain, self.fmm.L)
         else:
             raise NotImplementedError('BCType unknown: ' + str(self._bc))
 
@@ -95,7 +82,7 @@ class InjectorExtractor(ProfInc):
         """
         
         t0 = time.time()
-        assert self.kmcfmm.comm.size == 1
+        assert self.comm.size == 1
 
         # code is written assuming the current state is A + B for A, B sets
         # of charges. B is the set to remove. Hence energy is formed of the
@@ -105,22 +92,22 @@ class InjectorExtractor(ProfInc):
 
         # BB interations (required to avoid double count of BB)
         BB_energy = self.compute_energy(
-            self.kmcfmm.positions[ids, :], self.kmcfmm.charges[ids, :])
+            self.positions[ids, :], self.charges[ids, :])
 
         # AB + BB interactions
         AB_BB_energy = 0.0
         for ix in ids:
             ix = int(ix)
-            AB_BB_energy += self.kmcfmm._charge_indirect_energy_old(ix) + \
-                self.kmcfmm._direct_contrib_old(ix)
+            AB_BB_energy += self._charge_indirect_energy_old(ix) + \
+                self._direct_contrib_old(ix)
         
         if self._bc == BCType.PBC:
             tmp_field = np.zeros(len(ids), REAL)
-            self.kmcfmm._lr_energy.eval_field(
-                self.kmcfmm.positions.view[ids, :], tmp_field)
+            self._lr_energy.eval_field(
+                self.positions.view[ids, :], tmp_field)
 
             for ixi, ix in enumerate(ids):
-                tmp_field[ixi] *= self.kmcfmm.charges.view[ix, 0]
+                tmp_field[ixi] *= self.charges.view[ix, 0]
 
             AB_BB_LR_energy = np.sum(tmp_field)
 
@@ -141,11 +128,11 @@ class InjectorExtractor(ProfInc):
         """
         
         t0 = time.time()
-        assert self.kmcfmm.comm.size == 1
+        assert self.comm.size == 1
 
         N = positions.shape[0]
         BB_energy = self.compute_energy(positions, charges)
-        field_values = self.kmcfmm.eval_field(positions).reshape(N)
+        field_values = self.eval_field(positions).reshape(N)
         AB_energy = float(np.sum(np.multiply(charges.reshape(N), field_values)))
 
         self._profile_inc('InjectorExtractor.propose_inject', time.time() - t0)
@@ -160,29 +147,31 @@ class InjectorExtractor(ProfInc):
         """
         
         t0 = time.time()
-        assert self.kmcfmm.comm.size == 1
+        assert self.comm.size == 1
 
-        with self.kmcfmm.group.modify() as m:
+        with self.group.modify() as m:
             if ids is not None:
                 m.remove(ids)
 
         self._profile_inc('InjectorExtractor.extract', time.time() - t0)
-        self.kmcfmm.initialise()
+        self.initialise()
 
 
     def inject(self, add):
         """
         Inject a set of charges. e.g.
 
-        ::
-            IE = InjectorExtractor(....)
-            IE.inject({
+        .. highlight:: python
+        .. code-block:: python
+
+            kmc = KMCFMM(....)
+            kmc.inject({
                 A.P: np.array((
                     (r_x1, r_y1, r_z1),
                     (r_x2, r_y2, r_z2),
                 )),
                 A.Q: np.array(((-1.0), (1.0))),
-                ...
+                ..
             })
 
 
@@ -191,12 +180,12 @@ class InjectorExtractor(ProfInc):
         """
         
         t0 = time.time()
-        assert self.kmcfmm.comm.size == 1
-        with self.kmcfmm.group.modify() as m:
+        assert self.comm.size == 1
+        with self.group.modify() as m:
             if add is not None:
                 m.add(add)
 
-        self.kmcfmm.initialise()
+        self.initialise()
 
         self._profile_inc('InjectorExtractor.inject', time.time() - t0)
 

@@ -82,7 +82,6 @@ def test_propose_inject_1(BC):
 
     direct = _direct_chooser(BC, A.domain, L)
 
-    EI = kmc_inject_extract.InjectorExtractor(kmc)
 
 
     phi_direct = direct(N, pi[:, :], qi[:, :])
@@ -140,7 +139,7 @@ def test_propose_inject_1(BC):
         assert err < 10.**-5
             
         
-        diff_injector = EI.propose_inject(
+        diff_injector = kmc.propose_inject(
             pi[np.array(gids), :],
             qi[np.array(gids), :],
         )
@@ -201,7 +200,6 @@ def test_inject_1(BC):
 
     direct = _direct_chooser(BC, A.domain, L)
 
-    EI = kmc_inject_extract.InjectorExtractor(kmc)
 
 
     phi_direct = direct(N, pi[:, :], qi[:, :])
@@ -254,7 +252,7 @@ def test_inject_1(BC):
         
 
         i = np.array(add_inds, 'int')
-        EI.inject({
+        kmc.inject({
             A.P: pi[i,:],
             A.Q: qi[i,:],
             A.GID: gi[i,:]
