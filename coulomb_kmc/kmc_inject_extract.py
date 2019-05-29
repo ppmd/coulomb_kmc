@@ -25,6 +25,7 @@ from ppmd.coulomb.fmm_pbc import LongRangeMTL
 from coulomb_kmc.kmc_expansion_tools import LocalExpEval
 from coulomb_kmc import kmc_direct
 
+from ppmd.access import *
 
 class InjectorExtractor(ProfInc):
     """
@@ -190,11 +191,89 @@ class InjectorExtractor(ProfInc):
         self._profile_inc('InjectorExtractor.inject', time.time() - t0)
 
 
+class DiscoverInjectExtract:
+    """
+    class to identify particles which are on sites where they can be extracted
+    from and empty sites where particles can be injected.
+
+    :arg inject_sites: Tuple `((r_x, r_y, r_z),...` where particles can be injected.
+    :arg extract_sites: Tuple of positions where charges can be extracted from.
+    :arg positions: PositionDat to use for particle positions.
+    :arg extract_flag: `ParticleDat(ncomp=1, dtype=INT64)` to use for marking potential extractions.
+    """
+
+    def __init__(self, inject_sites, extract_sites, positions, extract_flag):
+        
+        n_isites = len(inject_sites)
+        n_esites = len(extract_sites)
+
+        self._isites = ppmd.data.ScalarArray(ncomp=n_isites*3, dtype=REAL)
+        self._iflags = ppmd.data.GlobalArray(ncomp=n_isites, dtype=INT64)
+
+        self._esites = ppmd.data.ScalarArray(ncomp=n_esites*3, dtype=REAL)
+        
+        self._isites[:] = np.array(inject_sites).ravel()
+        self._esites[:] = np.array(extract_sites).ravel()
+
+        self._p = positions
+        self._f = extract_flag
 
 
+        kernel_src = """
+        const double px = P.i[0];
+        const double py = P.i[1];
+        const double pz = P.i[2];
+
+        for (int ii=0 ; ii<{N_I} ; ii++){{
+            const double dx = IS[ii*3 + 0] - px;
+            const double dy = IS[ii*3 + 1] - py;
+            const double dz = IS[ii*3 + 2] - pz;
+
+            const double r2 = dx*dx + dy*dy + dz*dz;
+            IF[ii] += (r2 < {TOL}) ? 1 : 0;
+        }}
+
+        for (int ii=0 ; ii<{N_E} ; ii++){{
+            const double dx = ES[ii*3 + 0] - px;
+            const double dy = ES[ii*3 + 1] - py;
+            const double dz = ES[ii*3 + 2] - pz;
+
+            const double r2 = dx*dx + dy*dy + dz*dz;
+
+            E.i[0] += (r2 < {TOL}) ? 1 : 0;
+        }}
 
 
+        """.format(
+            N_I=n_isites,
+            N_E=n_esites,
+            TOL="0.00001"
+        )
 
+
+        kernel = ppmd.kernel.Kernel('inject_extract', kernel_src)
+        self._loop = ppmd.loop.ParticleLoopOMP(
+            kernel=kernel,
+            dat_dict={
+                'P': self._p(READ),
+                'E': self._f(INC_ZERO),
+                'IS': self._isites(READ),
+                'ES': self._esites(READ),
+                'IF': self._iflags(INC_ZERO)
+            }
+        )
+    
+
+    def __call__(self):
+        """
+        Mark particles that are on extract sites. Returns an array of flags
+        that mark empty potential inject sites. Occupied sites are indicated
+        with a value greater than 0 and empty sites a 0.
+        """
+
+        self._loop.execute()
+
+        return self._iflags[:].copy()
 
 
 
