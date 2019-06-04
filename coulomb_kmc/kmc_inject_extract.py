@@ -46,6 +46,7 @@ class InjectorExtractor(ProfInc):
             self._direct = kmc_direct.PBCDirect(float(e[0]), self.domain, self.fmm.L)
         else:
             raise NotImplementedError('BCType unknown: ' + str(self._bc))
+    
 
 
     def compute_energy(self, positions, charges):
@@ -116,7 +117,7 @@ class InjectorExtractor(ProfInc):
             AB_BB_LR_energy = 0.0
         
         self._profile_inc('InjectorExtractor.propose_extract', time.time() - t0)
-        return -1.0 * AB_BB_energy + BB_energy - AB_BB_LR_energy
+        return (-1.0 * AB_BB_energy + BB_energy - AB_BB_LR_energy) * self.energy_unit
 
 
     def propose_inject(self, positions, charges):
@@ -137,7 +138,7 @@ class InjectorExtractor(ProfInc):
         AB_energy = float(np.sum(np.multiply(charges.reshape(N), field_values)))
 
         self._profile_inc('InjectorExtractor.propose_inject', time.time() - t0)
-        return AB_energy + BB_energy
+        return (AB_energy + BB_energy) * self.energy_unit
 
 
     def extract(self, ids):
