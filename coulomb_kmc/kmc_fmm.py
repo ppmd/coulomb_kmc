@@ -82,6 +82,10 @@ class _PY_KMCFMM:
         # the data structures this uses are not updated by accept
         self.initialise()
 
+        if points.dtype != REAL:
+            points = np.array(points, dtype=REAL)
+
+
         npoints = points.shape[0]
         out = np.zeros(npoints, dtype=REAL)
 
@@ -107,7 +111,6 @@ class _PY_KMCFMM:
         t0 = time()
 
         icx, icy, icz = self._get_cell(prop_pos)
-        
 
         e_tmp = 0.0
         extent = self.domain.extent

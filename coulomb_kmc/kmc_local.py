@@ -154,6 +154,8 @@ class LocalParticleData(LocalOctalBase):
         else:
             self._init_host_kernels()
 
+        self._init_host_point_eval()
+
 
     def _create_wins(self):
         assert self._occ_win == None
@@ -957,6 +959,155 @@ class LocalParticleData(LocalOctalBase):
         self._host_direct_new = self._host_lib["direct_new"]
         self._host_direct_old = self._host_lib["direct_old"]
 
+    def _init_host_point_eval(self):
+
+        header = str(Module(
+            (
+                Include('stdint.h'),
+                Include('stdio.h'),
+                Include('math.h'),
+                Include('omp.h'),
+                Define('REAL', 'double'),
+                Define('INT64', 'int64_t')
+            )
+        ))
+
+        
+        src = r"""
+        static inline INT64 gcell_to_lcell(
+            const INT64 * RESTRICT cell_data_offset,
+            const INT64 * RESTRICT local_store_dims,
+            const INT64 * cell
+        ){{
+            const INT64 c0 = cell[0] + cell_data_offset[2];
+            const INT64 c1 = cell[1] + cell_data_offset[1];
+            const INT64 c2 = cell[2] + cell_data_offset[0];
+            return c0 + local_store_dims[2] * ( c1 + local_store_dims[1] * c2 );
+        }}
+
+        static inline void get_cell(
+            const REAL * RESTRICT position,
+            const REAL * RESTRICT extent,
+            const INT64 * fmm_cells_per_side,
+            INT64 * cell
+        ){{
+
+            REAL shifted_position[3];
+            shifted_position[0] = position[0] + 0.5 * extent[0];
+            shifted_position[1] = position[1] + 0.5 * extent[1];
+            shifted_position[2] = position[2] + 0.5 * extent[2];
+
+            const REAL w0 = fmm_cells_per_side[0] / extent[0];
+            const REAL w1 = fmm_cells_per_side[1] / extent[1];
+            const REAL w2 = fmm_cells_per_side[2] / extent[2];
+
+            cell[0] = (INT64) (shifted_position[0] * w0);
+            cell[1] = (INT64) (shifted_position[1] * w1);
+            cell[2] = (INT64) (shifted_position[2] * w2);
+
+            if (cell[0] >= fmm_cells_per_side[2]) {{ cell[0] = fmm_cells_per_side[2] - 1; }}
+            if (cell[1] >= fmm_cells_per_side[1]) {{ cell[1] = fmm_cells_per_side[1] - 1; }}
+            if (cell[2] >= fmm_cells_per_side[0]) {{ cell[2] = fmm_cells_per_side[0] - 1; }}
+
+            return;
+        }}
+
+
+        extern "C" int direct_point_eval(
+            const INT64 N,
+            const REAL  * RESTRICT d_positions,
+            const REAL  * RESTRICT d_pdata,
+            const INT64 * RESTRICT d_cell_occ,
+            const INT64            d_cell_stride,
+            const INT64 * RESTRICT offsets,
+            const INT64 * RESTRICT cell_data_offset,
+            const INT64 * RESTRICT local_store_dims,
+            const INT64 * RESTRICT fmm_cells_per_side,
+            const REAL  * RESTRICT extent,
+                  REAL  * RESTRICT d_potential
+        ){{
+
+            int err = 0;
+            
+            INT64 max_cell = fmm_cells_per_side[0] * fmm_cells_per_side[1] * fmm_cells_per_side[2];
+
+
+            #pragma omp parallel for schedule(dynamic)
+            for( INT64 idx=0 ; idx < N ; idx++ ) {{
+
+                INT64 ict[3];
+                get_cell(&d_positions[idx*3], extent, fmm_cells_per_side, ict);
+                const INT64 ic = gcell_to_lcell(cell_data_offset, local_store_dims, ict);
+                
+
+                const REAL ipx = d_positions[idx*3];
+                const REAL ipy = d_positions[idx*3+1];
+                const REAL ipz = d_positions[idx*3+2];
+
+                REAL energy_red = 0.0;
+
+                // loop over the jcells
+                for(INT64 jcx=0 ; jcx<27 ; jcx++){{
+                    const INT64 jc = ic + offsets[jcx];
+
+                    // compute the offset into the cell data
+                    const INT64 offset = jc * d_cell_stride;
+                    const INT64 offset5 = 5 * jc * d_cell_stride;
+
+                    // loop over the particles in the j cell
+                    for(INT64 jx=0 ; jx<d_cell_occ[jc] ; jx++){{            
+                        const REAL jpx = d_pdata[offset5 + jx*5+0];
+                        const REAL jpy = d_pdata[offset5 + jx*5+1];
+                        const REAL jpz = d_pdata[offset5 + jx*5+2];
+                        const REAL jch = d_pdata[offset5 + jx*5+3];
+                        const REAL dx = ipx - jpx;
+                        const REAL dy = ipy - jpy;
+                        const REAL dz = ipz - jpz;
+                        const REAL r2 = dx*dx + dy*dy + dz*dz;
+                        const REAL contrib = jch / sqrt(r2);    
+                        energy_red += contrib;
+                    }}
+                }}
+
+                d_potential[idx] += energy_red;
+
+            }}
+            return err;
+        }}
+        """
+
+
+        self._host_point_eval_lib = build.simple_lib_creator(
+            header_code=header, src_code=src, name='kmc_fmm_direct_point_eval')['direct_point_eval']
+
+
+
+    def eval_field(self, points, out):
+        """
+        Appends the direct field at the given points onto out.
+        """
+
+        N = points.shape[0]
+        ncps = (2**(self.fmm.R - 1))
+        fmm_cells_per_side = np.array((ncps, ncps, ncps), dtype=INT64)
+        extent = self.group.domain.extent
+        e = np.zeros(3, REAL)
+        e[:] = extent
+
+        err = self._host_point_eval_lib(
+            INT64(N),
+            points.ctypes.get_as_parameter(),
+            self.local_particle_store.ctypes.get_as_parameter(),
+            self.local_cell_occupancy.ctypes.get_as_parameter(),
+            INT64(self.local_particle_store[0, 0, 0, :, 0].shape[0]),
+            self.offsets_arr.ctypes.get_as_parameter(),
+            self.md.cell_data_offset.ctypes.get_as_parameter(),
+            self.local_store_dims_arr.ctypes.get_as_parameter(),
+            fmm_cells_per_side.ctypes.get_as_parameter(),
+            e.ctypes.get_as_parameter(),
+            out.ctypes.get_as_parameter()
+        )
+        assert err >= 0
 
 
 
