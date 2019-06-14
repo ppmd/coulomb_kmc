@@ -456,6 +456,24 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
     :arg tuple mirror_direction: Tuple of bools, e.g. (True, False, False) to enable mirror charge handling for Dirichlet boundary conditions (work in progress).
     """
 
+    def eval_field(self, points):
+        self._assert_init()
+
+        if points.dtype != REAL:
+            points = np.array(points, dtype=REAL)
+
+        npoints = points.shape[0]
+        out = np.zeros(npoints, dtype=REAL)
+
+        self.kmcl.eval_field(points, out)
+        self.kmco.eval_field(points, out)
+
+        if self._bc == BCType.PBC:
+            self._lr_energy.eval_field(points, out)
+
+        return out
+
+
     def free(self):
         """
         Free the KMCFMM instance. Should be called before program termination. Failure to call this method may result in subsequent MPI race conditions.

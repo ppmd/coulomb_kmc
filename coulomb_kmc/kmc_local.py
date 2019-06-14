@@ -1074,7 +1074,7 @@ class LocalParticleData(LocalOctalBase):
             }}
             return err;
         }}
-        """
+        """.format()
 
 
         self._host_point_eval_lib = build.simple_lib_creator(

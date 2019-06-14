@@ -56,6 +56,8 @@ class LocalCellExpansions(LocalOctalBase):
 
         local_store_dims = self.local_store_dims
 
+        self.local_store_dims_arr = np.array(self.local_store_dims, dtype=INT64)
+
         self.local_expansions = np.zeros(
             local_store_dims + [2 * (self.fmm.L**2)], dtype=REAL)
         self.remote_inds = np.zeros(local_store_dims + [1], dtype=INT64)
@@ -74,6 +76,7 @@ class LocalCellExpansions(LocalOctalBase):
         self.orig_cell_centres = np.zeros_like(self.cell_centres)
         self._host_lib, self._flop_count_prop = self._init_host_kernels(self.fmm.L)
         self._host_accept_lib = self._init_accept_lib()
+        self._init_host_point_eval()
 
     
     def _create_wins(self):
@@ -837,6 +840,155 @@ class LocalCellExpansions(LocalOctalBase):
 
 
 
+    def _init_host_point_eval(self):
+        L = self.fmm.L
+
+        ncomp = (L**2)*2
+        sph_gen = SphGen(maxl=L-1, theta_sym='theta', phi_sym='phi', ctype='double', avoid_calls=True)
+        
+        def cube_ind(l, m):
+            return ((l) * ( (l) + 1 ) + (m) )
+        
+        EC = ''
+        for lx in range(L):
+            EC += 'coeff = rhol;\n'
+
+            for mx in range(-lx, lx+1):
+                smx = 'n' if mx < 0 else 'p'
+                smx += str(abs(mx))
+
+                re_lnm = SphSymbol('reln{lx}m{mx}'.format(lx=lx, mx=smx))
+                im_lnm = SphSymbol('imln{lx}m{mx}'.format(lx=lx, mx=smx))
+
+                EC += '''
+                const REAL {re_lnm} = re_exp[{cx}];
+                const REAL {im_lnm} = im_exp[{cx}];
+                '''.format(
+                    re_lnm=str(re_lnm),
+                    im_lnm=str(im_lnm),
+                    cx=str(cube_ind(lx, mx))
+                )
+                cm_re, cm_im = cmplx_mul(re_lnm, im_lnm, sph_gen.get_y_sym(lx, mx)[0],
+                    sph_gen.get_y_sym(lx, mx)[1])
+                EC += 'tmp_energy += ({cm_re}) * coeff;\n'.format(cm_re=cm_re)
+                
+            EC += 'rhol *= radius;\n'
+
+        header = str(Module(
+            (
+                Include('stdint.h'),
+                Include('stdio.h'),
+                Include('math.h'),
+                Include('omp.h'),
+                Define('REAL', 'double'),
+                Define('INT64', 'int64_t'),
+                Define('ESTRIDE', ncomp),
+                Define('HESTRIDE', L**2),               
+            )
+        ))
+
+        
+        src = r"""
+        static inline INT64 gcell_to_lcell(
+            const INT64 * RESTRICT cell_data_offset,
+            const INT64 * RESTRICT local_store_dims,
+            const INT64 * cell
+        ){{
+            const INT64 c0 = cell[0] + cell_data_offset[2];
+            const INT64 c1 = cell[1] + cell_data_offset[1];
+            const INT64 c2 = cell[2] + cell_data_offset[0];
+            return c0 + local_store_dims[2] * ( c1 + local_store_dims[1] * c2 );
+        }}
+
+        static inline void get_cell(
+            const REAL * RESTRICT position,
+            const REAL * RESTRICT extent,
+            const INT64 * fmm_cells_per_side,
+            INT64 * cell
+        ){{
+
+            REAL shifted_position[3];
+            shifted_position[0] = position[0] + 0.5 * extent[0];
+            shifted_position[1] = position[1] + 0.5 * extent[1];
+            shifted_position[2] = position[2] + 0.5 * extent[2];
+
+            const REAL w0 = fmm_cells_per_side[0] / extent[0];
+            const REAL w1 = fmm_cells_per_side[1] / extent[1];
+            const REAL w2 = fmm_cells_per_side[2] / extent[2];
+
+            cell[0] = (INT64) (shifted_position[0] * w0);
+            cell[1] = (INT64) (shifted_position[1] * w1);
+            cell[2] = (INT64) (shifted_position[2] * w2);
+
+            if (cell[0] >= fmm_cells_per_side[2]) {{ cell[0] = fmm_cells_per_side[2] - 1; }}
+            if (cell[1] >= fmm_cells_per_side[1]) {{ cell[1] = fmm_cells_per_side[1] - 1; }}
+            if (cell[2] >= fmm_cells_per_side[0]) {{ cell[2] = fmm_cells_per_side[0] - 1; }}
+
+            return;
+        }}
+
+
+
+
+        extern "C" int indirect_point_eval(
+            const INT64 N,
+            const REAL  * RESTRICT d_positions,
+            const REAL  * RESTRICT d_centres,
+            const INT64 * RESTRICT cell_data_offset,
+            const INT64 * RESTRICT local_store_dims,
+            const INT64 * RESTRICT fmm_cells_per_side,
+            const REAL  * RESTRICT extent,
+            const REAL  * RESTRICT d_local_exp,
+                  REAL  * RESTRICT d_potential
+        ){{
+
+            int err = 0;
+
+            #pragma omp parallel for schedule(dynamic)
+            for(INT64 idx=0 ; idx<N ; idx++){{
+
+                INT64 ict[3];
+                get_cell(&d_positions[idx*3], extent, fmm_cells_per_side, ict);
+                const INT64 offset = gcell_to_lcell(cell_data_offset, local_store_dims, ict);
+
+                const REAL dx = d_positions[idx*3 + 0] - d_centres[offset*3 + 0];
+                const REAL dy = d_positions[idx*3 + 1] - d_centres[offset*3 + 1];
+                const REAL dz = d_positions[idx*3 + 2] - d_centres[offset*3 + 2];
+
+                const REAL * RESTRICT re_exp = &d_local_exp[ESTRIDE * offset];
+                const REAL * RESTRICT im_exp = &d_local_exp[ESTRIDE * offset + HESTRIDE];
+                
+                const REAL radius = sqrt(dx*dx + dy*dy + dz*dz);
+                const REAL phi = atan2(dy, dx);
+                const REAL theta = atan2(sqrt(dx*dx + dy*dy), dz);
+                const REAL cos_theta = cos(theta);
+                const REAL sqrt_theta_tmp = sqrt(1.0 - cos_theta*cos_theta);
+
+                const REAL sin_phi = sin(phi);
+                const REAL cos_phi = cos(phi);
+
+                {SPH_GEN}
+
+                REAL tmp_energy = 0.0;
+                REAL rhol = 1.0;
+                REAL coeff = 0.0;
+
+                {ENERGY_COMP}
+
+                d_potential[idx] += tmp_energy;
+
+            }}
+            return err;
+        }}
+
+        """.format(
+            SPH_GEN=str(sph_gen.module),
+            ENERGY_COMP=EC
+        )
+
+
+        self._host_point_eval_lib = build.simple_lib_creator(
+            header_code=header, src_code=src, name='kmc_fmm_indirect_point_eval')['indirect_point_eval']
 
 
 
@@ -844,13 +996,28 @@ class LocalCellExpansions(LocalOctalBase):
 
 
 
+    def eval_field(self, points, out):
 
+        N = points.shape[0]
+        ncps = (2**(self.fmm.R - 1))
+        fmm_cells_per_side = np.array((ncps, ncps, ncps), dtype=INT64)
+        extent = self.group.domain.extent
+        e = np.zeros(3, REAL)
+        e[:] = extent
 
+        err = self._host_point_eval_lib(
+            INT64(N),
+            points.ctypes.get_as_parameter(),
+            self.cell_centres.ctypes.get_as_parameter(),
+            self.md.cell_data_offset.ctypes.get_as_parameter(),
+            self.local_store_dims_arr.ctypes.get_as_parameter(),
+            fmm_cells_per_side.ctypes.get_as_parameter(),
+            e.ctypes.get_as_parameter(),
+            self.local_expansions.ctypes.get_as_parameter(),
+            out.ctypes.get_as_parameter()
+        )
 
-
-
-
-
+        assert err >= 0
 
 
 
