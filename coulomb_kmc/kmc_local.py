@@ -327,6 +327,30 @@ class LocalParticleData(LocalOctalBase):
             self.local_particle_store[store_indexi4] = gido
 
 
+    def get_old_energy(self, num_particles, host_data):
+        """
+        Get old energies (for proposing extraction) using the coulomb_kmc internal proposed move data structures.
+        For details see `coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.setup_propose_with_dats`.
+        """
+
+        div_count_old = INT64(0)
+
+        self._host_direct_old(
+            INT64(num_particles),
+            self.local_store_dims_arr.ctypes.get_as_parameter(),
+            self.offsets_arr.ctypes.get_as_parameter(),
+            host_data['old_positions'].ctypes.get_as_parameter(),
+            host_data['old_charges'].ctypes.get_as_parameter(),
+            host_data['old_ids'].ctypes.get_as_parameter(),
+            host_data['old_fmm_cells'].ctypes.get_as_parameter(),
+            self.local_particle_store.ctypes.get_as_parameter(),
+            self.local_particle_store_ids.ctypes.get_as_parameter(),
+            self.local_cell_occupancy.ctypes.get_as_parameter(),
+            INT64(self.local_particle_store[0, 0, 0, :, 0].shape[0]),
+            host_data['old_energy_d'].ctypes.get_as_parameter(),
+            ctypes.byref(div_count_old)
+        )
+
 
     def propose(self, total_movs, num_particles, host_data, cuda_data):
         """

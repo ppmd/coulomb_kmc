@@ -142,6 +142,12 @@ def test_propose_extract_1(BC):
         err = abs(diff_extractor - diff_direct) / abs(diff_direct)
         # print(err, diff_extractor, diff_direct)
 
+
+        diff_extractor2 = kmc.propose_extract((remove_inds, remove_inds))
+        
+        assert abs(diff_extractor2[0] - diff_extractor) < 10.**-12
+        assert abs(diff_extractor2[1] - diff_extractor) < 10.**-12
+
         assert err < 3.1*10.**-4
 
 

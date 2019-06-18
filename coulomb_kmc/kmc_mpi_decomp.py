@@ -207,6 +207,16 @@ class FMMMPIDecomp(LocalOctalBase):
         if self.win_ind is not None:
             self.win_ind.Free()
             self.win_ind = None
+    
+    def get_local_fmm_cell(self, idx):
+        """
+        Helper function that returns the local fmm cell linear index for a particle.
+
+        :arg idx: Local particle index.
+        """
+        ct = self._get_fmm_cell(idx, self.fmm_cells)
+        return self._gcell_to_lcell(ct)
+
 
     def setup_propose(self, moves):
         """

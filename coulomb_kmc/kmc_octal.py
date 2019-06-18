@@ -336,6 +336,23 @@ class LocalCellExpansions(LocalOctalBase):
         return u0, u1
 
 
+    def get_old_energy(self, num_particles, host_data):
+        """
+        Get old energies (for proposing extraction) using the coulomb_kmc internal proposed move data structures.
+        For details see `coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.setup_propose_with_dats`.
+        """
+
+        self._host_lib(
+            INT64(num_particles),
+            host_data['old_fmm_cells'].ctypes.get_as_parameter(),
+            self.cell_centres.ctypes.get_as_parameter(),
+            host_data['old_positions'].ctypes.get_as_parameter(),
+            host_data['old_charges'].ctypes.get_as_parameter(),
+            self.local_expansions.ctypes.get_as_parameter(),
+            host_data['old_energy_i'].ctypes.get_as_parameter()
+        )
+
+
     def initialise(self, positions, charges, fmm_cells):
         """
         Initialise the data structures for the indirect interactions.
