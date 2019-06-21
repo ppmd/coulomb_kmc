@@ -175,37 +175,38 @@ class LocalParticleData(LocalOctalBase):
         self._win_global_store = None
         del self._owner_store
         self._owner_store = None
+    
 
-
-    def accept(self, movedata):
+    def extract(self, movedata):
         """
-        Accept a move using the coulomb_kmc internal accepted move data structure.
+        Extract a charge from the data structures using the ``old_position``.
 
-        :arg movedata: Move to accept.
+        :arg movedata: Standard datastructure for accepted moves.
+        
+        ::
+
+            realdata = movedata[:7].view(dtype=REAL)
+            old_position = realdata[0:3:]
+            charge       = realdata[6]
+            gid          = movedata[7]
+            old_fmm_cell = movedata[8]
+
         """
 
         realdata = movedata[:7].view(dtype=REAL)
 
         old_position = realdata[0:3:]
-        new_position = realdata[3:6:]
         charge       = realdata[6]
         gid          = movedata[7]
         old_fmm_cell = movedata[8]
-        new_fmm_cell = movedata[9]
 
-        new_cell_tuple = self._cell_lin_to_tuple_no_check(new_fmm_cell)
         old_cell_tuple = self._cell_lin_to_tuple_no_check(old_fmm_cell)
         
         old_tuple_s2f = tuple(reversed(old_cell_tuple))
-        new_tuple_s2f = tuple(reversed(new_cell_tuple))
         
         if self.boundary_condition is BCType.FREE_SPACE:
             old_locs = [[cxi for cxi, cx in enumerate(dims) if \
                 ((cx == old_tuple_s2f[di]) and (abs(pbcs[cxi]) == 0))] for \
-                di, (dims, pbcs) in enumerate(zip(self.cell_indices, self.periodic_factors))]
-
-            new_locs = [[cxi for cxi, cx in enumerate(dims) if \
-                ((cx == new_tuple_s2f[di]) and (abs(pbcs[cxi]) == 0))] for \
                 di, (dims, pbcs) in enumerate(zip(self.cell_indices, self.periodic_factors))]
 
         elif self.boundary_condition is BCType.NEAREST:
@@ -213,18 +214,109 @@ class LocalParticleData(LocalOctalBase):
                 ((cx == old_tuple_s2f[di]) and (abs(pbcs[cxi]) < 2))] for \
                 di, (dims, pbcs) in enumerate(zip(self.cell_indices, self.periodic_factors))]
 
+        elif self.boundary_condition is BCType.PBC:
+            old_locs = [[cxi for cxi, cx in enumerate(dims) if (cx == old_tuple_s2f[di])] for \
+                di, dims in enumerate(self.cell_indices)]           
+        else:
+            raise RuntimeError("Bad/not implemented boundary condition")
+
+
+        # check this rank has relevevant cells for the old location
+        if (len(old_locs[0]) > 0) and (len(old_locs[1]) > 0) and (len(old_locs[2]) > 0):
+            # need to find the old location in the store
+            old_occupancy = self.local_cell_occupancy[old_locs[0][0], old_locs[1][0], old_locs[2][0], 0]
+
+            index = self.local_particle_store_ids[
+                old_locs[0][0], old_locs[1][0], old_locs[2][0], :old_occupancy] == gid
+
+            index = np.where(index)
+
+            # this index should be unique, if not something else failed
+            if len(index[0]) != 1:
+                raise RuntimeError("Index was not unique, this is an error.")
+
+            index = int(index[0][0])
+
+            occ_index = np.ix_(old_locs[0], old_locs[1], old_locs[2], (0,))
+            store_id_index = np.ix_(old_locs[0], old_locs[1], old_locs[2], (old_occupancy-1,))
+            store_index0 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (old_occupancy-1,), (0,))
+            store_index1 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (old_occupancy-1,), (1,))
+            store_index2 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (old_occupancy-1,), (2,))
+            store_index3 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (old_occupancy-1,), (3,))
+            store_index4 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (old_occupancy-1,), (4,))
+
+            store_id_indexi = np.ix_(old_locs[0], old_locs[1], old_locs[2], (index,))
+            store_indexi0 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (index,), (0,))
+            store_indexi1 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (index,), (1,))
+            store_indexi2 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (index,), (2,))
+            store_indexi3 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (index,), (3,))
+            store_indexi4 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (index,), (4,))
+
+            # set new occupancy
+            self.local_cell_occupancy[occ_index] = old_occupancy - 1
+            
+            # get the end data
+            gidi = self.local_particle_store_ids[store_id_index].copy()
+            pos0 = self.local_particle_store[store_index0].copy()
+            pos1 = self.local_particle_store[store_index1].copy()
+            pos2 = self.local_particle_store[store_index2].copy()
+            char = self.local_particle_store[store_index3].copy()
+            gido = self.local_particle_store[store_index4].copy()
+            
+            # shuffle the data down
+            self.local_particle_store_ids[store_id_indexi] = gidi 
+            self.local_particle_store[store_indexi0] = pos0
+            self.local_particle_store[store_indexi1] = pos1
+            self.local_particle_store[store_indexi2] = pos2
+            self.local_particle_store[store_indexi3] = char
+            self.local_particle_store[store_indexi4] = gido
+
+
+    def inject(self, movedata):
+        """
+        Inject a charge from the data structures using the ``new_position``.
+
+        :arg movedata: Standard datastructure for accepted moves.
+        
+        ::
+
+            realdata = movedata[:7].view(dtype=REAL)
+            new_position = realdata[3:6:]
+            charge       = realdata[6]
+            gid          = movedata[7]
+            new_fmm_cell = movedata[9]
+
+        """
+
+        realdata = movedata[:7].view(dtype=REAL)
+        new_position = realdata[3:6:]
+        charge       = realdata[6]
+        gid          = movedata[7]
+        new_fmm_cell = movedata[9]
+
+        new_cell_tuple = self._cell_lin_to_tuple_no_check(new_fmm_cell)
+        new_tuple_s2f = tuple(reversed(new_cell_tuple))
+        
+        if self.boundary_condition is BCType.FREE_SPACE:
+
+            new_locs = [[cxi for cxi, cx in enumerate(dims) if \
+                ((cx == new_tuple_s2f[di]) and (abs(pbcs[cxi]) == 0))] for \
+                di, (dims, pbcs) in enumerate(zip(self.cell_indices, self.periodic_factors))]
+
+        elif self.boundary_condition is BCType.NEAREST:
+
             new_locs = [[cxi for cxi, cx in enumerate(dims) if \
                 ((cx == new_tuple_s2f[di]) and (abs(pbcs[cxi]) < 2))] for \
                 di, (dims, pbcs) in enumerate(zip(self.cell_indices, self.periodic_factors))]
 
         elif self.boundary_condition is BCType.PBC:
-            old_locs = [[cxi for cxi, cx in enumerate(dims) if (cx == old_tuple_s2f[di])] for \
-                di, dims in enumerate(self.cell_indices)]           
+
             new_locs = [[cxi for cxi, cx in enumerate(dims) if (cx == new_tuple_s2f[di])] for \
                 di, dims in enumerate(self.cell_indices)]
+
         else:
             raise RuntimeError("Bad/not implemented boundary condition")
-        
+
 
         # add the new data if the new position is on this rank
         if (len(new_locs[0]) > 0) and (len(new_locs[1]) > 0) and (len(new_locs[2]) > 0):
@@ -270,61 +362,15 @@ class LocalParticleData(LocalOctalBase):
 
 
 
-        # check this rank has relevevant cells for the old location
-        if (len(old_locs[0]) > 0) and (len(old_locs[1]) > 0) and (len(old_locs[2]) > 0):
-            # need to find the old location in the store
-            old_occupancy = self.local_cell_occupancy[old_locs[0][0], old_locs[1][0], old_locs[2][0], 0]
+    def accept(self, movedata):
+        """
+        Accept a move using the coulomb_kmc internal accepted move data structure.
 
-            index = self.local_particle_store_ids[
-                old_locs[0][0], old_locs[1][0], old_locs[2][0], :old_occupancy] == gid
+        :arg movedata: Move to accept.
+        """
+        self.extract(movedata)
+        self.inject(movedata)
 
-            index = np.where(index)
-
-
-            # this index should be unique, if not something else failed
-            if len(index[0]) != 1 and old_fmm_cell != new_fmm_cell:
-                print("Index was not unique, this is an error.")
-                print(index)
-                raise RuntimeError()
-            elif len(index[0]) != 2 and old_fmm_cell == new_fmm_cell:
-                raise RuntimeError()
-            else:
-                index = int(index[0][0])
-
-
-            occ_index = np.ix_(old_locs[0], old_locs[1], old_locs[2], (0,))
-            store_id_index = np.ix_(old_locs[0], old_locs[1], old_locs[2], (old_occupancy-1,))
-            store_index0 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (old_occupancy-1,), (0,))
-            store_index1 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (old_occupancy-1,), (1,))
-            store_index2 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (old_occupancy-1,), (2,))
-            store_index3 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (old_occupancy-1,), (3,))
-            store_index4 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (old_occupancy-1,), (4,))
-
-            store_id_indexi = np.ix_(old_locs[0], old_locs[1], old_locs[2], (index,))
-            store_indexi0 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (index,), (0,))
-            store_indexi1 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (index,), (1,))
-            store_indexi2 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (index,), (2,))
-            store_indexi3 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (index,), (3,))
-            store_indexi4 = np.ix_(old_locs[0], old_locs[1], old_locs[2], (index,), (4,))
-
-            # set new occupancy
-            self.local_cell_occupancy[occ_index] = old_occupancy - 1
-            
-            # get the end data
-            gidi = self.local_particle_store_ids[store_id_index].copy()
-            pos0 = self.local_particle_store[store_index0].copy()
-            pos1 = self.local_particle_store[store_index1].copy()
-            pos2 = self.local_particle_store[store_index2].copy()
-            char = self.local_particle_store[store_index3].copy()
-            gido = self.local_particle_store[store_index4].copy()
-            
-            # shuffle the data down
-            self.local_particle_store_ids[store_id_indexi] = gidi 
-            self.local_particle_store[store_indexi0] = pos0
-            self.local_particle_store[store_indexi1] = pos1
-            self.local_particle_store[store_indexi2] = pos2
-            self.local_particle_store[store_indexi3] = char
-            self.local_particle_store[store_indexi4] = gido
 
 
     def get_old_energy(self, num_particles, host_data):

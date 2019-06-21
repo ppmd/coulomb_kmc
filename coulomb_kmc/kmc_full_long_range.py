@@ -231,6 +231,41 @@ class FullLongRangeEnergy(ProfInc):
                 new_energy = 0.5 * np.dot(L_tmp, dot_vec)
 
                 arr[px, movxi] += old_energy - new_energy
+ 
+
+    def extract(self, movedata):
+        """
+        Extract a charge using the coulomb_kmc internal accepted move data structure.
+
+        :arg movedata: Data for extraction.
+        """ 
+        realdata = movedata[:7].view(dtype=REAL)
+        old_position = realdata[0:3:]
+        charge       = realdata[6]
+
+        # modify the multipole expansion for the coarest level
+        self._lee.multipole_exp(spherical(tuple(old_position)), -charge, self.multipole_exp)
+
+        # modify the dot product coefficients
+        self._lee.dot_vec(spherical(tuple(old_position)), -charge, self.local_dot_coeffs)
+
+
+    def inject(self, movedata):
+        """
+        Inject a charge using the coulomb_kmc internal accepted move data structure.
+
+        :arg movedata: Data for injection.
+        """ 
+        realdata = movedata[:7].view(dtype=REAL)
+        new_position = realdata[3:6:]
+        charge       = realdata[6]
+
+        # modify the multipole expansion for the coarest level
+        self._lee.multipole_exp(spherical(tuple(new_position)),  charge, self.multipole_exp)
+
+        # modify the dot product coefficients
+        self._lee.dot_vec(spherical(tuple(new_position)),  charge, self.local_dot_coeffs)
+
 
 
     def accept(self, movedata):
@@ -240,22 +275,13 @@ class FullLongRangeEnergy(ProfInc):
         :arg movedata: Move to accept.
         """ 
         t0 = time.time()
-
-        realdata = movedata[:7].view(dtype=REAL)
-
-        old_position = realdata[0:3:]
-        new_position = realdata[3:6:]
-        charge       = realdata[6]
-
-        # modify the multipole expansion for the coarest level
-        self._lee.multipole_exp(spherical(tuple(old_position)), -charge, self.multipole_exp)
-        self._lee.multipole_exp(spherical(tuple(new_position)),  charge, self.multipole_exp)
-
-        # modify the dot product coefficients
-        self._lee.dot_vec(spherical(tuple(old_position)), -charge, self.local_dot_coeffs)
-        self._lee.dot_vec(spherical(tuple(new_position)),  charge, self.local_dot_coeffs)
+        
+        self.extract(movedata)
+        self.inject(movedata)
 
         self._profile_inc('FullLongRangeEnergy.accept', time.time() - t0)
+
+
 
     def eval_field(self, points, out):
         """

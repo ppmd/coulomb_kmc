@@ -88,12 +88,14 @@ class LocalCellExpansions(LocalOctalBase):
         assert self._win_ind == None
         self._win_ind = self.md.get_win_ind()
 
+
     def _free_wins(self):
         if self._win is not None:
             self._win.Free()
         self._win = None
         self.md.free_win_ind()
         self._win_ind = None
+
 
     def accept(self, movedata):
         """
@@ -102,10 +104,29 @@ class LocalCellExpansions(LocalOctalBase):
         :arg movedata: Move to accept.
         """
 
-        self._accept(movedata)
+        self._accept(movedata, 0)
         #self._accept_py(movedata)
 
-    def _accept(self, movedata):
+
+    def inject(self, movedata):
+        """
+        Inject a move using the coulomb_kmc internal accepted move data structure.
+
+        :arg movedata: Move to accept.
+        """
+        self._accept(movedata, 1)
+
+
+    def extract(self, movedata):
+        """
+        Inject a move using the coulomb_kmc internal accepted move data structure.
+
+        :arg movedata: Move to accept.
+        """
+        self._accept(movedata, -1)
+
+
+    def _accept(self, movedata, IE_FLAG=0):
         realdata = movedata[:7].view(dtype=REAL)
 
         old_position = realdata[0:3:]
@@ -125,6 +146,7 @@ class LocalCellExpansions(LocalOctalBase):
         
         t0 = time.time()
         self._accept_lib(
+            INT64(IE_FLAG),
             REAL(charge),
             REAL(new_position[0]),
             REAL(new_position[1]),
@@ -759,6 +781,7 @@ class LocalCellExpansions(LocalOctalBase):
         }}
 
         extern "C" int accept_local_exp(
+            const INT64 INJECT_EXTRACT_FLAG,        // -1 => extract only, 0 i/e, 1 inject_only
             const REAL charge,
             const REAL new_posx,
             const REAL new_posy,
@@ -802,7 +825,7 @@ class LocalCellExpansions(LocalOctalBase):
 
                         REAL * RESTRICT cell_local_exp = &local_expansions[lin_cell*ESTRIDE];
 
-                        if (well_separated(mold_tuplex, mold_tupley, mold_tuplez, fmm_cellx, fmm_celly, fmm_cellz)){{
+                        if (well_separated(mold_tuplex, mold_tupley, mold_tuplez, fmm_cellx, fmm_celly, fmm_cellz) && ( INJECT_EXTRACT_FLAG < 1 )){{
                             const REAL dx = mold_posx - centrex;
                             const REAL dy = mold_posy - centrey;
                             const REAL dz = mold_posz - centrez;
@@ -817,7 +840,7 @@ class LocalCellExpansions(LocalOctalBase):
                             tcount++;
                         }}
 
-                        if (well_separated(mnew_tuplex, mnew_tupley, mnew_tuplez, fmm_cellx, fmm_celly, fmm_cellz)){{
+                        if (well_separated(mnew_tuplex, mnew_tupley, mnew_tuplez, fmm_cellx, fmm_celly, fmm_cellz) && ( INJECT_EXTRACT_FLAG > -1 )){{
                             const REAL dx = mnew_posx - centrex;
                             const REAL dy = mnew_posy - centrey;
                             const REAL dz = mnew_posz - centrez;
