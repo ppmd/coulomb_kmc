@@ -832,7 +832,6 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
                 pm[move[0], :] = move[1]
 
 
-
         self._profile_inc('propose_setup', time() - t0)
         
         t0 = time()

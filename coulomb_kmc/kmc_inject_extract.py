@@ -27,6 +27,35 @@ from coulomb_kmc import kmc_direct
 
 from ppmd.access import *
 
+
+
+def _allgatherv(comm, send):
+    """
+    MPI.Allgatherv the contents of send.
+    """
+    
+    size = comm.size
+    rank = comm.rank
+
+    sizes = np.zeros(size, INT64)
+    offsets = np.zeros(size, INT64)
+    assert len(send.shape) == 1
+    n = send.shape[0]
+    assert send.itemsize == 8
+
+    comm.Allgather(np.array(n, INT64), sizes)
+    
+    disp = np.cumsum(sizes)
+    total = disp[-1]
+    disp[1:] = disp[:-1]
+    disp[0] = 0
+    recv = np.zeros(total, send.dtype)
+    comm.Allgatherv(send, [recv, sizes, disp, ppmd.mpi.MPI.DOUBLE])
+    
+    return recv
+
+
+
 class InjectorExtractor(ProfInc):
     """
     Class to propose and accept the injection and extraction of charges. 
@@ -227,7 +256,7 @@ class InjectorExtractor(ProfInc):
         return (AB_energy + BB_energy) * self.energy_unit
 
 
-    def extract(self, ids):
+    def extract(self, ids=()):
         """
         Extract the set of charges given by local ids.
 
@@ -235,14 +264,59 @@ class InjectorExtractor(ProfInc):
         """
         
         t0 = time.time()
-        assert self.comm.size == 1
 
+        de = self.propose_extract(ids)
+        self.energy += de
+
+        size = self.comm.size
+
+        # how this works in parallel is wip
+        assert size == 1
+
+        l = len(ids)
+
+        e = np.zeros((l, 10), INT64)
+
+        for ixi, ix in enumerate(ids):
+
+            movedata = e[ixi, :].view()
+            realdata = movedata[:7].view(dtype=REAL)
+
+            old_position = self.positions[ix, :]
+            charge = self.charges[ix, 0]
+            gid = self.md.ids[ix, 0]
+            old_fmm_cell = self.group._fmm_cell[ix, 0]           
+            
+            realdata[0:3:] = old_position
+            realdata[6]    = charge
+            movedata[7]    = gid
+            movedata[8]    = old_fmm_cell
+        
+
+        ge = _allgatherv(self.comm, e.ravel())
+        nn = ge.shape[0]
+        assert nn % 10 == 0
+        nn //= 10
+        ge = ge.reshape((nn, 10))
+
+
+        for ixi in range(ge.shape[0]):
+            movedata = ge[ixi,:]
+            
+            self.kmcl.extract(movedata)
+            self.kmco.extract(movedata)
+            
+            if self._bc == BCType.PBC:
+                self._lr_energy.extract(movedata)
+
+
+        # remove these (local) particles from the state
         with self.group.modify() as m:
             if ids is not None:
                 m.remove(ids)
 
+
         self._profile_inc('InjectorExtractor.extract', time.time() - t0)
-        self.initialise()
 
 
     def inject(self, add):
