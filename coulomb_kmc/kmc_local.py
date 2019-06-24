@@ -220,7 +220,6 @@ class LocalParticleData(LocalOctalBase):
         else:
             raise RuntimeError("Bad/not implemented boundary condition")
 
-
         # check this rank has relevevant cells for the old location
         if (len(old_locs[0]) > 0) and (len(old_locs[1]) > 0) and (len(old_locs[2]) > 0):
             # need to find the old location in the store
@@ -316,8 +315,7 @@ class LocalParticleData(LocalOctalBase):
 
         else:
             raise RuntimeError("Bad/not implemented boundary condition")
-
-
+        
         # add the new data if the new position is on this rank
         if (len(new_locs[0]) > 0) and (len(new_locs[1]) > 0) and (len(new_locs[2]) > 0):
             old_occupancy = self.local_cell_occupancy[new_locs[0][0], new_locs[1][0], new_locs[2][0], 0]

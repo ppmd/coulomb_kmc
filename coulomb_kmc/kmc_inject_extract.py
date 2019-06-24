@@ -366,18 +366,26 @@ class InjectorExtractor(ProfInc):
         # correct the available gids
         self._next_gid += NN
 
-        o = {self.group._kmc_fmm_order: np.arange(start, end).reshape((N, 1))}
-        add.update(o)
 
         new_pos = add[self.positions]
         new_q = add[self.charges]
-        new_gid = add[self.group._kmc_fmm_order]
-        
-
         assert new_pos.shape == (N, 3)
         assert new_q.shape == (N, 1)
+
+        
+        new_fmm_cells = np.zeros((N, 1), INT64)
+        for pxi, px in enumerate(new_pos):
+            new_fmm_cells[pxi] = self._get_lin_cell(px)
+
+
+        o = {
+            self.group._kmc_fmm_order: np.arange(start, end).reshape((N, 1)),
+            self.group._fmm_cell: new_fmm_cells
+        }
+        add.update(o)
+
+        new_gid = add[self.group._kmc_fmm_order]
         assert new_gid.shape == (N, 1)
- 
 
 
         de = self.propose_inject(new_pos, new_q)
@@ -385,18 +393,19 @@ class InjectorExtractor(ProfInc):
 
 
 
-        data = np.zeros((new_pos.shape[0], 5), REAL)
+        data = np.zeros((new_pos.shape[0], 6), REAL)
         data[:, :3] = new_pos.copy()
         data[:, 3] = new_q.reshape((N,)).copy()
-        idata = data[:, 4].view(dtype=INT64)
-        idata[:] = new_gid.reshape((N,)).copy()
+        idata = data[:, 4:6].view(dtype=INT64)
+        idata[:, 0] = new_gid.reshape((N,)).copy()
+        idata[:, 1] = new_fmm_cells.reshape((N, )).copy()
         
         data = _allgatherv(self.comm, data.ravel())
 
         nn = data.shape[0]
-        assert nn % 5 == 0
-        nn //= 5
-        data = data.reshape((nn, 5))
+        assert nn % 6 == 0
+        nn //= 6
+        data = data.reshape((nn, 6))
         
         for dx in data:
 
@@ -407,7 +416,7 @@ class InjectorExtractor(ProfInc):
             charge = dx[3]
             idx = dx[4:].view(dtype=INT64)
             gid = idx[0]
-            new_fmm_cell = self._get_lin_cell(new_position)
+            new_fmm_cell = idx[1]
             
             realdata[3:6:] = new_position
             realdata[6]    = charge
@@ -425,7 +434,8 @@ class InjectorExtractor(ProfInc):
         with self.group.modify() as m:
             if add is not None:
                 m.add(add)
-
+        
+        #self.initialise()
 
 
         self._profile_inc('InjectorExtractor.inject', time.time() - t0)

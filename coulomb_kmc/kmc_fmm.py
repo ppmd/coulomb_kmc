@@ -228,6 +228,7 @@ class _PY_KMCFMM:
 
     def _get_cell(self, position):
 
+
         extent = self.group.domain.extent
         cell_widths = [ex / (2**(self.fmm.R - 1)) for ex in extent]
         spos = [0.5*ex + po for po, ex in zip(position, extent)]
