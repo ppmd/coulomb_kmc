@@ -882,6 +882,7 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
         self.comm.Barrier()
         self._ordering_win.Free()
         self._ordering_win = None
+        
 
     
     def _check_potential_dat(self):
@@ -939,6 +940,8 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
         # ensure re-init of python-test structs
         self._cell_map = None
 
+        # reset the available global ids
+        self._next_gid = self.group.npart
     
     def _assert_init(self):
 

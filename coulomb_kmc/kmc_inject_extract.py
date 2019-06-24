@@ -341,6 +341,7 @@ class InjectorExtractor(ProfInc):
         :arg add: Dictonary of the style of `state.modifier.add`.
         """
         
+
         t0 = time.time()
         assert self.comm.size == 1
 
@@ -355,19 +356,23 @@ class InjectorExtractor(ProfInc):
         counts = np.zeros(self.comm.size, INT64)
         self.comm.Allgather(np.array(N, INT64), counts)
         offset = np.sum(counts[:self.comm.rank])
+        NN = np.sum(counts)
         
 
         # construct the new global ids
-        start = self.group.npart + offset
+        start = self._next_gid + offset
         end = start + N
+        
+        # correct the available gids
+        self._next_gid += NN
+
         o = {self.group._kmc_fmm_order: np.arange(start, end).reshape((N, 1))}
         add.update(o)
 
         new_pos = add[self.positions]
         new_q = add[self.charges]
         new_gid = add[self.group._kmc_fmm_order]
-
-
+        
 
         assert new_pos.shape == (N, 3)
         assert new_q.shape == (N, 1)
