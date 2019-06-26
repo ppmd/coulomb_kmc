@@ -682,6 +682,12 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
 
         du0, du1 = self.kmcl.propose(*cmove_data)
         iu0, iu1 = self.kmco.propose(*cmove_data)
+
+        self.du0 = du0
+        self.du1 = du1
+        self.iu0 = iu0
+        self.iu1 = iu1
+
         self._si.propose(*tuple(list(cmove_data) + [self._tmp_energies[_ENERGY.U01_SELF]]))
 
         # long range calculation

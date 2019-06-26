@@ -563,6 +563,7 @@ class LocalCellExpansions(LocalOctalBase):
             const INT64 NBLOCKS = num_movs / BLOCK_SIZE;
             const INT64 BLOCK_END = NBLOCKS * BLOCK_SIZE;
             
+            ///*
             #pragma omp parallel for 
             for(INT64 bdx=0 ; bdx<NBLOCKS ; bdx++){{
 
@@ -596,7 +597,7 @@ class LocalCellExpansions(LocalOctalBase):
                     cos_phi_set[bix] = cos(phi);
                 }}
                 
-                #pragma omp simd simdlen(BLOCK_SIZE)
+                //#pragma omp simd simdlen(BLOCK_SIZE)
                 for(INT64 bix=0 ; bix<BLOCK_SIZE ; bix++){{
 
                     const INT64 idx = bdx*BLOCK_SIZE + bix;
@@ -629,8 +630,9 @@ class LocalCellExpansions(LocalOctalBase):
                 }}
 
             }}
-
+            //*/
             #pragma omp parallel for schedule(static, 1)
+            //for(INT64 idx=0 ; idx<num_movs ; idx++){{
             for(INT64 idx=BLOCK_END ; idx<num_movs ; idx++){{
 
                 // map fmm cell into data structure

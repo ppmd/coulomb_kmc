@@ -132,7 +132,10 @@ A.scatter_data_from(0)
 # create kmc instance
 kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, domain=A.domain, r=R, l=L,
     boundary_condition='pbc', max_move=max_move_dim)
+
+
 kmc_fmm.initialise()
+
 
 if MPIRANK == 0:
     print('-' * 80)
@@ -275,10 +278,26 @@ move_logic_time = 0.0
 
 def find_charge_to_move():
     mt0 = time.time()
+
+
+
+
+
     
     # compute rates from differences
     rate.execute()
-    
+ 
+    isnormal_diffs = np.all(np.isfinite(A.prop_diffs.view))
+    isnormal_rates = np.all(np.isfinite(A.prop_rates.view))
+
+
+    if not isnormal_diffs:
+        print(MPIRANK, 'is normal_diffs failed on e diffs')
+        import ipdb; ipdb.set_trace()
+    if not isnormal_rates:
+        print(MPIRANK, 'is normal_rates failed on e diffs')
+        import ipdb; ipdb.set_trace()
+
     
     local_inc_sum = np.cumsum(A.prop_rate_totals[:A.npart_local:, 0])
     local_total = np.array(local_inc_sum[-1], REAL)
@@ -289,9 +308,16 @@ def find_charge_to_move():
     all_inc_sum = np.cumsum(all_totals)
     
     rate_total = all_inc_sum[-1]
+    
+    if not np.isfinite(rate_total):
+        print(MPIRANK, local_total, rate_total)
+
 
     accept_point = rng.uniform(0.0, rate_total - 4*10.**-16)
     
+
+    #import ipdb; ipdb.set_trace()
+
     if MPIRANK == 0:
         low = 0.0
     else:
@@ -341,7 +367,7 @@ def find_charge_to_move():
 
 print_str = r'{: 7d} | {: 20.16e}'
 
-PRINT = False
+PRINT = True
 
 
 if MPIRANK == 0:
@@ -353,6 +379,8 @@ if MPIRANK == 0:
 
 MPIBARRIER()
 t0 = time.time()
+
+
 
 for stepx in range(num_steps):
     
