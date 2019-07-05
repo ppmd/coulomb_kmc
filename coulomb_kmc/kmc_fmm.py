@@ -830,8 +830,9 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
         # as the position modify view could move the data to a new
         # MPI rank.
         
-        if move is not None:
-            self.group._fmm_cell[move[0]] = new_fmm_cell
+        with self.group._fmm_cell.modify_view() as mv:
+            if move is not None:
+                mv[move[0]] = new_fmm_cell
 
         # update the position
         with self.positions.modify_view() as pm:

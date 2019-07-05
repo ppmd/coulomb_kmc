@@ -192,7 +192,7 @@ class InjectorExtractor(ProfInc):
 
 
 
-    def propose_extract(self, ids, use_python=False):
+    def propose_extract(self, ids):
         """
         Propose the extraction of a set of charges by providing the local
         particle ids. Returns the change of energy if the charges were
@@ -209,18 +209,19 @@ class InjectorExtractor(ProfInc):
         # AA + AB + BB interactions.
 
         ids = np.array(ids, dtype=INT64)
+        ids = np.atleast_2d(ids)
         
-        if len(ids.shape) == 1:
-            return self._py_propose_extract(ids)
-        elif len(ids.shape) > 2:
+        #if len(ids.shape) == 1:
+        #    return self._py_propose_extract(ids)
+        if len(ids.shape) > 2:
             raise RuntimeError('Bad ids shape')
         
         n = ids.shape[0]
         out = np.zeros(n, REAL)
-        if use_python:
-            for idi, idx in enumerate(ids):
-                out[idi] = self._py_propose_extract(idx)
-            return out
+        #if use_python:
+        #    for idi, idx in enumerate(ids):
+        #        out[idi] = self._py_propose_extract(idx)
+        #    return out
 
 
         part2 = self._get_energy(ids)
@@ -228,6 +229,7 @@ class InjectorExtractor(ProfInc):
 
         for idi in range(n):
             out[idi] = self._py_extract_ab_bb_part_1(ids[idi, :]) - part2[idi]
+
         
         return out * self.energy_unit
 
@@ -268,6 +270,7 @@ class InjectorExtractor(ProfInc):
         de = self.propose_extract(ids)
         self.energy += de
 
+
         size = self.comm.size
 
         # how this works in parallel is wip
@@ -303,8 +306,8 @@ class InjectorExtractor(ProfInc):
         for ixi in range(ge.shape[0]):
             movedata = ge[ixi,:]
             
-            self.kmcl.extract(movedata)
             self.kmco.extract(movedata)
+            self.kmcl.extract(movedata)
             
             if self._bc == BCType.PBC:
                 self._lr_energy.extract(movedata)
@@ -314,7 +317,6 @@ class InjectorExtractor(ProfInc):
         with self.group.modify() as m:
             if ids is not None:
                 m.remove(ids)
-
 
         self._profile_inc('InjectorExtractor.extract', time.time() - t0)
 
@@ -435,7 +437,6 @@ class InjectorExtractor(ProfInc):
             if add is not None:
                 m.add(add)
         
-        #self.initialise()
 
 
         self._profile_inc('InjectorExtractor.inject', time.time() - t0)
