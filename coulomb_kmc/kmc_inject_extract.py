@@ -141,11 +141,14 @@ class InjectorExtractor(ProfInc):
     def _py_extract_bb_energy(self, ids):
         return self.compute_energy(self.positions[ids, :], self.charges[ids, :])
     
-    def _py_extract_ab_bb_part_1(self, ids):
+    def _py_extract_ab_bb_part_1(self, ids, self_energy=True):
         assert self.comm.size == 1
 
         # BB interations (required to avoid double count of BB)
-        BB_energy = self._py_extract_bb_energy(ids)
+        if self_energy:
+            BB_energy = self._py_extract_bb_energy(ids)
+        else:
+            BB_energy = 0.0
 
         # AB + BB interactions
         AB_BB_energy = 0.0
@@ -192,7 +195,7 @@ class InjectorExtractor(ProfInc):
 
 
 
-    def propose_extract(self, ids):
+    def propose_extract(self, ids, self_energy=True):
         """
         Propose the extraction of a set of charges by providing the local
         particle ids. Returns the change of energy if the charges were
@@ -207,30 +210,26 @@ class InjectorExtractor(ProfInc):
         # code is written assuming the current state is A + B for A, B sets
         # of charges. B is the set to remove. Hence energy is formed of the
         # AA + AB + BB interactions.
-
-        ids = np.array(ids, dtype=INT64)
+        
+        if type(ids) is not np.ndarray:
+            ids = np.array(ids, dtype=INT64)
+        if len(ids) == 0:
+            return np.array(())
         ids = np.atleast_2d(ids)
         
-        #if len(ids.shape) == 1:
-        #    return self._py_propose_extract(ids)
         if len(ids.shape) > 2:
             raise RuntimeError('Bad ids shape')
         
         n = ids.shape[0]
         out = np.zeros(n, REAL)
-        #if use_python:
-        #    for idi, idx in enumerate(ids):
-        #        out[idi] = self._py_propose_extract(idx)
-        #    return out
 
 
         part2 = self._get_energy(ids)
         assert len(part2) == n
 
         for idi in range(n):
-            out[idi] = self._py_extract_ab_bb_part_1(ids[idi, :]) - part2[idi]
+            out[idi] = self._py_extract_ab_bb_part_1(ids[idi, :], self_energy) - part2[idi]
 
-        
         return out * self.energy_unit
 
 
@@ -490,8 +489,11 @@ class DiscoverInjectExtract:
             const double dz = ES[ii*3 + 2] - pz;
 
             const double r2 = dx*dx + dy*dy + dz*dz;
-
-            E.i[0] += (r2 < {TOL}) ? 1 : 0;
+            
+            if (r2 < {TOL}){{
+                E.i[0] = ii + 1;
+                break;
+            }}
         }}
 
 
