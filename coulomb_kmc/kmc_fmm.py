@@ -22,7 +22,7 @@ from scipy.special import lpmv
 from ppmd.coulomb.fmm import PyFMM
 from ppmd.pairloop import StateHandler
 from ppmd.mpi import MPI, AllocMem
-from ppmd.data import ParticleDat
+from ppmd.data import ParticleDat, ScalarArray
 
 # coulomb_kmc imports
 from coulomb_kmc import kmc_octal, kmc_local
@@ -640,7 +640,7 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
 
 
     def propose_with_dats(self, site_max_counts, current_sites,
-            prop_positions, prop_masks, prop_energy_diffs, diff=True):
+            prop_positions, prop_masks, prop_energy_diffs, diff=True, prop_charges=None):
         """
         Compute the energy difference that would occur if a proposed move was performed. For this interface each 
         charge exists at a site type. Each site type has a maximum number of proposed moves associated with it.
@@ -657,6 +657,7 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
         :arg ParticleDat prop_masks:         ParticleDat(dtype=c_int64)      (Input). Energy is computed for moves with mask > 0.
         :arg ParticleDat prop_energy_diffs:  ParticleDat(dtype=c_double)     (Output. Energy (difference) of each proposed move with mask > 0.
         :arg bool diff: default True. If diff is True then the prop_energy_diffs ParticleDat is populated with energy differences.
+        :arg ParticleDat prop_charges:       ParticleDat(dtype=c_double)     (Input). (optional) Set of proposed new charges.
         """
         
         self._assert_init()
@@ -671,7 +672,7 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
         assert prop_energy_diffs.dtype == REAL
 
         cmove_data = self.md.setup_propose_with_dats(site_max_counts, current_sites,
-            prop_positions, prop_masks, prop_energy_diffs)
+            prop_positions, prop_masks, prop_energy_diffs, prop_charges)
 
         num_particles = cmove_data[1]
         if num_particles == 0:
@@ -711,6 +712,16 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
         
         self._profile_inc('propose_count', cmove_data[0])
         self._profile_inc('propose_with_dats', t1 - t0)
+
+
+    def get_old_energy_with_dats(self, masks, energy):
+        """
+        Get the energy of a set of particles, useful for computing extraction and 
+        recombination rates. Currently implemented as a proposed hop where the 
+        new charge has a value of zero.
+
+        """
+        raise NotImplementedError()
 
 
     # these should be the names of the final propose and accept methods.

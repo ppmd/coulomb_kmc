@@ -463,20 +463,22 @@ class FMMMPIDecomp(LocalOctalBase):
             const INT64 * RESTRICT current_fmm_cells,
             const REAL  * RESTRICT prop_positions,
             const INT64 * RESTRICT prop_masks,
-            INT64 * RESTRICT rate_location,
-            REAL  * RESTRICT new_positions,
-            REAL  * RESTRICT new_charges,
-            INT64 * RESTRICT new_ids,
-            INT64 * RESTRICT new_fmm_cells,
-            REAL  * RESTRICT new_shifted_positions,
-            REAL  * RESTRICT old_positions,
-            REAL  * RESTRICT old_charges,
-            INT64 * RESTRICT old_ids,
-            INT64 * RESTRICT old_fmm_cells,
-            INT64 * RESTRICT exclusive_sum,
-            INT64 * RESTRICT num_particles,
-            INT64 * RESTRICT total_movs,
-            const REAL * RESTRICT extent,
+            const INT64            prop_charge_flag,
+            const REAL  * RESTRICT prop_charges,
+                  INT64 * RESTRICT rate_location,
+                  REAL  * RESTRICT new_positions,
+                  REAL  * RESTRICT new_charges,
+                  INT64 * RESTRICT new_ids,
+                  INT64 * RESTRICT new_fmm_cells,
+                  REAL  * RESTRICT new_shifted_positions,
+                  REAL  * RESTRICT old_positions,
+                  REAL  * RESTRICT old_charges,
+                  INT64 * RESTRICT old_ids,
+                  INT64 * RESTRICT old_fmm_cells,
+                  INT64 * RESTRICT exclusive_sum,
+                  INT64 * RESTRICT num_particles,
+                  INT64 * RESTRICT total_movs,
+            const REAL  * RESTRICT extent,
             const INT64 * RESTRICT fmm_cells_per_side,
             const INT64 * RESTRICT cell_data_offset,
             const INT64 * RESTRICT local_store_dims,
@@ -553,8 +555,10 @@ class FMMMPIDecomp(LocalOctalBase):
                         new_shifted_positions[nind*3 + 0] = tmp_pos[0];
                         new_shifted_positions[nind*3 + 1] = tmp_pos[1];
                         new_shifted_positions[nind*3 + 2] = tmp_pos[2];
+                        
+                        const INT64 charge_prop_ind = px * max_prop + movx;
+                        new_charges[nind] = (prop_charge_flag > 0) ? prop_charges[charge_prop_ind] : current_charges[px];
 
-                        new_charges[nind] = current_charges[px];
                         new_ids[nind] = current_ids[px];
                         rate_location[nind] = px*max_prop + movx;
                         prop_found++;
@@ -580,7 +584,7 @@ class FMMMPIDecomp(LocalOctalBase):
 
 
     def setup_propose_with_dats(self, site_max_counts, current_sites,
-            prop_positions, prop_masks, prop_energy_diffs):
+            prop_positions, prop_masks, prop_energy_diffs, prop_charges=None):
         """
         Converts proposed moves passed with the `propose_with_dats` interface
         into the internal data structure for proposed moves that can be passed
@@ -591,6 +595,7 @@ class FMMMPIDecomp(LocalOctalBase):
         :arg prop_positions:     ParticleDat, dtype=c_double     Input
         :arg prop_masks:         ParticleDat, dtype=c_int64      Input
         :arg prop_energy_diffs:  ParticleDat, dtype=c_double     Output
+        :arg prop_charges:       ParticleDat, dtype=c_double     Input (optional)
 
 
         Returns:
@@ -635,6 +640,9 @@ class FMMMPIDecomp(LocalOctalBase):
 
         ncps = (2**(self.fmm.R - 1))
         fmm_cells_per_side = np.array((ncps, ncps, ncps), dtype=INT64)
+
+        prop_charge_flag = INT64(1 if prop_charges is not None else 0)
+        prop_charges_ptr = prop_charges.ctypes_data if prop_charges is not None else ctypes.byref(REAL(0))
         
         total_movs = INT64(0)
         num_particles = INT64(0)
@@ -649,6 +657,8 @@ class FMMMPIDecomp(LocalOctalBase):
             self.fmm_cells.ctypes_data,
             prop_positions.ctypes_data,
             prop_masks.ctypes_data,
+            prop_charge_flag,
+            prop_charges_ptr,
             self._cuda_h['rate_location'].ctypes.get_as_parameter(),
             self._cuda_h['new_positions'].ctypes.get_as_parameter(),
             self._cuda_h['new_charges'].ctypes.get_as_parameter(),

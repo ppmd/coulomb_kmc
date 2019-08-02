@@ -43,6 +43,9 @@ class FullLongRangeEnergy(ProfInc):
         self.local_dot_coeffs = np.zeros(self.ncomp, dtype=REAL)
 
         self._host_lib = self._init_host_lib()
+        self._host_old_lib = self._init_host_old_lib()
+
+
         self._nthread = ppmd.runtime.NUM_THREADS
         assert self._nthread > 0
         # these get resized if needed
@@ -107,6 +110,26 @@ class FullLongRangeEnergy(ProfInc):
 
     
 
+
+    def get_old_energy(self, num_particles, host_data):
+        L_tmp = np.zeros(self.ncomp, dtype=REAL)
+        # get current long range energy
+        self.lrc(self.multipole_exp, L_tmp)
+
+        old_pos = host_data['old_positions']
+        old_chr = host_data['old_charges']
+        old_eng = host_data['old_energy_i']
+
+        self._host_old_lib(
+            INT64(num_particles),
+            old_pos.ctypes.get_as_parameter(),
+            old_chr.ctypes.get_as_parameter(),
+            L_tmp.ctypes.get_as_parameter(),
+            old_eng.ctypes.get_as_parameter()
+        )
+
+
+
     def propose(self, total_movs, num_particles, host_data, cuda_data, arr, use_python=False):
         """
         Propose a move using the coulomb_kmc internal proposed move data structures.
@@ -123,6 +146,7 @@ class FullLongRangeEnergy(ProfInc):
             old_pos = host_data['old_positions']
             new_pos = host_data['new_positions']
             old_chr = host_data['old_charges']
+            new_chr = host_data['new_charges']
             
             assert es.dtype == INT64
             assert old_pos.dtype == REAL
@@ -147,6 +171,7 @@ class FullLongRangeEnergy(ProfInc):
                 old_pos.ctypes.get_as_parameter(),
                 old_chr.ctypes.get_as_parameter(),
                 new_pos.ctypes.get_as_parameter(),
+                new_chr.ctypes.get_as_parameter(),
                 self.multipole_exp.ctypes.get_as_parameter(),
                 self.local_dot_coeffs.ctypes.get_as_parameter(),
                 self.lrc.linop_data.ctypes.get_as_parameter(),
@@ -322,10 +347,10 @@ class FullLongRangeEnergy(ProfInc):
 
             REAL moradius, motheta, mophi;
             spherical(mopx, mopy, mopz, &moradius, &motheta, &mophi);
-            multipole_exp(charge, moradius, motheta, mophi, old_moments);
+            multipole_exp(old_charge, moradius, motheta, mophi, old_moments);
             
             // remove the contribs for the old mirror position
-            local_dot_vec(charge, moradius, motheta, mophi, old_evector);
+            local_dot_vec(old_charge, moradius, motheta, mophi, old_evector);
             '''.format(**mcoeff)
 
             mirror_loop_0 = '''
@@ -337,13 +362,13 @@ class FullLongRangeEnergy(ProfInc):
             spherical(mnpx, mnpy, mnpz, &mnradius, &mntheta, &mnphi);
 
             // add on the new moments
-            // multipole_exp(-1.0*charge, mnradius, mntheta, mnphi, &new_moments[movii*NCOMP]);
+            // multipole_exp(-1.0*new_charge, mnradius, mntheta, mnphi, &new_moments[movii*NCOMP]);
 
             // add on the new evector coefficients
-            // local_dot_vec(-1.0*charge, mnradius, mntheta, mnphi, &new_evector[movii*NCOMP]);
+            // local_dot_vec(-1.0*new_charge, mnradius, mntheta, mnphi, &new_evector[movii*NCOMP]);
             
             // combined
-            local_dot_vec_multipole(-1.0 * charge, mnradius, mntheta, mnphi,
+            local_dot_vec_multipole(-1.0 * new_charge, mnradius, mntheta, mnphi,
                 &new_evector[movii*NCOMP], &new_moments[movii*NCOMP]);
             '''.format(**mcoeff)
 
@@ -529,6 +554,7 @@ class FullLongRangeEnergy(ProfInc):
             const REAL * RESTRICT old_positions,
             const REAL * RESTRICT old_charges,
             const REAL * RESTRICT new_positions,
+            const REAL * RESTRICT new_charges,
             const REAL * RESTRICT existing_multipole,
             const REAL * RESTRICT existing_evector,
             const REAL * RESTRICT linop_data,
@@ -542,7 +568,7 @@ class FullLongRangeEnergy(ProfInc):
             #pragma omp parallel for schedule(dynamic)
             for(INT64 px=0 ; px<num_particles ; px++){{
 
-                const REAL charge = old_charges[px];
+                const REAL old_charge = old_charges[px];
                 const REAL opx = old_positions[3*px + 0];
                 const REAL opy = old_positions[3*px + 1];
                 const REAL opz = old_positions[3*px + 2];
@@ -563,13 +589,13 @@ class FullLongRangeEnergy(ProfInc):
                 // add on the multipole expansion for the old position
                 REAL oradius, otheta, ophi;
                 spherical(opx, opy, opz, &oradius, &otheta, &ophi);
-                multipole_exp(-1.0 * charge, oradius, otheta, ophi, old_moments);
+                multipole_exp(-1.0 * old_charge, oradius, otheta, ophi, old_moments);
 
                 // copy the existing evector
                 for(int nx=0 ; nx<NCOMP ; nx++){{ old_evector[nx] = existing_evector[nx]; }}
                 
                 // remove the contribs for the old position
-                local_dot_vec(-1.0 * charge, oradius, otheta, ophi, old_evector);
+                local_dot_vec(-1.0 * old_charge, oradius, otheta, ophi, old_evector);
                 
                 // Do the above for mirror charge if required.
                 {MIRROR_PRELOOP}
@@ -585,11 +611,12 @@ class FullLongRangeEnergy(ProfInc):
                 }}
 
 
-                // loop over the proposed new positions and copy old positions and compute spherical coordinate
+                // loop over the proposed new positions and copy new positions and compute spherical coordinate
                 // vectors
                 #pragma omp simd simdlen(8)
                 for(INT64 movii=0 ; movii<nprop ; movii++){{
                     const INT64 movi = movii + exclusive_sum[px];
+                    const REAL new_charge = new_charges[movi];
                     const REAL npx = new_positions[3*movi + 0];
                     const REAL npy = new_positions[3*movi + 1];
                     const REAL npz = new_positions[3*movi + 2];
@@ -598,7 +625,7 @@ class FullLongRangeEnergy(ProfInc):
                     spherical(npx, npy, npz, &nradius, &ntheta, &nphi);
                     
                     // combined
-                    local_dot_vec_multipole(charge, nradius, ntheta, nphi,
+                    local_dot_vec_multipole(new_charge, nradius, ntheta, nphi,
                         &new_evector[movii*NCOMP], &new_moments[movii*NCOMP]);
 
                     {MIRROR_LOOP_0}
@@ -670,5 +697,163 @@ class FullLongRangeEnergy(ProfInc):
         )
 
         _l = simple_lib_creator(header_code=header, src_code=src)['long_range_energy']
+        return _l
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    def _init_host_old_lib(self):
+        ncomp = (self.L**2)*2
+        half_ncomp = self.L**2
+        def _re_lm(l, m): return l**2 + l + m
+
+
+        src = r'''
+        
+        {LOCAL_EVAL_HEADER}
+        {LOCAL_EVAL_SRC}
+
+
+        static inline void spherical(
+            const REAL dx, const REAL dy, const REAL dz,
+            REAL *radius, REAL *theta, REAL *phi
+        ){{
+            const REAL dx2 = dx*dx;
+            const REAL dx2_p_dy2 = dx2 + dy*dy;
+            const REAL d2 = dx2_p_dy2 + dz*dz;
+            *radius = sqrt(d2);
+            *theta = atan2(sqrt(dx2_p_dy2), dz);
+            *phi = atan2(dy, dx);       
+            return;
+        }}
+
+
+        extern "C" int old_long_range_energy(
+            const INT64 num_particles,
+            const REAL * RESTRICT old_positions,
+            const REAL * RESTRICT old_charges,
+            const REAL * RESTRICT existing_multipole,
+            REAL * RESTRICT out
+        )
+        {{
+
+            #pragma omp parallel for schedule(dynamic)
+            for(INT64 px=0 ; px<num_particles ; px++){{
+
+                const REAL old_charge = old_charges[px];
+                const REAL opx = old_positions[3*px + 0];
+                const REAL opy = old_positions[3*px + 1];
+                const REAL opz = old_positions[3*px + 2];
+
+ 
+                REAL oradius, otheta, ophi;
+                spherical(opx, opy, opz, &oradius, &otheta, &ophi);
+
+                double tmp_energy = 0.0;
+                local_eval(
+                    oradius,
+                    otheta,
+                    ophi,
+                    existing_multipole,
+                    &tmp_energy
+                );
+
+                out[px] = tmp_energy * old_charge;
+                printf("px = %d, e = %f\n", px, out[px]);
+
+            }}
+
+            return 0;
+        }}
+        '''.format(
+            LOCAL_EVAL_HEADER=self._lee.create_local_eval_header,
+            LOCAL_EVAL_SRC=self._lee.create_local_eval_src
+        )
+
+        header = str(
+            Module((
+                Include('omp.h'),
+                Include('stdio.h'),
+                Include('math.h'),
+                Define('INT64', 'int64_t'),
+                Define('REAL', 'double'),
+                Define('NCOMP', str(ncomp)),
+                Define('HALF_NCOMP', str(half_ncomp)),
+                Define('DIPOLE_SX', str(self.lrc.dipole_correction[0])),
+                Define('DIPOLE_SY', str(self.lrc.dipole_correction[1])),
+                Define('DIPOLE_SZ', str(self.lrc.dipole_correction[2])),
+                Define('RE_1P1', str(_re_lm(1, 1))),
+                Define('RE_1_0', str(_re_lm(1, 0))),
+                Define('RE_1N1', str(_re_lm(1,-1))),
+                Define('IM_1P1', str(_re_lm(1, 1) + half_ncomp)),
+                Define('IM_1_0', str(_re_lm(1, 0) + half_ncomp)),
+                Define('IM_1N1', str(_re_lm(1,-1) + half_ncomp)),
+            ))
+        )
+
+        _l = simple_lib_creator(header_code=header, src_code=src)['old_long_range_energy']
         return _l
 

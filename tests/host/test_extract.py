@@ -101,6 +101,8 @@ def test_propose_extract_1(BC):
 
     
     for testx in range(20):
+        print("-" * 60)
+
         # find a +ve/-ve pair of charges
 
         num_remove = rng.randint(1, 10)

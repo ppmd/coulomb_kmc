@@ -97,6 +97,7 @@ class InjectorExtractor(ProfInc):
         h['old_charges']       = np.zeros((N, 1), dtype=REAL)
         h['old_energy_d']      = np.zeros((N, 1), dtype=REAL)
         h['old_energy_i']      = np.zeros((N, 1), dtype=REAL)
+        h['old_energy_l']      = np.zeros((N, 1), dtype=REAL)
         h['old_ids']           = np.zeros((N, 1), dtype=INT64)
         
         h['old_positions'][:] = self.positions[ids, :].copy()
@@ -108,8 +109,12 @@ class InjectorExtractor(ProfInc):
         
         self.kmco.get_old_energy(N, h)
         self.kmcl.get_old_energy(N, h)
+        if self._bc == BCType.PBC:
+            self._lr_energy.get_old_energy(N, h)
 
-        return np.sum(np.add(h['old_energy_i'], h['old_energy_d']).reshape((n, m)), axis=1)
+        e = h['old_energy_i'] + h['old_energy_d']# + h['old_energy_l']
+
+        return np.sum(e.reshape((n, m)), axis=1)
 
 
     def compute_energy(self, positions, charges):
@@ -157,6 +162,9 @@ class InjectorExtractor(ProfInc):
         #    AB_BB_energy += self._charge_indirect_energy_old(ix) + \
         #        self._direct_contrib_old(ix)
         
+
+        AB_BB_LR_energy = 0.0
+
         if self._bc == BCType.PBC:
             tmp_field = np.zeros(len(ids), REAL)
             self._lr_energy.eval_field(
@@ -165,33 +173,40 @@ class InjectorExtractor(ProfInc):
             for ixi, ix in enumerate(ids):
                 tmp_field[ixi] *= self.charges.view[ix, 0]
 
+                print(ixi, ix, tmp_field[ixi])
+
             AB_BB_LR_energy = np.sum(tmp_field)
 
-        else:
-            AB_BB_LR_energy = 0.0
+
+        #else:
+        #    AB_BB_LR_energy = 0.0
         
+
+    
+
+
         return -1.0 * AB_BB_energy + BB_energy - AB_BB_LR_energy
 
 
-    def _py_propose_extract(self, ids):
-        
-        t0 = time.time()
-        assert self.comm.size == 1
+    #def _py_propose_extract(self, ids):
+    #    
+    #    t0 = time.time()
+    #    assert self.comm.size == 1
 
-        # code is written assuming the current state is A + B for A, B sets
-        # of charges. B is the set to remove. Hence energy is formed of the
-        # AA + AB + BB interactions.
+    #    # code is written assuming the current state is A + B for A, B sets
+    #    # of charges. B is the set to remove. Hence energy is formed of the
+    #    # AA + AB + BB interactions.
 
-        ids = np.array(ids, dtype=INT64)
-        
-        part1 = self._py_extract_ab_bb_part_1(ids)
-        AB_BB_energy = 0.0
-        for ix in ids:
-            ix = int(ix)
-            AB_BB_energy += self._charge_indirect_energy_old(ix) + \
-                self._direct_contrib_old(ix)
+    #    ids = np.array(ids, dtype=INT64)
+    #    
+    #    part1 = self._py_extract_ab_bb_part_1(ids)
+    #    AB_BB_energy = 0.0
+    #    for ix in ids:
+    #        ix = int(ix)
+    #        AB_BB_energy += self._charge_indirect_energy_old(ix) + \
+    #            self._direct_contrib_old(ix)
 
-        return (part1 - AB_BB_energy) * self.energy_unit
+    #    return (part1 - AB_BB_energy) * self.energy_unit
 
 
 
