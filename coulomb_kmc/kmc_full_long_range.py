@@ -118,7 +118,7 @@ class FullLongRangeEnergy(ProfInc):
 
         old_pos = host_data['old_positions']
         old_chr = host_data['old_charges']
-        old_eng = host_data['old_energy_i']
+        old_eng = host_data['old_energy_l']
 
         self._host_old_lib(
             INT64(num_particles),
@@ -822,7 +822,6 @@ class FullLongRangeEnergy(ProfInc):
                 );
 
                 out[px] = tmp_energy * old_charge;
-                printf("px = %d, e = %f\n", px, out[px]);
 
             }}
 

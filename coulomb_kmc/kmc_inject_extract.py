@@ -112,7 +112,7 @@ class InjectorExtractor(ProfInc):
         if self._bc == BCType.PBC:
             self._lr_energy.get_old_energy(N, h)
 
-        e = h['old_energy_i'] + h['old_energy_d']# + h['old_energy_l']
+        e = h['old_energy_i'] + h['old_energy_d'] + h['old_energy_l']
 
         return np.sum(e.reshape((n, m)), axis=1)
 
@@ -141,73 +141,14 @@ class InjectorExtractor(ProfInc):
 
         return phi
     
-
-
-    def _py_extract_bb_energy(self, ids):
-        return self.compute_energy(self.positions[ids, :], self.charges[ids, :])
-    
-    def _py_extract_ab_bb_part_1(self, ids, self_energy=True):
+    def _py_extract_bb_energy(self, ids, self_energy=True):
         assert self.comm.size == 1
 
         # BB interations (required to avoid double count of BB)
         if self_energy:
-            BB_energy = self._py_extract_bb_energy(ids)
+            return self.compute_energy(self.positions[ids, :], self.charges[ids, :])
         else:
-            BB_energy = 0.0
-
-        # AB + BB interactions
-        AB_BB_energy = 0.0
-        #for ix in ids:
-        #    ix = int(ix)
-        #    AB_BB_energy += self._charge_indirect_energy_old(ix) + \
-        #        self._direct_contrib_old(ix)
-        
-
-        AB_BB_LR_energy = 0.0
-
-        if self._bc == BCType.PBC:
-            tmp_field = np.zeros(len(ids), REAL)
-            self._lr_energy.eval_field(
-                self.positions.view[ids, :], tmp_field)
-
-            for ixi, ix in enumerate(ids):
-                tmp_field[ixi] *= self.charges.view[ix, 0]
-
-                print(ixi, ix, tmp_field[ixi])
-
-            AB_BB_LR_energy = np.sum(tmp_field)
-
-
-        #else:
-        #    AB_BB_LR_energy = 0.0
-        
-
-    
-
-
-        return -1.0 * AB_BB_energy + BB_energy - AB_BB_LR_energy
-
-
-    #def _py_propose_extract(self, ids):
-    #    
-    #    t0 = time.time()
-    #    assert self.comm.size == 1
-
-    #    # code is written assuming the current state is A + B for A, B sets
-    #    # of charges. B is the set to remove. Hence energy is formed of the
-    #    # AA + AB + BB interactions.
-
-    #    ids = np.array(ids, dtype=INT64)
-    #    
-    #    part1 = self._py_extract_ab_bb_part_1(ids)
-    #    AB_BB_energy = 0.0
-    #    for ix in ids:
-    #        ix = int(ix)
-    #        AB_BB_energy += self._charge_indirect_energy_old(ix) + \
-    #            self._direct_contrib_old(ix)
-
-    #    return (part1 - AB_BB_energy) * self.energy_unit
-
+            return 0.0
 
 
     def propose_extract(self, ids, self_energy=True):
@@ -239,11 +180,11 @@ class InjectorExtractor(ProfInc):
         out = np.zeros(n, REAL)
 
 
-        part2 = self._get_energy(ids)
-        assert len(part2) == n
+        group_energy = self._get_energy(ids)
+        assert len(group_energy) == n
 
         for idi in range(n):
-            out[idi] = self._py_extract_ab_bb_part_1(ids[idi, :], self_energy) - part2[idi]
+            out[idi] = self._py_extract_bb_energy(ids[idi, :], self_energy) - group_energy[idi]
 
         return out * self.energy_unit
 

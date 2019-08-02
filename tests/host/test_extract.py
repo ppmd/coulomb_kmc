@@ -101,7 +101,6 @@ def test_propose_extract_1(BC):
 
     
     for testx in range(20):
-        print("-" * 60)
 
         # find a +ve/-ve pair of charges
 
@@ -142,8 +141,6 @@ def test_propose_extract_1(BC):
         diff_direct = phi_direct_1 - phi_direct_0
 
         err = abs(diff_extractor - diff_direct) / abs(diff_direct)
-        # print(err, diff_extractor, diff_direct)
-
 
         diff_extractor2 = kmc.propose_extract((remove_inds, remove_inds))
         
