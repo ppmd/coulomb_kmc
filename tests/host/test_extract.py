@@ -277,6 +277,101 @@ def test_extract_1(BC):
 
 
 
+@pytest.mark.parametrize("BC", ('free_space', '27', 'pbc'))
+def test_get_energy_1(BC):
+    """
+    Test the get_energy interfaces
+    """
+
+
+    L = 12
+
+    N = 200
+    E = 2*3.1416
+
+    M = 10
+
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    A.npart = N
+
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+    A.U = data.ParticleDat(ncomp=1)
+    A.E = data.ParticleDat(ncomp=1)
+    A.M = data.ParticleDat(ncomp=1, dtype=INT64)
+    A.GID = data.ParticleDat(ncomp=1, dtype=INT64)
+
+    rng = np.random.RandomState(3251 * (MPIRANK+1))
+
+    pi = rng.uniform(low=-0.5*E, high=0.5*E, size=(N, 3))
+    qi = np.zeros((N,1), REAL)
+    for px in range(N):
+        qi[px, 0] = (-1)**px
+
+    bias = np.sum(qi)
+    qi -= bias/N
+    
+    gi = np.arange(N).reshape((N, 1))
+
+    with A.modify() as m:
+        if MPIRANK == 0:
+            m.add({
+                A.P: pi[:, :],
+                A.Q: qi[:, :],
+                A.GID: gi[:, :]
+            })
+
+    kmc = kmc_fmm.KMCFMM(
+        A.P, A.Q, A.domain, r=3, l=12, max_move=1.0, boundary_condition=BC)
+    
+    
+    fmm_bc = {
+        'free_space': True,
+        '27': '27',
+        'pbc': False
+    }[BC]
+
+    FMM = PyFMM(A.domain, r=kmc.fmm.R, l=L, free_space=fmm_bc)
+
+
+    for testx in range(20):
+
+        
+        pi = rng.uniform(low=-0.5*E, high=0.5*E, size=(A.npart_local, 3))
+    
+        with A.P.modify_view() as mv:
+            mv[:] = pi.copy()
+
+        kmc.initialise()
+
+        FMM(A.P, A.Q, potential=A.U)
+        
+        Ma = min(A.npart_local, M)
+        ids = rng.permutation(A.npart_local)[:Ma].reshape((Ma, 1))
+
+
+        to_test_1 = kmc.get_energy(ids)
+
+        for ix, px in enumerate(ids):
+            assert abs(to_test_1[ix] - A.U[px, 0]) < 10.**-6
+        
+        with A.M.modify_view() as mv:
+            mv[:] = 0
+            mv[ids, 0] = 1
+        
+        kmc.get_energy_with_dats(A.M, A.E)
+
+        assert np.linalg.norm(A.E[ids, 0].ravel() - to_test_1.ravel(), np.inf) < 10.**-14
+
+        
+
+
+
+
+
+
 
 
 

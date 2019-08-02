@@ -77,7 +77,7 @@ class InjectorExtractor(ProfInc):
             raise NotImplementedError('BCType unknown: ' + str(self._bc))
 
 
-    def _get_energy(self, ids):
+    def get_energy(self, ids):
         """
         Get the energy of each charge in the iterable ids.
 
@@ -115,6 +115,21 @@ class InjectorExtractor(ProfInc):
         e = h['old_energy_i'] + h['old_energy_d'] + h['old_energy_l']
 
         return np.sum(e.reshape((n, m)), axis=1)
+
+    
+    def get_energy_with_dats(self, masks, energy):
+        """
+        Get the current energy conribution of the charges with positive mask values.
+
+        :arg masks:     ParticleDat(ncomp=1, dtype=c_int64) (Input) Indicate the relevant charges.
+        :arg energy:    ParticleDat(ncomp=1, dtype=c_double) (Output) Storage for energy contribution.
+        """
+        idsd = np.where(masks.view[:, 0] > 0)[0]
+        N = len(idsd)
+        ids = idsd.reshape((N, 1))
+
+        with energy.modify_view() as mv:
+            mv[idsd, 0] = self.get_energy(ids)
 
 
     def compute_energy(self, positions, charges):
@@ -180,7 +195,7 @@ class InjectorExtractor(ProfInc):
         out = np.zeros(n, REAL)
 
 
-        group_energy = self._get_energy(ids)
+        group_energy = self.get_energy(ids)
         assert len(group_energy) == n
 
         for idi in range(n):
