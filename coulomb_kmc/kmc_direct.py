@@ -284,7 +284,7 @@ class PairDirectFromDats:
 
         if mirror_mode:
             group_decl = r"""
-            const REAL bb_positions[12] = {
+            const REAL bb_positions[12] = {{
                 positions[ix*3 + 0],
                 positions[ix*3 + 1],
                 positions[ix*3 + 2] + {Z_SHIFT},
@@ -297,13 +297,13 @@ class PairDirectFromDats:
                 group_positions[ix * MAX_NUM_GROUPS * 3 + gx * 3 + 0],
                 group_positions[ix * MAX_NUM_GROUPS * 3 + gx * 3 + 1],
                 -1.0 * (group_positions[ix * MAX_NUM_GROUPS * 3 + gx * 3 + 2] + {Z_SHIFT})
-            };
-            const REAL bb_charges[4] = {
+            }};
+            const REAL bb_charges[4] = {{
                 charges[ix],
-                group_charges[ix*MAX_NUM_GROUPS+gx]
+                group_charges[ix*MAX_NUM_GROUPS+gx],
                 -1.0 * charges[ix],
                 -1.0 * group_charges[ix*MAX_NUM_GROUPS+gx]                
-            };
+            }};
             const INT64 NG = 4;
             """.format(
                 Z_SHIFT=m_quater_extent_z
@@ -350,7 +350,8 @@ class PairDirectFromDats:
         pbc_call = ''
         if boundary_condition == BCType.PBC:
             pbc_call = r"""
-            tmp_energy += pbc_direct(N, positions, charges, linop_data, linop_indptr, linop_indices);
+            const REAL tmp_energy_lr = pbc_direct(N, positions, charges, linop_data, linop_indptr, linop_indices);
+            tmp_energy += tmp_energy_lr;
             """
 
 
@@ -546,9 +547,8 @@ class PairDirectFromDats:
             const INT64 * RESTRICT linop_indptr,
             const INT64 * RESTRICT linop_indices
         ){{
-            
             REAL tmp_energy = nearest_direct(N, positions, charges);
-                    
+                   
             {PBC_CALL}
 
             return tmp_energy;

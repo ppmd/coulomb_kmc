@@ -281,7 +281,102 @@ def test_pair_direct_dats_1(BC):
     
 
 
+def test_pair_direct_dats_2():
+    # mirror mode test
+    
+    E = 19.
+    L = 16
+    N = 100
+    M = 8
+    rc = E/4
 
+    BC = BCType.PBC
+
+    rng  = np.random.RandomState(seed=8123)
+
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+    A.GF = data.ParticleDat(ncomp=1, dtype=INT64)
+    A.GC = data.ParticleDat(ncomp=1, dtype=INT64)
+    A.GP = data.ParticleDat(ncomp=M*3, dtype=REAL)
+    A.GQ = data.ParticleDat(ncomp=M, dtype=REAL)
+    A.GU = data.ParticleDat(ncomp=M, dtype=REAL)
+    
+    Pi = np.zeros((N, 3), REAL)
+    Pi[:, 0] = rng.uniform(low=-0.5*E, high=0.5*E, size=(N))
+    Pi[:, 1] = rng.uniform(low=-0.5*E, high=0.5*E, size=(N))
+    Pi[:, 2] = rng.uniform(low=-0.25*E, high=0.25*E, size=(N))
+
+    Qi = rng.uniform(low=-1.0, high=1.0, size=(N, 1))
+    bias = np.sum(Qi) / N
+    Qi -= bias
+    GFi = np.ones((N, 1))
+    GCi = rng.randint(1, M+1, (N, 1))
+
+    GPi = np.zeros((N, 3*M), REAL)
+    GPi[:, 0::3] = rng.uniform(low=-0.5*E, high=0.5*E, size=(N, M))
+    GPi[:, 1::3] = rng.uniform(low=-0.5*E, high=0.5*E, size=(N, M))
+    GPi[:, 2::3] = rng.uniform(low=-0.25*E, high=0.25*E, size=(N, M))
+
+    GQi = rng.uniform(low=-1.0, high=1.0, size=(N, M))
+
+    with A.modify() as m:
+        if MPIRANK == 0:
+            m.add({
+                A.P: Pi,
+                A.Q: Qi,
+                A.GF: GFi,
+                A.GC: GCi,
+                A.GP: GPi,
+                A.GQ: GQi
+            })
+
+    
+    PDFD = PairDirectFromDats(A.domain, BC, L, M, mirror_mode=True)
+    PDFD(
+        A.GF,
+        A.P,
+        A.Q,
+        A.GC,
+        A.GP,
+        A.GQ,
+        A.GU
+    )
+
+    DIRECT = PBCDirect(E, A.domain, L)
+    TOL = 10.**-5
+
+    for px in range(A.npart_local):
+        for gx in range(A.GC[px, 0]):
+
+            tmp_positions = np.zeros((4,3), REAL)
+            tmp_charges = np.zeros((4,1), REAL)
+
+
+            tmp_positions[0, :] = A.P[px, :]
+            tmp_positions[1, :] = A.GP[px, gx*3:(gx+1)*3:]
+            tmp_positions[2, :] = A.P[px, :]
+            tmp_positions[3, :] = A.GP[px, gx*3:(gx+1)*3:]
+
+            tmp_positions[:, 2] -= 0.25 * E
+            tmp_positions[2, 2] *= -1.0
+            tmp_positions[3, 2] *= -1.0
+
+            tmp_charges[0, 0] = A.Q[px, 0]
+            tmp_charges[1, 0] = A.GQ[px, gx]
+            tmp_charges[2, 0] = -1.0 * A.Q[px, 0]
+            tmp_charges[3, 0] = -1.0 * A.GQ[px, gx]
+
+
+            correct = DIRECT(4, tmp_positions, tmp_charges)
+            to_test = A.GU[px, gx]
+            err = abs(correct - to_test) / abs(correct)
+            #print(err, correct, to_test)
+            assert err < TOL
 
 
 
