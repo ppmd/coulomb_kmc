@@ -1,6 +1,8 @@
 
 
 
+import pytest
+
 from ppmd import *
 from ppmd.coulomb.fmm import *
 from ppmd.coulomb.ewald_half import *
@@ -178,6 +180,105 @@ def test_pbc_1():
 
     FMM.free()
 
+
+
+
+
+
+
+
+
+
+
+
+@pytest.mark.parametrize("BC", (BCType.FREE_SPACE, BCType.NEAREST, BCType.PBC))
+def test_pair_direct_dats_1(BC):
+    
+    E = 19.
+    L = 16
+    N = 100
+    M = 8
+    rc = E/4
+
+    rng  = np.random.RandomState(seed=8123)
+
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+    A.GF = data.ParticleDat(ncomp=1, dtype=INT64)
+    A.GC = data.ParticleDat(ncomp=1, dtype=INT64)
+    A.GP = data.ParticleDat(ncomp=M*3, dtype=REAL)
+    A.GQ = data.ParticleDat(ncomp=M, dtype=REAL)
+    A.GU = data.ParticleDat(ncomp=M, dtype=REAL)
+    
+    
+    Pi = rng.uniform(low=-0.5*E, high=0.5*E, size=(N, 3))
+    Qi = rng.uniform(low=-1.0, high=1.0, size=(N, 1))
+    bias = np.sum(Qi) / N
+    Qi -= bias
+    GFi = np.ones((N, 1))
+    GCi = rng.randint(1, M+1, (N, 1))
+    GPi = rng.uniform(low=-0.5*E, high=0.5*E, size=(N, M*3))
+    GQi = rng.uniform(low=-1.0, high=1.0, size=(N, M))
+
+    with A.modify() as m:
+        if MPIRANK == 0:
+            m.add({
+                A.P: Pi,
+                A.Q: Qi,
+                A.GF: GFi,
+                A.GC: GCi,
+                A.GP: GPi,
+                A.GQ: GQi
+            })
+
+    
+    PDFD = PairDirectFromDats(A.domain, BC, L, M)
+    PDFD(
+        A.GF,
+        A.P,
+        A.Q,
+        A.GC,
+        A.GP,
+        A.GQ,
+        A.GU
+    )
+
+    if BC == BCType.FREE_SPACE:
+        DIRECT = FreeSpaceDirect()
+        TOL = 10.**-15
+    elif BC == BCType.NEAREST:
+        DIRECT = NearestDirect(E)   
+        TOL = 10.**-15
+    elif BC == BCType.PBC:
+        DIRECT = PBCDirect(E, A.domain, L)
+        TOL = 10.**-5
+
+    for px in range(A.npart_local):
+        for gx in range(A.GC[px, 0]):
+
+            tmp_positions = np.zeros((2,3), REAL)
+            tmp_charges = np.zeros((2,1), REAL)
+
+            tmp_positions[0, :] = A.P[px, :]
+            tmp_positions[1, :] = A.GP[px, gx*3:(gx+1)*3:]
+
+            tmp_charges[0, 0] = A.Q[px, 0]
+            tmp_charges[1, 0] = A.GQ[px, gx]
+
+            correct = DIRECT(2, tmp_positions, tmp_charges)
+            to_test = A.GU[px, gx]
+            err = abs(correct - to_test) / abs(correct)
+            #print(err, correct, to_test)
+            #import ipdb; ipdb.set_trace()
+            assert err < TOL
+
+
+
+    
 
 
 
