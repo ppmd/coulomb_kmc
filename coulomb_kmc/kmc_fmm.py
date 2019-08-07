@@ -507,7 +507,7 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
 
         self.fmm = PyFMM(domain, N=N, free_space=_bc, r=r,
             shell_width=shell_width, cuda=False, cuda_levels=1,
-            force_unit=1.0, energy_unit=energy_unit,
+            force_unit=1.0, energy_unit=1.0,
             _debug=_debug, l=l, cuda_local=False)
         
 
@@ -923,7 +923,7 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
             positions=self.positions,
             charges=self.charges,
             potential=self.group._kmc_fmm_potential
-        )
+        ) * self.energy_unit
         
         self._check_ordering_dats()
 
@@ -952,6 +952,7 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
         # long range calculation
         if self._bc == BCType.PBC:
             lr_energy = self._lr_energy.initialise(positions=self.positions, charges=self.charges)
+            lr_energy *= self.energy_unit
             self.energy += lr_energy
 
         self._profile_inc('initialise', time() - t0)
@@ -961,6 +962,7 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
 
         # reset the available global ids
         self._next_gid = self.group.npart
+
     
     def _assert_init(self):
 
@@ -1064,10 +1066,9 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
 
             for mxi, mx in enumerate(movs):
                 if np.linalg.norm(self.positions.data[pid, :] - mx) < 10.**-14:
-                    pid_prop_energy[mxi] = self.energy * self.energy_unit
+                    pid_prop_energy[mxi] = self.energy
                 else:
-                    pid_prop_energy[mxi] = (self.energy + self._tmp_energies[_ENERGY.U_DIFF][movxi, mxi]) * \
-                        self.energy_unit
+                    pid_prop_energy[mxi] = (self.energy + self._tmp_energies[_ENERGY.U_DIFF][movxi, mxi] * self.energy_unit)
 
             prop_energy.append(pid_prop_energy)
 

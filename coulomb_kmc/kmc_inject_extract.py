@@ -114,7 +114,7 @@ class InjectorExtractor(ProfInc):
 
         e = h['old_energy_i'] + h['old_energy_d'] + h['old_energy_l']
 
-        return np.sum(e.reshape((n, m)), axis=1)
+        return np.sum(e.reshape((n, m)), axis=1) * self.energy_unit
 
     
     def get_energy_with_dats(self, masks, energy):
@@ -152,7 +152,7 @@ class InjectorExtractor(ProfInc):
         assert positions.dtype == REAL
         assert charges.dtype == REAL
 
-        phi = self._direct(N, positions, charges)
+        phi = self._direct(N, positions, charges) * self.energy_unit
 
         return phi
     
@@ -201,7 +201,7 @@ class InjectorExtractor(ProfInc):
         for idi in range(n):
             out[idi] = self._py_extract_bb_energy(ids[idi, :], self_energy) - group_energy[idi]
 
-        return out * self.energy_unit
+        return out
 
 
 
@@ -221,11 +221,11 @@ class InjectorExtractor(ProfInc):
         BB_energy = self.compute_energy(positions, charges)
 
         field_values = self.eval_field(positions).reshape(N)
-        AB_energy = float(np.sum(np.multiply(charges.reshape(N), field_values)))
+        AB_energy = float(np.sum(np.multiply(charges.reshape(N), field_values))) * self.energy_unit
 
         self._profile_inc('InjectorExtractor.propose_inject', time.time() - t0)
 
-        return (AB_energy + BB_energy) * self.energy_unit
+        return (AB_energy + BB_energy)
 
 
     def extract(self, ids=()):
