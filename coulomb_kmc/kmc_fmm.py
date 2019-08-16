@@ -537,6 +537,7 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
         self._dsc = None
 
         self._bc = BCType(boundary_condition)
+        self.boundary_condition = self._bc
         
         self._lee = LocalExpEval(self.fmm.L)
 

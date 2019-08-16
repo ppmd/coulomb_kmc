@@ -153,7 +153,6 @@ class InjectorExtractor(ProfInc):
         assert charges.dtype == REAL
 
         phi = self._direct(N, positions, charges) * self.energy_unit
-
         return phi
     
     def _py_extract_bb_energy(self, ids, self_energy=True):

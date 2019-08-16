@@ -261,7 +261,7 @@ class PBCDirect:
 
 class PairDirectFromDats:
 
-    def __init__(self, domain, boundary_condition, L, max_num_groups, mirror_mode=False):
+    def __init__(self, domain, boundary_condition, L, max_num_groups, mirror_mode=False, energy_unit=1.0):
 
         self.domain = domain
         self.bc = boundary_condition
@@ -276,6 +276,7 @@ class PairDirectFromDats:
         def _re_lm(l, m): return l**2 + l + m
         E = self.domain.extent[0]
         
+        assert abs(E - self.domain.extent[0]) < 10.**-14
         assert abs(E - self.domain.extent[1]) < 10.**-14
         assert abs(E - self.domain.extent[2]) < 10.**-14
 
@@ -582,7 +583,7 @@ class PairDirectFromDats:
                             linop_data,
                             linop_indptr,
                             linop_indices
-                        );
+                        ) * {ENERGY_UNIT};
 
                     }}
                 }}
@@ -596,7 +597,8 @@ class PairDirectFromDats:
             MULTIPOLE_HEADER=exp_eval.create_multipole_header,
             MULTIPOLE_SRC=exp_eval.create_multipole_src,
             EVEC_HEADER=exp_eval.create_dot_vec_header,
-            EVEC_SRC=exp_eval.create_dot_vec_src,            
+            EVEC_SRC=exp_eval.create_dot_vec_src,
+            ENERGY_UNIT=float(energy_unit)
         )
         
 
