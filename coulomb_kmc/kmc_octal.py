@@ -860,9 +860,11 @@ class LocalCellExpansions(LocalOctalBase):
             INT64 * RESTRICT local_exp_execute_count
         ){{
             INT64 tcount = 0;
-            #pragma omp parallel for schedule(dynamic) collapse(3) reduction(+:tcount)
+            #pragma omp parallel for schedule(dynamic) collapse(2) reduction(+:tcount)
             for(INT64 cz=0 ; cz<lsd0 ; cz++){{
                 for(INT64 cy=0 ; cy<lsd1 ; cy++){{
+
+
                     for(INT64 cx=0 ; cx<lsd2 ; cx++){{
                         const INT64 lin_cell = cx + lsd2*(cy + lsd1*cz);
                         const REAL centrex = orig_centres[lin_cell*3    ];
@@ -878,9 +880,6 @@ class LocalCellExpansions(LocalOctalBase):
 
                         const bool old_well_separated = well_separated(mold_tuplex, mold_tupley, mold_tuplez, fmm_cellx, fmm_celly, fmm_cellz) && ( INJECT_EXTRACT_FLAG < 1 );
 
-                        const bool new_well_separated = well_separated(mnew_tuplex, mnew_tupley, mnew_tuplez, fmm_cellx, fmm_celly, fmm_cellz) && ( INJECT_EXTRACT_FLAG > -1 );
-
-
 
                         const REAL dx_old = mold_posx - centrex;
                         const REAL dy_old = mold_posy - centrey;
@@ -892,6 +891,32 @@ class LocalCellExpansions(LocalOctalBase):
                         const REAL theta_old = atan2(sqrt(dx2_p_dy2_old), dz_old);
                         const REAL phi_old = atan2(dy_old, dx_old);
                         const REAL charge_old = -1.0 * charge;
+                        REAL * RESTRICT out = cell_local_exp;
+
+
+                        {SPH_GEN_OLD}
+                        {ASSIGN_GEN}
+
+                        {OFFSET_LOOPING_END}
+
+                    }}
+
+
+
+                    for(INT64 cx=0 ; cx<lsd2 ; cx++){{
+                        const INT64 lin_cell = cx + lsd2*(cy + lsd1*cz);
+                        const REAL centrex = orig_centres[lin_cell*3    ];
+                        const REAL centrey = orig_centres[lin_cell*3 + 1];
+                        const REAL centrez = orig_centres[lin_cell*3 + 2];
+                        const INT64 fmm_cellx = cell_ind2[cx];
+                        const INT64 fmm_celly = cell_ind1[cy];
+                        const INT64 fmm_cellz = cell_ind0[cz];
+                        
+                        {OFFSET_LOOPING_START}
+
+                        REAL * RESTRICT cell_local_exp = &local_expansions[lin_cell*ESTRIDE];
+
+                        const bool new_well_separated = well_separated(mnew_tuplex, mnew_tupley, mnew_tuplez, fmm_cellx, fmm_celly, fmm_cellz) && ( INJECT_EXTRACT_FLAG > -1 );
 
                         const REAL dx_new = mnew_posx - centrex;
                         const REAL dy_new = mnew_posy - centrey;
@@ -903,19 +928,20 @@ class LocalCellExpansions(LocalOctalBase):
                         const REAL theta_new = atan2(sqrt(dx2_p_dy2_new), dz_new);
                         const REAL phi_new = atan2(dy_new, dx_new);                       
                         const REAL charge_new = charge;
-
                         REAL * RESTRICT out = cell_local_exp;
 
-                        {SPH_GEN_OLD}
                         {SPH_GEN_NEW}
-                        {ASSIGN_GEN}
                         {ASSIGN_GEN_NEW}
 
                         {OFFSET_LOOPING_END}
 
                     }}
+
+
+
                 }}
             }}
+
             *local_exp_execute_count = tcount;
             return 0;
         }}
