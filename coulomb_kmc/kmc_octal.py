@@ -756,28 +756,32 @@ class LocalCellExpansions(LocalOctalBase):
         # lib to create local expansions
         assign_gen = 'const double iradius_old = 1.0/radius_old;\n'
         assign_gen += 'double rhol_old = iradius_old;\n'
-        assign_gen += 'const double iradius_new = 1.0/radius_new;\n'
-        assign_gen += 'double rhol_new = iradius_new;\n'
-
         for lx in range(L):
             for mx in range(-lx, lx+1):
-                assign_gen += '''out[{ind}] += ((old_well_separated) ? {ylmm_old} * rhol_old * charge_old : 0.0) + 
-    ((new_well_separated) ? {ylmm_new} * rhol_new * charge_new : 0.0);
-                \n'''.format(
+                assign_gen += 'out[{ind}] += (old_well_separated) ? {ylmm} * rhol_old * charge_old : 0.0;\n'.format(
                         ind=cube_ind(lx, mx),
-                        ylmm_old=str(sph_gen_old.get_y_sym(lx, -mx)[0]),
-                        ylmm_new=str(sph_gen_new.get_y_sym(lx, -mx)[0])
-
+                        ylmm=str(sph_gen_old.get_y_sym(lx, -mx)[0])
                     )
-                assign_gen += '''out[IM_OFFSET + {ind}] += ((old_well_separated) ? {ylmm_old} * rhol_old * charge_old : 0.0) +
-    ((new_well_separated) ? {ylmm_new} * rhol_new * charge_new : 0.0) ;\n'''.format(
+                assign_gen += 'out[IM_OFFSET + {ind}] += (old_well_separated) ? {ylmm} * rhol_old * charge_old : 0.0;\n'.format(
                         ind=cube_ind(lx, mx),
-                        ylmm_old=str(sph_gen_old.get_y_sym(lx, -mx)[1]),
-                        ylmm_new=str(sph_gen_new.get_y_sym(lx, -mx)[1])
+                        ylmm=str(sph_gen_old.get_y_sym(lx, -mx)[1])
                     )
             assign_gen += 'rhol_old *= iradius_old;\n'
-            assign_gen += 'rhol_new *= iradius_new;\n'
+        
 
+        assign_gen_new = 'const double iradius_new = 1.0/radius_new;\n'
+        assign_gen_new += 'double rhol_new = iradius_new;\n'
+        for lx in range(L):
+            for mx in range(-lx, lx+1):
+                assign_gen_new += 'out[{ind}] += (new_well_separated) ? {ylmm} * rhol_new * charge_new : 0.0;\n'.format(
+                        ind=cube_ind(lx, mx),
+                        ylmm=str(sph_gen_new.get_y_sym(lx, -mx)[0])
+                    )
+                assign_gen_new += 'out[IM_OFFSET + {ind}] += (new_well_separated) ? {ylmm} * rhol_new * charge_new : 0.0;\n'.format(
+                        ind=cube_ind(lx, mx),
+                        ylmm=str(sph_gen_new.get_y_sym(lx, -mx)[1])
+                    )
+            assign_gen_new += 'rhol_new *= iradius_new;\n'
 
 
 
@@ -905,6 +909,7 @@ class LocalCellExpansions(LocalOctalBase):
                         {SPH_GEN_OLD}
                         {SPH_GEN_NEW}
                         {ASSIGN_GEN}
+                        {ASSIGN_GEN_NEW}
 
                         {OFFSET_LOOPING_END}
 
@@ -923,6 +928,7 @@ class LocalCellExpansions(LocalOctalBase):
             SPH_GEN_OLD=str(sph_gen_old.module),
             SPH_GEN_NEW=str(sph_gen_new.module),
             ASSIGN_GEN=str(assign_gen),
+            ASSIGN_GEN_NEW=str(assign_gen_new),
         )
         self.flop_count_accept = self._lee.flop_count_create_local_exp
         _t = self.flop_count_accept
