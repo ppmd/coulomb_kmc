@@ -697,24 +697,35 @@ class LocalCellExpansions(LocalOctalBase):
         
         if self.boundary_condition is BCType.FREE_SPACE:
             OFFSET_LOOPING_START = r'''
-            const REAL mnew_posx = new_posx;
-            const REAL mnew_posy = new_posy;
-            const REAL mnew_posz = new_posz;
 
-            const REAL mold_posx = old_posx;
-            const REAL mold_posy = old_posy;
-            const REAL mold_posz = old_posz;
+            for(INT64 ox=0 ; ox<1 ; ox++){
+                const REAL mnew_posx = new_posx;
+                const REAL mnew_posy = new_posy;
+                const REAL mnew_posz = new_posz;
 
-            const INT64 mnew_tuplex = new_tuplex;
-            const INT64 mnew_tupley = new_tupley;
-            const INT64 mnew_tuplez = new_tuplez;
+                const REAL mold_posx = old_posx;
+                const REAL mold_posy = old_posy;
+                const REAL mold_posz = old_posz;
 
-            const INT64 mold_tuplex = old_tuplex;
-            const INT64 mold_tupley = old_tupley;
-            const INT64 mold_tuplez = old_tuplez;
+                const INT64 mnew_tuplex = new_tuplex;
+                const INT64 mnew_tupley = new_tupley;
+                const INT64 mnew_tuplez = new_tuplez;
+
+                const INT64 mold_tuplex = old_tuplex;
+                const INT64 mold_tupley = old_tupley;
+                const INT64 mold_tuplez = old_tuplez;
             '''
-            OFFSET_LOOPING_END = r'''
+
+            OFFSET_LOOPING_START2 = r'''
+            for(INT64 ox=0 ; ox<1 ; ox++){
+                        const REAL radius         = radius_vec[ox] ;
+                        const REAL theta          = theta_vec[ox]  ;
+                        const REAL phi            = phi_vec[ox]    ;
+                        const bool well_separated_bool = bool_vec[ox]   ;       
             '''
+
+
+
         elif self.boundary_condition in (BCType.NEAREST, BCType.PBC):
             OFFSET_LOOPING_START = '''
             for(INT64 ox=0 ; ox<27 ; ox++){
@@ -738,56 +749,57 @@ class LocalCellExpansions(LocalOctalBase):
                 const INT64 mold_tuplez = o0 * NCELL0 + old_tuplez;
             '''
 
-            OFFSET_LOOPING_END = '}'
+            OFFSET_LOOPING_START2 = r'''
+            for(INT64 ox=0 ; ox<27 ; ox++){
+                        const REAL radius         = radius_vec[ox] ;
+                        const REAL theta          = theta_vec[ox]  ;
+                        const REAL phi            = phi_vec[ox]    ;
+                        const bool well_separated_bool = bool_vec[ox]   ;       
+            '''
+
         else:
             raise NotImplementedError()
 
+        OFFSET_LOOPING_END = r'''
 
+                    radius_vec[ox] = radius;
+                    theta_vec[ox] = theta;
+                    phi_vec[ox] = phi;
+                    bool_vec[ox] = well_separated_bool;
+
+                }
+        '''
+
+        OFFSET_LOOPING_END2 = '}'
 
 
 
         def cube_ind(L, M):
             return ((L) * ( (L) + 1 ) + (M) )
 
-        sph_gen_old = SphGen(L-1, '_Y_old', 'theta_old', 'phi_old')
-        sph_gen_new = SphGen(L-1, '_Y_new', 'theta_new', 'phi_new')
+        sph_gen = SphGen(L-1, '_Y', 'theta', 'phi')
 
 
         # lib to create local expansions
-        assign_gen = 'const double iradius_old = 1.0/radius_old;\n'
-        assign_gen += 'double rhol_old = iradius_old;\n'
+        assign_gen = 'const double iradius = 1.0/radius;\n'
+        assign_gen += 'double rhol = iradius;\n'
         for lx in range(L):
             for mx in range(-lx, lx+1):
-                assign_gen += 'out[{ind}] += (old_well_separated) ? {ylmm} * rhol_old * charge_old : 0.0;\n'.format(
+                assign_gen += 'out[{ind}] += (well_separated_bool) ? {ylmm} * rhol * charge_loop : 0.0;\n'.format(
                         ind=cube_ind(lx, mx),
-                        ylmm=str(sph_gen_old.get_y_sym(lx, -mx)[0])
+                        ylmm=str(sph_gen.get_y_sym(lx, -mx)[0])
                     )
-                assign_gen += 'out[IM_OFFSET + {ind}] += (old_well_separated) ? {ylmm} * rhol_old * charge_old : 0.0;\n'.format(
+                assign_gen += 'out[IM_OFFSET + {ind}] += (well_separated_bool) ? {ylmm} * rhol * charge_loop : 0.0;\n'.format(
                         ind=cube_ind(lx, mx),
-                        ylmm=str(sph_gen_old.get_y_sym(lx, -mx)[1])
+                        ylmm=str(sph_gen.get_y_sym(lx, -mx)[1])
                     )
-            assign_gen += 'rhol_old *= iradius_old;\n'
+            assign_gen += 'rhol *= iradius;\n'
         
 
-        assign_gen_new = 'const double iradius_new = 1.0/radius_new;\n'
-        assign_gen_new += 'double rhol_new = iradius_new;\n'
-        for lx in range(L):
-            for mx in range(-lx, lx+1):
-                assign_gen_new += 'out[{ind}] += (new_well_separated) ? {ylmm} * rhol_new * charge_new : 0.0;\n'.format(
-                        ind=cube_ind(lx, mx),
-                        ylmm=str(sph_gen_new.get_y_sym(lx, -mx)[0])
-                    )
-                assign_gen_new += 'out[IM_OFFSET + {ind}] += (new_well_separated) ? {ylmm} * rhol_new * charge_new : 0.0;\n'.format(
-                        ind=cube_ind(lx, mx),
-                        ylmm=str(sph_gen_new.get_y_sym(lx, -mx)[1])
-                    )
-            assign_gen_new += 'rhol_new *= iradius_new;\n'
 
 
 
-
-
-        assign_header = str(sph_gen_old.header)
+        assign_header = str(sph_gen.header)
 
 
         header = str(Module(
@@ -860,12 +872,19 @@ class LocalCellExpansions(LocalOctalBase):
             INT64 * RESTRICT local_exp_execute_count
         ){{
             INT64 tcount = 0;
-            #pragma omp parallel for schedule(dynamic) collapse(2) reduction(+:tcount)
+            #pragma omp parallel for schedule(dynamic) collapse(3) reduction(+:tcount)
             for(INT64 cz=0 ; cz<lsd0 ; cz++){{
                 for(INT64 cy=0 ; cy<lsd1 ; cy++){{
-
-
                     for(INT64 cx=0 ; cx<lsd2 ; cx++){{
+
+                        REAL out[ESTRIDE];
+
+                        REAL radius_vec[27];
+                        REAL theta_vec[27];
+                        REAL phi_vec[27];
+                        bool bool_vec[27];
+
+
                         const INT64 lin_cell = cx + lsd2*(cy + lsd1*cz);
                         const REAL centrex = orig_centres[lin_cell*3    ];
                         const REAL centrey = orig_centres[lin_cell*3 + 1];
@@ -873,13 +892,14 @@ class LocalCellExpansions(LocalOctalBase):
                         const INT64 fmm_cellx = cell_ind2[cx];
                         const INT64 fmm_celly = cell_ind1[cy];
                         const INT64 fmm_cellz = cell_ind0[cz];
+                        REAL * RESTRICT cell_local_exp = &local_expansions[lin_cell*ESTRIDE];
+                    
+                        // zero the tmp vector
+                        for (int tx=0 ; tx<ESTRIDE ; tx++) {{out[tx] = 0;}}
+
                         
                         {OFFSET_LOOPING_START}
-
-                        REAL * RESTRICT cell_local_exp = &local_expansions[lin_cell*ESTRIDE];
-
-                        const bool old_well_separated = well_separated(mold_tuplex, mold_tupley, mold_tuplez, fmm_cellx, fmm_celly, fmm_cellz) && ( INJECT_EXTRACT_FLAG < 1 );
-
+                        const bool well_separated_bool = well_separated(mold_tuplex, mold_tupley, mold_tuplez, fmm_cellx, fmm_celly, fmm_cellz) && ( INJECT_EXTRACT_FLAG < 1 );
 
                         const REAL dx_old = mold_posx - centrex;
                         const REAL dy_old = mold_posy - centrey;
@@ -887,36 +907,26 @@ class LocalCellExpansions(LocalOctalBase):
                         const REAL dx2_old = dx_old*dx_old;
                         const REAL dx2_p_dy2_old = dx2_old + dy_old*dy_old;
                         const REAL d2_old = dx2_p_dy2_old + dz_old*dz_old;
-                        const REAL radius_old = sqrt(d2_old);
-                        const REAL theta_old = atan2(sqrt(dx2_p_dy2_old), dz_old);
-                        const REAL phi_old = atan2(dy_old, dx_old);
-                        const REAL charge_old = -1.0 * charge;
-                        REAL * RESTRICT out = cell_local_exp;
+                        const REAL radius = sqrt(d2_old);
+                        const REAL theta = atan2(sqrt(dx2_p_dy2_old), dz_old);
+                        const REAL phi = atan2(dy_old, dx_old);
 
-
-                        {SPH_GEN_OLD}
-                        {ASSIGN_GEN}
 
                         {OFFSET_LOOPING_END}
 
-                    }}
+                        {OFFSET_LOOPING_START2}
+
+                        const REAL charge_loop= -1.0 * charge;
+                        {SPH_GEN}
+                        {ASSIGN_GEN}
+
+                        {OFFSET_LOOPING_END2}
 
 
 
-                    for(INT64 cx=0 ; cx<lsd2 ; cx++){{
-                        const INT64 lin_cell = cx + lsd2*(cy + lsd1*cz);
-                        const REAL centrex = orig_centres[lin_cell*3    ];
-                        const REAL centrey = orig_centres[lin_cell*3 + 1];
-                        const REAL centrez = orig_centres[lin_cell*3 + 2];
-                        const INT64 fmm_cellx = cell_ind2[cx];
-                        const INT64 fmm_celly = cell_ind1[cy];
-                        const INT64 fmm_cellz = cell_ind0[cz];
-                        
                         {OFFSET_LOOPING_START}
 
-                        REAL * RESTRICT cell_local_exp = &local_expansions[lin_cell*ESTRIDE];
-
-                        const bool new_well_separated = well_separated(mnew_tuplex, mnew_tupley, mnew_tuplez, fmm_cellx, fmm_celly, fmm_cellz) && ( INJECT_EXTRACT_FLAG > -1 );
+                        const bool well_separated_bool = well_separated(mnew_tuplex, mnew_tupley, mnew_tuplez, fmm_cellx, fmm_celly, fmm_cellz) && ( INJECT_EXTRACT_FLAG > -1 );
 
                         const REAL dx_new = mnew_posx - centrex;
                         const REAL dy_new = mnew_posy - centrey;
@@ -924,20 +934,29 @@ class LocalCellExpansions(LocalOctalBase):
                         const REAL dx2_new = dx_new*dx_new;
                         const REAL dx2_p_dy2_new = dx2_new + dy_new*dy_new;
                         const REAL d2_new = dx2_p_dy2_new + dz_new*dz_new;
-                        const REAL radius_new = sqrt(d2_new);
-                        const REAL theta_new = atan2(sqrt(dx2_p_dy2_new), dz_new);
-                        const REAL phi_new = atan2(dy_new, dx_new);                       
-                        const REAL charge_new = charge;
-                        REAL * RESTRICT out = cell_local_exp;
 
-                        {SPH_GEN_NEW}
-                        {ASSIGN_GEN_NEW}
+                        const REAL radius = sqrt(d2_new);
+                        const REAL theta = atan2(sqrt(dx2_p_dy2_new), dz_new);
+                        const REAL phi = atan2(dy_new, dx_new);                       
+
 
                         {OFFSET_LOOPING_END}
 
+                        {OFFSET_LOOPING_START2}
+
+                        const REAL charge_loop = charge;
+
+                        {SPH_GEN}
+                        {ASSIGN_GEN}
+
+                        {OFFSET_LOOPING_END2}
+
+
+                        // copy the tmp vector into the global storage
+                        for (int tx=0 ; tx<ESTRIDE ; tx++) {{cell_local_exp[tx] += out[tx];}}
+
                     }}
-
-
+                    
 
                 }}
             }}
@@ -949,12 +968,12 @@ class LocalCellExpansions(LocalOctalBase):
             HEADER=str(header),
             OFFSET_LOOPING_START=OFFSET_LOOPING_START,
             OFFSET_LOOPING_END=OFFSET_LOOPING_END,
+            OFFSET_LOOPING_START2=OFFSET_LOOPING_START2,
+            OFFSET_LOOPING_END2=OFFSET_LOOPING_END2,            
             LOCAL_EXP_HEADER=self._lee.create_local_exp_header,
             LOCAL_EXP_SRC=self._lee.create_local_exp_src,
-            SPH_GEN_OLD=str(sph_gen_old.module),
-            SPH_GEN_NEW=str(sph_gen_new.module),
+            SPH_GEN=str(sph_gen.module),
             ASSIGN_GEN=str(assign_gen),
-            ASSIGN_GEN_NEW=str(assign_gen_new),
         )
         self.flop_count_accept = self._lee.flop_count_create_local_exp
         _t = self.flop_count_accept
@@ -962,8 +981,6 @@ class LocalCellExpansions(LocalOctalBase):
         self._profile_inc('c_accept_flop_count_local_create', tf)
         self._accept_lib = build.simple_lib_creator(header_code=' ', src_code=src, name='octal_accept_lib')['accept_local_exp']
 
-        print(build.LOADED_LIBS[-1])
-        
 
 
     def _init_host_point_eval(self):
