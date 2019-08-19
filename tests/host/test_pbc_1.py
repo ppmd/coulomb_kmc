@@ -1060,4 +1060,37 @@ def test_kmc_fmm_pbc_accept_2():
     kmc_fmmB.free()
 
 
+
+
+def test_kmc_empty_init_1():
+    """
+    Passes all proposed moves to kmc at once, then checks all outputs
+    """
     
+    eps = 10.**-5
+    L = 10
+
+    E = 4.
+    rc = E/4
+    R = 4
+
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+
+    # create a kmc instance
+    kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, 
+        domain=A.domain, r=R, l=L, boundary_condition='pbc')
+
+
+    
+    kmc_fmm.initialise()
+
+    assert abs(kmc_fmm.energy - 0.0) < 10.**-15
+
+
+    kmc_fmm.free()
+   

@@ -508,6 +508,7 @@ class LocalParticleData(LocalOctalBase):
         m2 = np.array((max_cell_occ,), np.int)
         self.comm.Allreduce(m, m2, mpi.MPI.MAX)
         max_cell_occ = m2[0]
+        owner_stride = 5
 
         assert self._win_global_store == None
 
@@ -520,12 +521,14 @@ class LocalParticleData(LocalOctalBase):
 
             ls = self.local_size
             
+            
             self._owner_store = AllocMem(
-                (ls[0], ls[1], ls[2], max_cell_occ, 5), 
+                (ls[0], ls[1], ls[2], max_cell_occ, owner_stride), 
                 dtype=REAL
             )
 
-            nbytes = self._owner_store.array[0,0,0,0,:].nbytes
+            nbytes = self._owner_store.array.itemsize * owner_stride
+
             self._win_global_store = MPI.Win.Create(
                 self._owner_store.array,
                 disp_unit=nbytes,
@@ -537,7 +540,7 @@ class LocalParticleData(LocalOctalBase):
             
             lsd = self.local_store_dims
             self.local_particle_store = np.zeros(
-                (lsd[0], lsd[1], lsd[2], max_cell_occ, 5), 
+                (lsd[0], lsd[1], lsd[2], max_cell_occ, owner_stride), 
                 dtype=REAL
             )
             self.local_particle_store_ids = np.zeros(
