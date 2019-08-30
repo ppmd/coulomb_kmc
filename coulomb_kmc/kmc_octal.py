@@ -777,25 +777,30 @@ class LocalCellExpansions(LocalOctalBase):
         def cube_ind(L, M):
             return ((L) * ( (L) + 1 ) + (M) )
 
-        sph_gen = SphGen(L-1, '_Y', 'theta', 'phi')
+        sph_gen = SphGen(L-1, '_Y', 'theta', 'phi', radius_symbol='rhol')
+
 
 
         # lib to create local expansions
-        assign_gen = 'const double iradius = 1.0/radius;\n'
-        assign_gen += 'double rhol = iradius;\n'
+        radius_gen = 'const double iradius = (well_separated_bool) ? 1.0/radius : 0.0;\n'
+        radius_gen += 'const double {} = iradius * charge_loop;\n'.format(sph_gen.get_radius_sym(0))
+        for lx in range(1, L):
+            radius_gen += 'const double {} = {} * iradius;\n'.format(sph_gen.get_radius_sym(lx), sph_gen.get_radius_sym(lx-1))
+
+
+        assign_gen = ''
         for lx in range(L):
             for mx in range(-lx, lx+1):
-                assign_gen += 'out[{ind}] += (well_separated_bool) ? {ylmm} * rhol * charge_loop : 0.0;\n'.format(
+                assign_gen += 'out[{ind}] += {ylmm};\n'.format(
                         ind=cube_ind(lx, mx),
-                        ylmm=str(sph_gen.get_y_sym(lx, -mx)[0])
+                        ylmm=str(sph_gen.get_y_sym(lx, -mx)[0]),
+                        l=lx
                     )
-                assign_gen += 'out[IM_OFFSET + {ind}] += (well_separated_bool) ? {ylmm} * rhol * charge_loop : 0.0;\n'.format(
-                        ind=cube_ind(lx, mx),
-                        ylmm=str(sph_gen.get_y_sym(lx, -mx)[1])
+                assign_gen += 'out[{ind}] += {ylmm};\n'.format(
+                        ind=cube_ind(lx, mx) + L*L,
+                        ylmm=str(sph_gen.get_y_sym(lx, -mx)[1]),
+                        l=lx
                     )
-            assign_gen += 'rhol *= iradius;\n'
-        
-
 
 
 
@@ -917,6 +922,8 @@ class LocalCellExpansions(LocalOctalBase):
                         {OFFSET_LOOPING_START2}
 
                         const REAL charge_loop= -1.0 * charge;
+
+                        {RADIUS_GEN}
                         {SPH_GEN}
                         {ASSIGN_GEN}
 
@@ -946,6 +953,7 @@ class LocalCellExpansions(LocalOctalBase):
 
                         const REAL charge_loop = charge;
 
+                        {RADIUS_GEN}
                         {SPH_GEN}
                         {ASSIGN_GEN}
 
@@ -974,12 +982,14 @@ class LocalCellExpansions(LocalOctalBase):
             LOCAL_EXP_SRC=self._lee.create_local_exp_src,
             SPH_GEN=str(sph_gen.module),
             ASSIGN_GEN=str(assign_gen),
+            RADIUS_GEN=radius_gen
         )
         self.flop_count_accept = self._lee.flop_count_create_local_exp
         _t = self.flop_count_accept
         tf = sum([_tx for _tx in _t.values()])
         self._profile_inc('c_accept_flop_count_local_create', tf)
         self._accept_lib = build.simple_lib_creator(header_code=' ', src_code=src, name='octal_accept_lib')['accept_local_exp']
+
 
 
 

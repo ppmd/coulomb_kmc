@@ -651,7 +651,8 @@ class FullLongRangeEnergy(ProfInc):
                         &new_moments[movii*NCOMP],
                         &new_evector[movii*NCOMP]
                     );
-
+                    
+                    printf("correct lr diff %f\m", old_energy - new_energy);
                     out[px*store_stride + movii] += old_energy - new_energy;
 
                 }}

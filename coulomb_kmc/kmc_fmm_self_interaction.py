@@ -222,7 +222,6 @@ class FMMSelfInteraction:
                     
                     REAL tmp_energy = energy27;
                     out[store_stride * px + movii] = coeff * tmp_energy;
-                    
                 }}
 
             }}
