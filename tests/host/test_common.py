@@ -156,6 +156,8 @@ def test_pbc_1():
     phi_f = _check1()
 
     phi_c = PBCD(N, pi, qi)
+
+
     rel = abs(phi_f)
     rel = 1.0 if rel == 0 else rel
     err = abs(phi_c - phi_f) / rel    
@@ -172,6 +174,8 @@ def test_pbc_1():
         phi_f = _check1()
 
         phi_c = PBCD(N, pi, qi)
+
+
         rel = abs(phi_f)
         rel = 1.0 if rel == 0 else rel
         err = abs(phi_c - phi_f) / rel    
