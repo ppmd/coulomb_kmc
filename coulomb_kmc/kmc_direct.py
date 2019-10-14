@@ -46,7 +46,7 @@ class PairDirectFromDats:
         assert abs(E - self.domain.extent[2]) < 10.**-14
 
         m_quater_extent_z = -0.25 * self.domain.extent[2]
-
+        
 
         if mirror_mode:
             group_decl = r"""
@@ -89,6 +89,13 @@ class PairDirectFromDats:
                 group_charges[ix*MAX_NUM_GROUPS+gx]
             };
             const INT64 NG = 2;
+            //printf("MAX_NUM_GROUPS %d, zpos %f gx %d\n", MAX_NUM_GROUPS, group_positions[ix * MAX_NUM_GROUPS * 3 + gx * 3 + 2], gx);
+            //for(int ix=0 ; ix<NG ; ix++){
+            //    printf("%d | P %f %f %f Q %f\n", ix, bb_positions[ix*3], bb_positions[ix*3+1], bb_positions[ix*3+2], bb_charges[ix]);
+            //}
+
+
+
             """
 
 

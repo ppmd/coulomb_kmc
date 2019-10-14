@@ -113,7 +113,6 @@ class InjectorExtractor(ProfInc):
             self._lr_energy.get_old_energy(N, h)
 
         e = h['old_energy_i'] + h['old_energy_d'] + h['old_energy_l']
-
         return np.sum(e.reshape((n, m)), axis=1) * self.energy_unit
 
     
@@ -130,6 +129,9 @@ class InjectorExtractor(ProfInc):
 
         with energy.modify_view() as mv:
             mv[idsd, 0] = self.get_energy(ids)
+
+        #for ix in idsd:
+        #    print("---->", ix, energy[ix, 0])
 
 
     def compute_energy(self, positions, charges):
@@ -237,7 +239,7 @@ class InjectorExtractor(ProfInc):
         t0 = time.time()
 
         de = self.propose_extract(ids)
-        self.energy += de
+        self.energy += float(de)
 
 
         size = self.comm.size
@@ -360,7 +362,7 @@ class InjectorExtractor(ProfInc):
 
 
         de = self.propose_inject(new_pos, new_q)
-        self.energy += de
+        self.energy += float(de)
 
 
 

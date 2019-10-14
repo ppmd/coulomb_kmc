@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.abspath('..'))
 
 # -- Project information -----------------------------------------------------
 
-project = 'FMM-KMC'
+project = 'coulomb_kmc'
 copyright = '2019, William Saunders'
 author = 'William Saunders'
 

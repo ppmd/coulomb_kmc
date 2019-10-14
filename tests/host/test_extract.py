@@ -150,7 +150,6 @@ def test_propose_extract_1(BC):
         assert err < 3.1*10.**-4
 
 
-    
 @pytest.mark.skipif('MPISIZE > 1')
 @pytest.mark.parametrize("BC", ('free_space', '27', 'pbc'))
 def test_extract_1(BC):
@@ -272,6 +271,239 @@ def test_extract_1(BC):
         assert err < 10.**-5
 
 
+    
+@pytest.mark.skipif('MPISIZE > 1')
+@pytest.mark.parametrize("BC", ('free_space', '27', 'pbc'))
+def test_extract_2(BC):
+    """
+    Tests extraction of charges, assumes propose_extract works (i.e passes above test).
+    """
+
+
+    L = 12
+
+    N = 20
+    E = 2*3.1416
+
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    A.npart = N
+
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+    A.GID = data.ParticleDat(ncomp=1, dtype=INT64)
+
+
+
+    rng = np.random.RandomState(3251)
+
+    pi = rng.uniform(low=-0.5*E, high=0.5*E, size=(N, 3))
+    qi = np.zeros((N,1), REAL)
+    assert N % 2 == 0
+    for px in range(N):
+        qi[px, 0] = (-1)**px
+    
+    gi = np.arange(N).reshape((N, 1))
+
+    with A.modify() as m:
+        if MPIRANK == 0:
+            m.add({
+                A.P: pi[:, :],
+                A.Q: qi[:, :],
+                A.GID: gi[:, :]
+            })
+
+
+    kmc = kmc_fmm.KMCFMM(
+        A.P, A.Q, A.domain, r=3, l=12, max_move=1.0, boundary_condition=BC)
+    kmc.initialise()
+
+
+    direct = _direct_chooser(BC, A.domain, L)
+    
+    # check initial energy agrees
+    phi_direct_0 = direct(N, pi, qi)
+    err = abs(kmc.energy - phi_direct_0) / abs(phi_direct_0)
+    assert err < 10.**-5
+    
+
+    
+    for testx in range(10):
+        # find a +ve/-ve pair of charges
+        
+        N = A.npart_local
+        remove_inds = []
+        available = set(range(N))
+        
+        ind = rng.randint(0, N)
+        while((A.Q[ind, 0] < 0) or (ind not in available)):
+            ind = rng.randint(0, N)
+    
+        remove_inds.append(ind)
+        available.remove(ind)
+
+        ind = rng.randint(0, N)
+        while((A.Q[ind, 0] > 0) or (ind not in available)):
+
+            ind = rng.randint(0, N)
+        remove_inds.append(ind)
+        available.remove(ind)
+
+        assert len(remove_inds) == 2
+
+
+        gids = [int(A.GID[gx, 0]) for gx in remove_inds]
+        
+        kmc_phi_0 = kmc.energy
+        diff_extractor = kmc.propose_extract(remove_inds)
+        kmc.extract(remove_inds)
+        kmc_phi_1 = kmc.energy
+
+        assert abs(kmc_phi_1 - kmc_phi_0 - diff_extractor) < 10.**-8
+
+        correct = direct(A.npart_local, A.P.view.copy(), A.Q.view.copy())
+
+        assert abs(correct - kmc_phi_1) < 10.**-5
+
+
+
+
+
+class _FMMSolver:
+    def __init__(self, extent, L, R):
+        self.A = state.State()
+        self.A.domain = domain.BaseDomainHalo(extent=extent)
+        self.A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+
+        self.A.P = data.PositionDat(ncomp=3)
+        self.A.Q = data.ParticleDat(ncomp=1)
+        self.A.U = data.ParticleDat(ncomp=1)
+        self.A.GID = data.ParticleDat(ncomp=1, dtype=INT64)
+
+        self.FMM = PyFMM(self.A.domain, r=R, l=L, free_space=False)
+    
+
+    def __call__(self, S):
+
+        with self.A.modify() as m:
+            m.add({
+                self.A.P   : S.P.view.copy(),
+                self.A.Q   : S.Q.view.copy(),
+                self.A.GID : S.GID.view.copy(),
+            })
+        
+        u = self.FMM(self.A.P, self.A.Q, None, self.A.U)
+        up = self.A.U.view.copy()
+        ug = self.A.GID.view.copy()
+
+        with self.A.modify() as m:
+            m.remove(tuple(range(self.A.npart_local)))
+
+        return u, up, ug
+
+
+@pytest.mark.skipif('MPISIZE > 1')
+def test_extract_3():
+    """
+    Tests extraction of charges, assumes propose_extract works (i.e passes above test).
+    """
+
+
+    L = 16
+    R = 3
+    
+    HN = 10
+    N = 2 * HN
+    E = 2*3.1416
+
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+    A.GID = data.ParticleDat(ncomp=1, dtype=INT64)
+
+
+
+    rng = np.random.RandomState(3251)
+    
+    pih = np.zeros((HN, 3), REAL)
+    pih[:, 0] = rng.uniform(low=-0.5*E, high=0.5*E, size=(HN))
+    pih[:, 1] = rng.uniform(low=-0.5*E, high=0.5*E, size=(HN))
+    pih[:, 2] = rng.uniform(low=-0.5*E, high=0.0,   size=(HN))
+    
+    pi = np.zeros((N, 3), REAL)
+    qi = np.zeros((N, 1), REAL)
+    gi = np.zeros((N, 1), INT64)
+
+    assert N % 2 == 0
+    for px in range(HN):
+        qi[px*2, 0] = 1.0
+        qi[px*2+1, 0] = -1.0
+        pi[px*2, :] = pih[px, :].copy()
+        pi[px*2+1, :] = pih[px, :].copy()
+        pi[px*2+1, 2] *= -1.0
+        gi[px*2, 0] = px*2
+        gi[px*2+1, 0] = px*2+1
+    
+
+    with A.modify() as m:
+        if MPIRANK == 0:
+            m.add({
+                A.P: pi[:, :],
+                A.Q: qi[:, :],
+                A.GID: gi[:, :]
+            })
+    
+
+    kmc = kmc_fmm.KMCFMM(
+        A.P, A.Q, A.domain, r=R, l=L, max_move=1.0, boundary_condition='pbc', mirror_direction=(False, False, True))
+    kmc.initialise()
+
+
+    direct = _direct_chooser('pbc', A.domain, L)
+    
+    fmm_solver = _FMMSolver((E, E, E), L, R)
+
+    
+    # check initial energy agrees
+    phi_direct_0 = direct(N, pi, qi)
+    err = abs(kmc.energy - phi_direct_0) / abs(phi_direct_0)
+    assert err < 10.**-5
+    
+    
+    for testx in range(HN):
+        # find a +ve/-ve pair of charges
+
+        n = A.npart_local
+
+        ut = kmc.get_energy(np.atleast_2d(np.arange(n)).reshape((n, 1)))
+
+        u, up, ug = fmm_solver(A)
+
+        for ix in range(A.npart_local):
+            assert ug[ix] == A.GID[ix]
+
+            err = abs(ut[ix] - up[ix])
+            err = err if abs(up[ix]) == 0 else err / abs(up[ix])
+
+            assert err < 10.**-5
+
+
+        px = rng.randint(A.npart_local)
+        gid_i = int(A.GID[px, 0])
+        gid_j = gid_i + 1 if gid_i % 2 == 0 else gid_i - 1
+        py = int(np.where(A.GID.view[:, 0] == gid_j)[0])
+        
+
+        assert abs(A.P[px, 0] - A.P[py, 0]) < 10.**-14
+        assert abs(A.P[px, 1] - A.P[py, 1]) < 10.**-14
+        assert abs(A.P[px, 2] + A.P[py, 2]) < 10.**-14
+
+        kmc.extract((px, py))
+
 
 
 
@@ -366,11 +598,6 @@ def test_get_energy_1(BC):
         assert np.linalg.norm(A.E[ids, 0].ravel() - to_test_1.ravel(), np.inf) < 10.**-14
 
         
-
-
-
-
-
 
 
 
