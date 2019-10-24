@@ -3,7 +3,6 @@ import numpy as np
 
 from ppmd.opt import PROFILE as PROFILE
 
-
 def spherical(xyz):
     """
     Converts the cartesian coordinates in xyz to spherical coordinates

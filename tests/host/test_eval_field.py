@@ -173,3 +173,70 @@ def test_indirect_eval_field(param_boundary, R):
 
 
     kmc_fmm.free()
+
+
+
+
+
+@pytest.mark.parametrize("param_boundary", ('pbc',))
+@pytest.mark.parametrize("R", (4, 5))
+@pytest.mark.skipif("MPI.COMM_WORLD.size > 1")
+def test_pbc_eval_field(param_boundary, R):
+    
+    L = 12
+
+    N = 200
+    E = 4.
+    rc = E/4
+    M = 8
+
+    
+    A = state.State()
+    A.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    A.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    A.npart = N
+    A.P = data.PositionDat(ncomp=3)
+    A.Q = data.ParticleDat(ncomp=1)
+
+    kmc_fmm = KMCFMM(positions=A.P, charges=A.Q, domain=A.domain, r=R, l=L, boundary_condition=param_boundary)
+
+    rng  = np.random.RandomState(seed=8657)
+
+
+    pi = rng.uniform(low=-0.5*E, high=0.5*E, size=(N, 3))
+    qi = np.zeros((N, 1), REAL)
+    for px in range(N):
+        qi[px,0] = (-1.0)**(px+1)
+    bias = np.sum(qi[:N:, 0])/N
+    qi[:, 0] -= bias
+
+    with A.modify() as m:
+        m.add({
+            A.P: pi,
+            A.Q: qi
+        })
+
+
+    kmc_fmm.initialise()
+
+    
+    m1 = 100
+    m2 = 10
+    for testx in range(m1):
+        pos = rng.uniform(-0.5*E, 0.5*E, (m2, 3))
+
+        correct = np.zeros(m2, REAL)
+        to_test = np.zeros(m2, REAL)
+        
+        kmc_fmm._lr_energy.eval_field(pos, correct, use_c=False)
+        kmc_fmm._lr_energy.eval_field(pos, to_test, use_c='force')
+
+        err = np.linalg.norm(correct - to_test, np.inf)
+
+        #print(err, correct, to_test)
+
+        assert err < 10.**-14
+
+
+    kmc_fmm.free()
+

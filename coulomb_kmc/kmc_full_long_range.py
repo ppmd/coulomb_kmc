@@ -16,7 +16,7 @@ from ppmd.coulomb.sph_harm import *
 from ppmd.lib.build import simple_lib_creator, LOADED_LIBS
 from coulomb_kmc.common import spherical, cell_offsets, ProfInc
 from ppmd.coulomb.fmm_pbc import LongRangeMTL
-
+from functools import lru_cache
 
 class FullLongRangeEnergy(ProfInc):
     """
@@ -52,6 +52,11 @@ class FullLongRangeEnergy(ProfInc):
         self._thread_space = [np.zeros(4000, dtype=REAL) for tx in range(self._nthread)]
         self._thread_ptrs = np.array([tx.ctypes.get_as_parameter().value for tx in self._thread_space],
             dtype=ctypes.c_void_p)
+
+        # for eval field
+        self._real_ones = np.ones(1000, REAL)
+        self._ptr_real_ones = self._real_ones.ctypes.get_as_parameter()
+        
 
 
     def _resize_if_needed(self, max_nprop):
@@ -305,25 +310,70 @@ class FullLongRangeEnergy(ProfInc):
         self.inject(movedata)
 
         self._profile_inc('FullLongRangeEnergy.accept', time.time() - t0)
+    
+    
+    @lru_cache(maxsize=1000000)
+    def _cached_spherical(xyz):
+        """
+        Converts the cartesian coordinates in xyz to spherical coordinates
+        (radius, polar angle, longitude angle)
+        
+        :arg xyz: Input xyz coordinates as Numpy array or tuple/list.
+        """
+        if type(xyz) is tuple:
+            sph = np.zeros(3)
+            xy = xyz[0]**2 + xyz[1]**2
+            # r
+            sph[0] = np.sqrt(xy + xyz[2]**2)
+            # polar angle
+            sph[1] = np.arctan2(np.sqrt(xy), xyz[2])
+            # longitude angle
+            sph[2] = np.arctan2(xyz[1], xyz[0])
+            return sph
+        else:
+            raise RuntimeError('Use tuple')
 
 
-
-    def eval_field(self, points, out):
+    def eval_field(self, points, out, use_c=True):
         """
         Evaluate the far-field contribution to the potential field.
 
         :arg points: Places to evaluate field.
         :arg out: Array to populate with the far-field contribution to the field.
         """
+        
+        if points.dtype == REAL and points.shape[1] == 3 and out.dtype == REAL and use_c:
+            self._c_eval_field(points, out)
+        else:
+            assert use_c != 'force'
+            npoints = points.shape[0]
+            lexp = np.zeros(self.ncomp, REAL)
+            self.lrc(self.multipole_exp, lexp)
 
-        npoints = points.shape[0]
+            for px in range(npoints):
+                pointx = points[px, :]
+                lr_tmp = self._lee.compute_phi_local(lexp, spherical(tuple(pointx)))[0]
+                out[px] += lr_tmp
+
+    def _c_eval_field(self, points, out):
+
+        N = points.shape[0]
+        if self._real_ones.shape[0] < N:
+            self._real_ones = np.ones(N, REAL)
+            self._ptr_real_ones = self._real_ones.ctypes.get_as_parameter()
+
         lexp = np.zeros(self.ncomp, REAL)
         self.lrc(self.multipole_exp, lexp)
 
-        for px in range(npoints):
-            pointx = points[px, :]
-            lr_tmp = self._lee.compute_phi_local(lexp, spherical(tuple(pointx)))[0]
-            out[px] += lr_tmp
+        self._host_old_lib(
+            INT64(N),
+            points.ctypes.get_as_parameter(),
+            self._ptr_real_ones,
+            lexp.ctypes.get_as_parameter(),
+            out.ctypes.get_as_parameter()
+        )
+
+
 
     def _init_host_lib(self):
         ncomp = (self.L**2)*2
@@ -698,69 +748,6 @@ class FullLongRangeEnergy(ProfInc):
 
         _l = simple_lib_creator(header_code=header, src_code=src)['long_range_energy']
         return _l
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

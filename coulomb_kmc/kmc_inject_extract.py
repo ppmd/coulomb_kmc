@@ -131,7 +131,9 @@ class InjectorExtractor(ProfInc):
             mv[idsd, 0] = self.get_energy(ids)
 
         #for ix in idsd:
-        #    print("---->", ix, energy[ix, 0])
+        #    print(ix, "---->", ix, energy[ix, 0])
+        
+        #import ipdb; ipdb.set_trace()
 
 
     def compute_energy(self, positions, charges):
