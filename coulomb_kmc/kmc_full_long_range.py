@@ -55,7 +55,9 @@ class FullLongRangeEnergy(ProfInc):
 
         # for eval field
         self._real_ones = np.ones(1000, REAL)
+        self._real_zeros = np.ones(1000, REAL)
         self._ptr_real_ones = self._real_ones.ctypes.get_as_parameter()
+        self._ptr_real_zeros = self._real_zeros.ctypes.get_as_parameter()
         
 
 
@@ -341,7 +343,8 @@ class FullLongRangeEnergy(ProfInc):
         :arg points: Places to evaluate field.
         :arg out: Array to populate with the far-field contribution to the field.
         """
-        
+ 
+
         if points.dtype == REAL and points.shape[1] == 3 and out.dtype == REAL and use_c:
             self._c_eval_field(points, out)
         else:
@@ -355,23 +358,31 @@ class FullLongRangeEnergy(ProfInc):
                 lr_tmp = self._lee.compute_phi_local(lexp, spherical(tuple(pointx)))[0]
                 out[px] += lr_tmp
 
+
+
     def _c_eval_field(self, points, out):
 
         N = points.shape[0]
         if self._real_ones.shape[0] < N:
             self._real_ones = np.ones(N, REAL)
+            self._real_zeros = np.zeros(N, REAL)
             self._ptr_real_ones = self._real_ones.ctypes.get_as_parameter()
+            self._ptr_real_zeros = self._real_zeros.ctypes.get_as_parameter()
 
         lexp = np.zeros(self.ncomp, REAL)
         self.lrc(self.multipole_exp, lexp)
+        
+        self._real_zeros.fill(0)
 
         self._host_old_lib(
             INT64(N),
             points.ctypes.get_as_parameter(),
             self._ptr_real_ones,
             lexp.ctypes.get_as_parameter(),
-            out.ctypes.get_as_parameter()
+            self._ptr_real_zeros
         )
+        
+        out[:] += self._real_zeros[:N]
 
 
 
