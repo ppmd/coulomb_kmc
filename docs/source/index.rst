@@ -24,7 +24,12 @@ The source code will be made available at https://github.com/ppmd/coulomb_kmc.
    example_bookkeeping
    example_simple
    example_accept
- 
+
+Further Documentation
+=====================
+
+.. toctree::
+    development_guide
 
 Generated Documentation
 =======================
