@@ -52,6 +52,7 @@ class FullLongRangeEnergy(ProfInc):
         self._thread_space = [np.zeros(4000, dtype=REAL) for tx in range(self._nthread)]
         self._thread_ptrs = np.array([tx.ctypes.get_as_parameter().value for tx in self._thread_space],
             dtype=ctypes.c_void_p)
+        self._thread_ptrs_ptr = self._thread_ptrs.ctypes.get_as_parameter()
 
         # for eval field
         self._real_ones = np.ones(1000, REAL)
@@ -73,10 +74,10 @@ class FullLongRangeEnergy(ProfInc):
         needed_space = 3 * max_nprop * ncomp + 2 * ncomp
 
         if self._thread_space[0].shape[0] < needed_space:
-            self._thread_space = [np.zeros(needed_space, dtype=REAL) for tx in range(self._nthread)]
+            self._thread_space = [np.zeros(needed_space + 16, dtype=REAL) for tx in range(self._nthread)]
             self._thread_ptrs = np.array([tx.ctypes.get_as_parameter().value for tx in self._thread_space],
                 dtype=ctypes.c_void_p)
-
+            self._thread_ptrs_ptr = self._thread_ptrs.ctypes.get_as_parameter()
 
     def initialise(self, positions, charges):
         """
@@ -142,10 +143,10 @@ class FullLongRangeEnergy(ProfInc):
         Propose a move using the coulomb_kmc internal proposed move data structures.
         For details see `coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.setup_propose_with_dats`.
         """        
-
         if use_python:
             self.py_propose(total_movs, num_particles, host_data, cuda_data, arr)
         else:
+
 
             t0 = time.time()
 
@@ -181,10 +182,10 @@ class FullLongRangeEnergy(ProfInc):
                 new_chr.ctypes.get_as_parameter(),
                 self.multipole_exp.ctypes.get_as_parameter(),
                 self.local_dot_coeffs.ctypes.get_as_parameter(),
-                self.lrc.linop_data.ctypes.get_as_parameter(),
-                self.lrc.linop_indptr.ctypes.get_as_parameter(),
-                self.lrc.linop_indices.ctypes.get_as_parameter(),
-                self._thread_ptrs.ctypes.get_as_parameter(),
+                self.lrc.linop_ptr_data,
+                self.lrc.linop_ptr_indptr,
+                self.lrc.linop_ptr_indices,
+                self._thread_ptrs_ptr,
                 arr.ctypes.get_as_parameter()
             )
             t1 = time.time()
@@ -626,6 +627,7 @@ class FullLongRangeEnergy(ProfInc):
         )
         {{
 
+
             #pragma omp parallel for schedule(dynamic)
             for(INT64 px=0 ; px<num_particles ; px++){{
 
@@ -758,6 +760,8 @@ class FullLongRangeEnergy(ProfInc):
         )
 
         _l = simple_lib_creator(header_code=header, src_code=src)['long_range_energy']
+        
+
         return _l
 
 
