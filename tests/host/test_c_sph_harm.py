@@ -15,6 +15,8 @@ from ppmd.coulomb.ewald_half import *
 from scipy.special import sph_harm, lpmv
 import time
 
+from ppmd.coulomb.sph_harm import py_local_exp
+
 from math import *
 from itertools import product
 
@@ -212,6 +214,33 @@ def test_c_local_dot_eval_multipole():
 
         err_m = np.linalg.norm(M_exp - M2_exp, np.inf)
         assert err_m < 10.**-15
+
+
+
+
+
+def test_c_local_expansion_creation():
+    L = 12
+    lee = LocalExpEval(L)
+    rng = np.random.RandomState(9476213)
+
+    ncomp = (L**2)*2
+
+    for tx in range(10):
+        to_test = np.zeros(ncomp, REAL)
+        correct = np.zeros(ncomp, REAL)
+
+        pos = (tuple(rng.uniform(size=3)))
+        sph_pos = spherical(pos)
+
+        lee.local_exp(sph_pos, 1.0, to_test)
+
+        py_local_exp(L, sph_pos, 1.0, correct)
+
+        err = np.linalg.norm(to_test - correct, np.inf)
+
+        assert err < 10.**-10
+
 
 
 
