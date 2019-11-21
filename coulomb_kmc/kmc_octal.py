@@ -13,7 +13,7 @@ from cgen import *
 import time
 
 from ppmd import mpi
-from ppmd.coulomb.sph_harm import SphGen, SphSymbol, cmplx_mul
+from ppmd.coulomb.sph_harm import SphGen, SphSymbol, cmplx_mul, SphGenEphemeral
 from ppmd.lib import build
 
 from coulomb_kmc.common import BCType, PROFILE, spherical, cell_offsets, add_flop_dict
@@ -918,6 +918,32 @@ class LocalCellExpansions(LocalOctalBase):
             )
         )) + 3 * '\n' + assign_header
 
+        
+        sph_gen_v1 = str(sph_gen.module)
+        assign_gen_v1 = str(assign_gen)
+
+
+        to_test_gen = SphGenEphemeral(L-1, '_B', 'theta', 'phi', radius_symbol='rhol')
+        d = {}
+        for lx in range(L):
+            for mx in range(-lx, lx+1):
+                d[(lx, mx)] = (
+                    'out[{ind}] += {ylmm};'.format(
+                        ind=cube_ind(lx, mx),
+                        ylmm=str(to_test_gen.get_y_sym(lx, -mx)[0]),
+                        l=lx
+                    ),
+                    'out[{ind}] += {ylmm};'.format(
+                        ind=cube_ind(lx, mx) + L*L,
+                        ylmm=str(to_test_gen.get_y_sym(lx, -mx)[1]),
+                        l=lx
+                    )
+                )
+
+        sph_gen_v2 = to_test_gen(d)
+        assign_gen_v2 = ''
+
+
 
         
         src = r'''
@@ -1199,8 +1225,8 @@ class LocalCellExpansions(LocalOctalBase):
             HOP_OFFSET_LOOPING_END2=HOP_OFFSET_LOOPING_END2,                       
             LOCAL_EXP_HEADER=self._lee.create_local_exp_header,
             LOCAL_EXP_SRC=self._lee.create_local_exp_src,
-            SPH_GEN=str(sph_gen.module),
-            ASSIGN_GEN=str(assign_gen),
+            SPH_GEN=str(sph_gen_v2),
+            ASSIGN_GEN=str(assign_gen_v2),
             RADIUS_GEN=radius_gen
         )
 
@@ -1213,7 +1239,7 @@ class LocalCellExpansions(LocalOctalBase):
 
         self._profile_inc('c_accept_flop_count_local_create', tf)
         self._accept_lib = build.simple_lib_creator(header_code=' ', src_code=src, name='octal_accept_lib')['accept_local_exp']
-
+        
         
 
 
