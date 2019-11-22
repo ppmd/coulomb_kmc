@@ -495,16 +495,24 @@ class LocalCellExpansions(LocalOctalBase):
     @staticmethod
     def _init_host_kernels(L):
         ncomp = (L**2)*2
-        sph_gen = SphGen(maxl=L-1, theta_sym='theta', phi_sym='phi', ctype='double', avoid_calls=True)
+        sph_gen = SphGen(maxl=L-1, theta_sym='theta', phi_sym='phi', ctype='double', avoid_calls=True, radius_symbol='coeff')
         
         flops = dict(sph_gen.flops)
 
+        sph_gen = SphGenEphemeral(maxl=L-1, theta_sym='theta', phi_sym='phi', ctype='double', avoid_calls=True, radius_symbol='coeff')
+
         def cube_ind(l, m):
             return ((l) * ( (l) + 1 ) + (m) )
+
         
-        EC = ''
+        radius_gen = 'const double {} = charge;\n'.format(sph_gen.get_radius_sym(0))
+        for lx in range(1, L):
+            radius_gen += 'const double {} = {} * radius;\n'.format(
+                sph_gen.get_radius_sym(lx), sph_gen.get_radius_sym(lx-1))
+
+        
+        d = {}
         for lx in range(L):
-            EC += 'coeff = charge * rhol;\n'
 
             for mx in range(-lx, lx+1):
                 smx = 'n' if mx < 0 else 'p'
@@ -513,7 +521,7 @@ class LocalCellExpansions(LocalOctalBase):
                 re_lnm = SphSymbol('reln{lx}m{mx}'.format(lx=lx, mx=smx))
                 im_lnm = SphSymbol('imln{lx}m{mx}'.format(lx=lx, mx=smx))
 
-                EC += '''
+                EC = '''
                 const REAL {re_lnm} = re_exp[{cx}];
                 const REAL {im_lnm} = im_exp[{cx}];
                 '''.format(
@@ -523,13 +531,16 @@ class LocalCellExpansions(LocalOctalBase):
                 )
                 cm_re, cm_im = cmplx_mul(re_lnm, im_lnm, sph_gen.get_y_sym(lx, mx)[0],
                     sph_gen.get_y_sym(lx, mx)[1])
-                EC += 'tmp_energy += ({cm_re}) * coeff;\n'.format(cm_re=cm_re)
+                EC += 'tmp_energy += {cm_re};\n'.format(cm_re=cm_re)
+
+                d[(lx, mx)] = (EC,)
 
                 flops['*'] += 1
                 flops['+'] += 1
                 
-            EC += 'rhol *= radius;\n'
             flops['*'] += 2
+
+        EC = sph_gen(d)
 
         header = str(Module(
             (
@@ -618,11 +629,10 @@ class LocalCellExpansions(LocalOctalBase):
                     const REAL sin_phi          = sin_phi_set[bix];
                     const REAL cos_phi          = cos_phi_set[bix];
 
+                    {RADIUS_GEN}
                     {SPH_GEN}
 
                     REAL tmp_energy = 0.0;
-                    REAL rhol = 1.0;
-                    REAL coeff = 0.0;
 
                     {ENERGY_COMP}
 
@@ -669,12 +679,12 @@ class LocalCellExpansions(LocalOctalBase):
 
                 const REAL sin_phi = sin(phi);
                 const REAL cos_phi = cos(phi);
+                
+                {RADIUS_GEN}
 
                 {SPH_GEN}
 
                 REAL tmp_energy = 0.0;
-                REAL rhol = 1.0;
-                REAL coeff = 0.0;
 
                 {ENERGY_COMP}
 
@@ -686,11 +696,13 @@ class LocalCellExpansions(LocalOctalBase):
         """.format(
             HEADER=header,
             LIB_PARAMETERS=LIB_PARAMETERS,
-            SPH_GEN=str(sph_gen.module),
+            RADIUS_GEN=radius_gen,
+            SPH_GEN='',
             ENERGY_COMP=EC
         )
         fc = sum([flops[kx] for kx in flops.keys()])
         _lib = build.simple_lib_creator(header_code=' ', src_code=src)['indirect_interactions'], fc
+
         
         return _lib
 

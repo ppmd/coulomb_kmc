@@ -762,6 +762,7 @@ class FullLongRangeEnergy(ProfInc):
         _l = simple_lib_creator(header_code=header, src_code=src)['long_range_energy']
         
 
+        print(LOADED_LIBS[-1])
         return _l
 
 
