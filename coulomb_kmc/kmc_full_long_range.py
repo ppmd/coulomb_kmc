@@ -473,7 +473,7 @@ class FullLongRangeEnergy(ProfInc):
             return;
         }}
 
-        #pragma omp declare simd
+        //#pragma omp declare simd
         static inline REAL linop_csr_both(
             const REAL * RESTRICT linop_data,
             const INT64 * RESTRICT linop_indptr,
@@ -506,7 +506,7 @@ class FullLongRangeEnergy(ProfInc):
 
 
 
-        #pragma omp declare simd
+        //#pragma omp declare simd
         static inline REAL linop_csr_both_inline(
             const REAL * RESTRICT x1,
             const REAL * RESTRICT E
@@ -587,7 +587,7 @@ class FullLongRangeEnergy(ProfInc):
 
                 // loop over the proposed new positions and copy old positions and compute spherical coordinate
                 // vectors
-                #pragma omp simd simdlen(8)
+                //#pragma omp simd simdlen(8)
                 for(INT64 movii=0 ; movii<nprop ; movii++){{
                     const INT64 movi = movii + exclusive_sum[px];
                     const REAL npx = new_positions[3*movi + 0];

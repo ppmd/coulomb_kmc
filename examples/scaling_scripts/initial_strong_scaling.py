@@ -1,5 +1,11 @@
 from __future__ import print_function, division
 
+
+import sys
+print("START")
+sys.stdout.flush()
+
+
 __author__ = "W.R.Saunders"
 __copyright__ = "Copyright 2016, W.R.Saunders"
 
@@ -9,13 +15,14 @@ import numpy as np
 import itertools
 import time
 import pickle
-import sys
 from itertools import product
+
 
 from ppmd import *
 from ppmd.coulomb.fmm import *
 from ppmd.coulomb.ewald_half import *
 from scipy.special import sph_harm, lpmv
+
 
 MPISIZE = mpi.MPI.COMM_WORLD.Get_size()
 MPIRANK = mpi.MPI.COMM_WORLD.Get_rank()
@@ -37,6 +44,9 @@ Header = kernel.Header
 
 from ppmd.access import *
 from coulomb_kmc import *
+
+
+
 
 
 # lattice creation each site same type
@@ -76,6 +86,7 @@ with open(filename, 'rb') as fh:
     loaded_data = pickle.load(fh)
 
 
+
 num_steps = int(sys.argv[2])
 N = loaded_data['P'].shape[0]
 L = 12
@@ -96,6 +107,8 @@ if MPIRANK == 0:
     print("M:\t", M)
     print("max_move", max_move)
     print("max_move_dim", max_move_dim)
+
+
 
 
 # setup the state

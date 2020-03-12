@@ -882,12 +882,15 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
             disp_unit=self._ordering_buf.array.itemsize,
             comm=self.comm
         )
+
         self._ordering_win.Lock(0, MPI.LOCK_SHARED)
         self._ordering_win.Fetch_and_op(sbuf, rbuf, 0, 0)
         self._ordering_win.Unlock(0)
         self.group._kmc_fmm_order[:nlocal:, 0] = np.arange(rbuf[0], rbuf[0] + nlocal)
         
         self.comm.Barrier()
+
+        return
         self._ordering_win.Free()
         self._ordering_win = None
         
@@ -922,6 +925,7 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
             fmm_cells=self.group._fmm_cell,
             ids=self.group._kmc_fmm_order
         )
+
 
         self.kmcl.initialise(
             positions=self.positions,

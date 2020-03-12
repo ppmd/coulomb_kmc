@@ -46,7 +46,7 @@ class FreeSpaceDirect:
                 const REAL ip2 = P[3*ix + 2];
 
                 
-                #pragma omp simd reduction(+:tmp_inner_phi)
+                //#pragma omp simd reduction(+:tmp_inner_phi)
                 for(INT64 jx=(ix+1) ; jx<N ; jx++){{
                     
                     const REAL jq = Q[jx];
