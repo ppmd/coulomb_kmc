@@ -79,7 +79,7 @@ def test_split_1():
     Near_kmc = kmc_fmm.KMCFMM(Near.P, Near.Q, Near.domain, boundary_condition='27', l=L, r=R)
     Far_kmc = kmc_fmm.KMCFMM(Far.P, Far.Q, Far.domain, boundary_condition='ff-only', l=L, r=R)
 
-
+    Near_kmc.initialise()
 
 
 
