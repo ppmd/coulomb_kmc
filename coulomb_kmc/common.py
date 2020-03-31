@@ -44,6 +44,8 @@ class BCType(Enum):
     """Free-space, e.g. vacuum, boundary conditions."""
     NEAREST = '27'
     """Primary image and the surrounding 26 nearest neighbours."""
+    FF_ONLY = 'ff-only'
+    """Only the far-field contribution. I.E. 'pbc' without '27'"""
 
 
 cell_offsets = (

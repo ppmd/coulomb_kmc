@@ -69,10 +69,12 @@ class InjectorExtractor(ProfInc):
         assert abs(e[0] - e[2]) < 10.**-15
         if self._bc == BCType.FREE_SPACE:
             self._direct = kmc_direct.FreeSpaceDirect()
-        elif self._bc is BCType.NEAREST:
+        elif self._bc == BCType.NEAREST:
             self._direct = kmc_direct.NearestDirect(float(e[0]))
-        elif self._bc is BCType.PBC:
-            self._direct = kmc_direct.PBCDirect(float(e[0]), self.domain, self.fmm.L)
+        elif self._bc == BCType.PBC:
+            self._direct = kmc_direct.PBCDirect(float(e[0]), self.domain, self.L)
+        elif self._bc == BCType.FF_ONLY:
+            self._direct = kmc_direct.FarFieldDirect(self.domain, self.L)
         else:
             raise NotImplementedError('BCType unknown: ' + str(self._bc))
 

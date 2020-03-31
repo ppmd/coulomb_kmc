@@ -444,7 +444,10 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
         # horrible workaround to convert sensible boundary condition
         # parameter format to what exists for PyFMM
 
-        _bc = {"pbc": "27", "free_space": True, "27": "27"}[boundary_condition]  # PBC are handled separately now
+        self._bc = BCType(boundary_condition)
+        self.boundary_condition = self._bc
+
+        _bc = {"pbc": "27", "free_space": True, "27": "27", "ff-only":True}[boundary_condition]  # PBC are handled separately now
 
         self.fmm = PyFMM(
             domain,
@@ -460,6 +463,9 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
             l=l,
             cuda_local=False,
         )
+
+        self.L = self.fmm.L
+        self.R = self.fmm.R
 
         self.cuda_direct = cuda_direct
 
@@ -484,8 +490,6 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
         self._dsb = None
         self._dsc = None
 
-        self._bc = BCType(boundary_condition)
-        self.boundary_condition = self._bc
 
         self._lee = LocalExpEval(self.fmm.L)
 
@@ -501,16 +505,14 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
         self._si = FMMSelfInteraction(self.fmm, domain, self._bc, self._lee, self.mirror_direction)
 
         # long range calculation
-        if self._bc == BCType.PBC:
+        if self._bc in (BCType.PBC, BCType.FF_ONLY):
             self._lr_energy = FullLongRangeEnergy(self.fmm.L, self.fmm.domain, self._lee, self.mirror_direction)
-
-        # class to collect required local expansions
-        self.kmco = kmc_octal.LocalCellExpansions(self.md)
-        # class to collect and redistribute particle data
-
-        # print("KMC FMM INIT BROKE")
-        # self.kmcl = None
-        self.kmcl = kmc_local.LocalParticleData(self.md)
+        
+        if self._bc != BCType.FF_ONLY:
+            # class to collect required local expansions
+            self.kmco = kmc_octal.LocalCellExpansions(self.md)
+            # class to collect and redistribute particle data
+            self.kmcl = kmc_local.LocalParticleData(self.md)
 
         self._tmp_energies = {
             _ENERGY.U_DIFF: np.zeros((1, 1), dtype=REAL),
@@ -562,11 +564,35 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
     def _create_diff_lib(self):
 
         mf = "1.0" if self.mirror_direction is None else "2.0"
+        
+        if self._bc in (BCType.FREE_SPACE, BCType.NEAREST, BCType.FREE_SPACE):
+            block = """
+            UDIFF[rate_location[u1loc]] = ({ENERGY_UNIT}) * (
+                {MF} * (
+                        + U1D[u1loc]
+                        + U1I[u1loc] 
+                        - U0D[px]
+                        - U0I[px]
+                       )
+                - USI[px*stride_si + movx]
+            );
+            """
+
+        elif self._bc == BCType.FF_ONLY:
+            block = """
+            UDIFF[rate_location[u1loc]] = ({ENERGY_UNIT}) * (
+                -1.0 * USI[px*stride_si + movx]
+            );
+            """
+
+        else:
+            raise RuntimeError('Unknown boundary condition type.')
+
+        block = block.format(ENERGY_UNIT=str(self.energy_unit), MF=mf)
 
         src = r"""
         #define REAL double
         #define INT64 int64_t
-        #define ENERGY_UNIT ({ENERGY_UNIT})
 
         extern "C" int diff_lib(
             const INT64 num_particles,
@@ -587,15 +613,8 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
                 const INT64 es_count = es_end - es_start;
                 for(INT64 movx=0 ; movx<es_count ; movx++){{
                     const INT64 u1loc = es_start + movx;
-                    UDIFF[rate_location[u1loc]] = (ENERGY_UNIT) * (
-                        {MF} * (
-                                + U1D[u1loc]
-                                + U1I[u1loc] 
-                                - U0D[px]
-                                - U0I[px]
-                               )
-                        - USI[px*stride_si + movx]
-                    );
+                    
+                    {BLOCK}
 
                     //printf(
                     //    "%d %d %f | + %f + %f - %f - %f - %f \n",
@@ -614,7 +633,7 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
             return 0;
         }}
         """.format(
-            ENERGY_UNIT=str(self.energy_unit), MF=mf
+            BLOCK=block
         )
 
         header = r"""
@@ -896,7 +915,7 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
         """
 
         t0 = time()
-
+        
         self._check_potential_dat()
         self.energy = (
             self.fmm(positions=self.positions, charges=self.charges, potential=self.group._kmc_fmm_potential)
@@ -912,22 +931,22 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
             ids=self.group._kmc_fmm_order,
         )
 
-        self.kmcl.initialise(
-            positions=self.positions,
-            charges=self.charges,
-            fmm_cells=self.group._fmm_cell,
-            ids=self.group._kmc_fmm_order,
-        )
-
-        self.kmco.initialise(positions=self.positions, charges=self.charges, fmm_cells=self.group._fmm_cell)
+        if self._bc != BCType.FF_ONLY:
+            self.kmcl.initialise(
+                positions=self.positions,
+                charges=self.charges,
+                fmm_cells=self.group._fmm_cell,
+                ids=self.group._kmc_fmm_order,
+            )
+            self.kmco.initialise(positions=self.positions, charges=self.charges, fmm_cells=self.group._fmm_cell)
 
         self._si.initialise()
 
         # long range calculation
-        if self._bc == BCType.PBC:
+        if self._bc in (BCType.PBC, BCType.FF_ONLY):
             lr_energy = self._lr_energy.initialise(positions=self.positions, charges=self.charges)
             lr_energy *= self.energy_unit
-            self.energy += lr_energy
+            self.energy = lr_energy if self._bc == BCType.FF_ONLY else lr_energy + self.energy
 
         self._profile_inc("initialise", time() - t0)
 
@@ -936,6 +955,7 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
 
         # reset the available global ids
         self._next_gid = self.group.npart
+
 
     def _assert_init(self):
 

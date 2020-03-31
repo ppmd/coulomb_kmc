@@ -49,7 +49,7 @@ class FMMMPIDecomp(LocalOctalBase):
             raise RuntimeError('CUDA was requested but failed to be initialised')
 
         assert boundary_condition in \
-            (BCType.PBC, BCType.FREE_SPACE, BCType.NEAREST)
+            (BCType.PBC, BCType.FREE_SPACE, BCType.NEAREST, BCType.FF_ONLY)
 
         self.fmm = fmm
         self.domain = fmm.domain
@@ -307,7 +307,7 @@ class FMMMPIDecomp(LocalOctalBase):
 
         for mx in new_pos:
             rvec = mx - old_pos[0, :]
-            if self.boundary_condition in (BCType.PBC, BCType.NEAREST):
+            if self.boundary_condition in (BCType.PBC, BCType.NEAREST, BCType.FF_ONLY):
                 for dimx in range(3):
                     if rvec[dimx] < (e[dimx] * (-0.5)): rvec[dimx] += e[dimx]
                     if rvec[dimx] > (e[dimx] *  (0.5)): rvec[dimx] -= e[dimx]
@@ -328,7 +328,7 @@ class FMMMPIDecomp(LocalOctalBase):
             '''
             check_mod = r''
         else:
-            assert self.boundary_condition in (BCType.PBC, BCType.NEAREST)
+            assert self.boundary_condition in (BCType.PBC, BCType.NEAREST, BCType.FF_ONLY)
 
             cell_gen = r'''
             REAL offsets[3];
@@ -750,7 +750,7 @@ class FMMMPIDecomp(LocalOctalBase):
         if self.boundary_condition is BCType.FREE_SPACE:
             return cells, positions, positions
         else:
-            assert self.boundary_condition in (BCType.PBC, BCType.NEAREST)
+            assert self.boundary_condition in (BCType.PBC, BCType.NEAREST, BCType.FF_ONLY)
 
             offset_cells = cells.copy()
             offset_cells[:, 0] -= self.local_offset[2]
@@ -815,7 +815,7 @@ class FMMMPIDecomp(LocalOctalBase):
             # probably throw an error.
             return cell, np.array((0., 0., 0.), dtype=REAL)
         else:
-            assert self.boundary_condition in (BCType.PBC, BCType.NEAREST)
+            assert self.boundary_condition in (BCType.PBC, BCType.NEAREST, BCType.FF_ONLY)
             # we assume that in both 27 nearest and pbc a proposed move could
             # be over a periodic boundary
             # following the idea that a proposed move is always in the

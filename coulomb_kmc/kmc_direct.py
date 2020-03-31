@@ -14,7 +14,7 @@ from ppmd.coulomb.fmm_pbc import LongRangeMTL
 from coulomb_kmc.kmc_expansion_tools import LocalExpEval
 
 
-from ppmd.coulomb.direct import FreeSpaceDirect, NearestDirect, PBCDirect
+from ppmd.coulomb.direct import FreeSpaceDirect, NearestDirect, PBCDirect, FarFieldDirect
 
 import numpy as np
 

@@ -36,6 +36,10 @@ class FMMSelfInteraction:
     """
 
     def __init__(self, fmm, domain, boundary_condition, local_exp_eval, mirror_direction=None):
+
+        assert boundary_condition in \
+            (BCType.PBC, BCType.FREE_SPACE, BCType.NEAREST, BCType.FF_ONLY)
+
         self.domain = domain
         self._lee = local_exp_eval
         self._bc = boundary_condition
@@ -156,7 +160,7 @@ class FMMSelfInteraction:
             )
 
 
-        if self._bc not in (BCType.NEAREST, BCType.PBC):
+        if self._bc == BCType.FREE_SPACE:
             pass
         else:
             bc27 = 'energy27 = (DOMAIN_27_ENERGY);\n'
@@ -176,6 +180,12 @@ class FMMSelfInteraction:
                 '''.format(
                     oxi=str(oxi)
                 )
+        
+        if self._bc == BCType.FF_ONLY:
+            ff_only_block = 'energy27 = 0.0;'
+        else:
+            ff_only_block = ''
+
 
         src = r'''
         extern "C" int self_interaction(
@@ -219,6 +229,8 @@ class FMMSelfInteraction:
                     {bc27}
 
                     {mirror_block}
+
+                    {ff_only_block}
                     
                     REAL tmp_energy = energy27;
                     out[store_stride * px + movii] = coeff * tmp_energy;
@@ -232,7 +244,8 @@ class FMMSelfInteraction:
             bc27=bc27,
             preloop=preloop,
             mirror_block=mirror_block,
-            mirror_preloop=mirror_preloop
+            mirror_preloop=mirror_preloop,
+            ff_only_block=ff_only_block
         )
 
         header = str(
