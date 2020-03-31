@@ -55,6 +55,13 @@ def test_split_1():
     Far.P = data.PositionDat(ncomp=3)
     Far.Q = data.ParticleDat(ncomp=1)
 
+    All = state.State()
+    All.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    All.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    All.npart = N
+    All.P = data.PositionDat(ncomp=3)
+    All.Q = data.ParticleDat(ncomp=1)
+
     pi = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
     qi = rng.uniform(size=(N, 1))
     qi -= np.sum(qi) / N
@@ -75,11 +82,31 @@ def test_split_1():
                     Near.Q: qi
                 }
             )
-    
+    with All.modify() as mv:
+        if MPIRANK == 0:
+            mv.add(
+                {
+                    All.P: pi,
+                    All.Q: qi
+                }
+            )
+
     Near_kmc = kmc_fmm.KMCFMM(Near.P, Near.Q, Near.domain, boundary_condition='27', l=L, r=R)
     Far_kmc = kmc_fmm.KMCFMM(Far.P, Far.Q, Far.domain, boundary_condition='ff-only', l=L, r=R)
+    All_kmc = kmc_fmm.KMCFMM(All.P, All.Q, All.domain, boundary_condition='pbc', l=L, r=R)
 
     Near_kmc.initialise()
+    Far_kmc.initialise()
+    All_kmc.initialise()
+    
+    assert abs(All_kmc.energy) > 0.0
+    err_energy = abs(Near_kmc.energy + Far_kmc.energy - All_kmc.energy) / abs(All_kmc.energy)
+    assert err_energy < 10**-15
+
+
+
+
+
 
 
 

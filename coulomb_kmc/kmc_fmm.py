@@ -565,7 +565,7 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
 
         mf = "1.0" if self.mirror_direction is None else "2.0"
         
-        if self._bc in (BCType.FREE_SPACE, BCType.NEAREST, BCType.FREE_SPACE):
+        if self._bc in (BCType.FREE_SPACE, BCType.NEAREST, BCType.FREE_SPACE, BCType.PBC):
             block = """
             UDIFF[rate_location[u1loc]] = ({ENERGY_UNIT}) * (
                 {MF} * (
