@@ -229,7 +229,46 @@ def test_split_2():
         err_proposed_energy = np.linalg.norm(to_test_near + to_test_far - correct, np.inf)
         
         assert err_proposed_energy < 10.**-12
+
+        gid_to_accept = rng.randint(N)
+        mov_to_accept = rng.randint(Nprop)
+
+        # All
+        lid_loc = np.where(All.I.view[:, 0] == gid_to_accept)[0]
+        if len(lid_loc) > 0:
+            lid = lid_loc[0]
+            All_kmc.accept((lid, global_proposed_moves[gid_to_accept][mov_to_accept, :]))
+        else:
+            All_kmc.accept(None)           
+
+        # Near
+        lid_loc = np.where(Near.I.view[:, 0] == gid_to_accept)[0]
+        if len(lid_loc) > 0:
+            lid = lid_loc[0]
+            Near_kmc.accept((lid, global_proposed_moves[gid_to_accept][mov_to_accept, :]))
+        else:
+            Near_kmc.accept(None)
+
+        # Far
+        lid_loc = np.where(Far.I.view[:, 0] == gid_to_accept)[0]
+        if len(lid_loc) > 0:
+            lid = lid_loc[0]
+            Far_kmc.accept((lid, global_proposed_moves[gid_to_accept][mov_to_accept, :]))
+        else:
+            Far_kmc.accept(None)           
         
+        correct_reduce = np.zeros_like(correct)
+        MPI.COMM_WORLD.Allreduce(correct, correct_reduce)
+        correct_energy = correct_reduce[gid_to_accept, mov_to_accept]
+
+        err_all_energy = abs(correct_energy - All_kmc.energy) / abs(correct_energy)
+        assert err_all_energy < 10.**-15
+        
+        near_far_energy = Near_kmc.energy + Far_kmc.energy
+        err_near_far_energy = abs(correct_energy - near_far_energy) / abs(correct_energy)
+        assert err_near_far_energy < 10.**-15
+
+
 
 
 

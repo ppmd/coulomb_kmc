@@ -863,16 +863,17 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
         t0 = time()
         self._si.accept(movedata)
         self._profile_inc("self_interaction_accept", time() - t0)
+        
+        if self._bc in (BCType.FREE_SPACE, BCType.PBC, BCType.NEAREST):
+            t0 = time()
+            self.kmcl.accept(movedata)
+            self._profile_inc("local_accept", time() - t0)
 
-        t0 = time()
-        self.kmcl.accept(movedata)
-        self._profile_inc("local_accept", time() - t0)
+            t0 = time()
+            self.kmco.accept(movedata)
+            self._profile_inc("octal_accept", time() - t0)
 
-        t0 = time()
-        self.kmco.accept(movedata)
-        self._profile_inc("octal_accept", time() - t0)
-
-        if self._bc == BCType.PBC:
+        if self._bc in (BCType.PBC, BCType.FF_ONLY):
             t0 = time()
             self._lr_energy.accept(movedata)
             self._profile_inc("lr_energy_accept", time() - t0)
