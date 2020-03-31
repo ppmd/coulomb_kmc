@@ -547,7 +547,7 @@ def test_kmc_fmm_dat_setup_prop_3(param_boundary, R):
                     rel = 1.0 if abs(correct_energy) < 1 else abs(correct_energy)
                     err = abs(correct_energy - to_test_energy) / rel
                     
-                    assert err < 2*(10**-15)
+                    assert err < 10**-12
 
                     found_movs += 1
             

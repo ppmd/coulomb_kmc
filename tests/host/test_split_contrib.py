@@ -32,6 +32,8 @@ INT64 = ctypes.c_int64
 
 
 def test_split_1():
+    # test the initialisation
+
     L = 12
     R = 3
 
@@ -40,7 +42,7 @@ def test_split_1():
     E = 1.
     rc = E/4
 
-    rng = np.random.RandomState(seed=12415)
+    rng = np.random.RandomState(seed=12413)
 
     Near = state.State()
     Near.domain = domain.BaseDomainHalo(extent=(E,E,E))
@@ -120,11 +122,12 @@ def test_split_1():
 
 
 def test_split_2():
+    # test the propose and accept calls
     L = 6
     R = 3
-
     N = 200
-
+    Nsteps = 20
+    Nprop = 4
     E = 1.
     rc = E/4
 
@@ -195,8 +198,6 @@ def test_split_2():
     Far_kmc.initialise()
     All_kmc.initialise()
 
-    Nsteps = 20
-    Nprop = 4
 
     for stepx in range(Nsteps):
         global_proposed_moves = [rng.uniform(low=-0.5*E, high=0.5*E, size=(Nprop,3)) for px in range(N)]
@@ -262,31 +263,187 @@ def test_split_2():
         correct_energy = correct_reduce[gid_to_accept, mov_to_accept]
 
         err_all_energy = abs(correct_energy - All_kmc.energy) / abs(correct_energy)
-        assert err_all_energy < 10.**-15
+        assert err_all_energy < 10.**-14
         
         near_far_energy = Near_kmc.energy + Far_kmc.energy
         err_near_far_energy = abs(correct_energy - near_far_energy) / abs(correct_energy)
-        assert err_near_far_energy < 10.**-15
+        assert err_near_far_energy < 10.**-14
 
 
+def test_split_3():
+    # test the propose_with_dats and accept calls
+    L = 6
+    R = 3
+
+    N = 200
+    Nprop = 4
+    Nsteps = 20
+
+    E = 1.
+    rc = E/4
+
+    rng = np.random.RandomState(seed=1355)
+
+    SITE_MAX_COUNTS = data.ScalarArray(ncomp=1, dtype=INT64)
+    SITE_MAX_COUNTS[0] = Nprop
+
+    Near = state.State()
+    Near.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    Near.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    Near.npart = N
+    Near.P = data.PositionDat(ncomp=3)
+    Near.E = data.ParticleDat(ncomp=3*Nprop)
+    Near.Q = data.ParticleDat(ncomp=1)
+    Near.D = data.ParticleDat(ncomp=Nprop)
+    Near.I = data.ParticleDat(ncomp=1, dtype=INT64)
+    Near.S = data.ParticleDat(ncomp=1, dtype=INT64)
+    Near.M = data.ParticleDat(ncomp=Nprop, dtype=INT64)
+
+    Far = state.State()
+    Far.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    Far.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    Far.npart = N
+    Far.P = data.PositionDat(ncomp=3)
+    Far.E = data.ParticleDat(ncomp=3*Nprop)
+    Far.Q = data.ParticleDat(ncomp=1)
+    Far.D = data.ParticleDat(ncomp=Nprop)
+    Far.I = data.ParticleDat(ncomp=1, dtype=INT64)
+    Far.S = data.ParticleDat(ncomp=1, dtype=INT64)
+    Far.M = data.ParticleDat(ncomp=Nprop, dtype=INT64)
+
+    All = state.State()
+    All.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    All.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    All.npart = N
+    All.P = data.PositionDat(ncomp=3)
+    All.E = data.ParticleDat(ncomp=3*Nprop)
+    All.Q = data.ParticleDat(ncomp=1)
+    All.D = data.ParticleDat(ncomp=Nprop)
+    All.I = data.ParticleDat(ncomp=1, dtype=INT64)
+    All.S = data.ParticleDat(ncomp=1, dtype=INT64)
+    All.M = data.ParticleDat(ncomp=Nprop, dtype=INT64)
+
+    pi = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
+    qi = rng.uniform(size=(N, 1))
+    qi -= np.sum(qi) / N
+    gi = np.arange(N).reshape((N, 1))
+    mi = np.ones((N, Nprop))
+
+    with Far.modify() as mv:
+        if MPIRANK == 0:
+            mv.add(
+                {
+                    Far.P: pi,
+                    Far.Q: qi,
+                    Far.I: gi,
+                    Far.M: mi,
+                }
+            )
+    with Near.modify() as mv:
+        if MPIRANK == 0:
+            mv.add(
+                {
+                    Near.P: pi,
+                    Near.Q: qi,
+                    Near.I: gi,
+                    Near.M: mi,
+                }
+            )
+    with All.modify() as mv:
+        if MPIRANK == 0:
+            mv.add(
+                {
+                    All.P: pi,
+                    All.Q: qi,
+                    All.I: gi,
+                    All.M: mi,
+                }
+            )
+
+    Near_kmc = kmc_fmm.KMCFMM(Near.P, Near.Q, Near.domain, boundary_condition='27', l=L, r=R)
+    Far_kmc = kmc_fmm.KMCFMM(Far.P, Far.Q, Far.domain, boundary_condition='ff-only', l=L, r=R)
+    All_kmc = kmc_fmm.KMCFMM(All.P, All.Q, All.domain, boundary_condition='pbc', l=L, r=R)
+
+    Near_kmc.initialise()
+    Far_kmc.initialise()
+    All_kmc.initialise()
 
 
+    for stepx in range(Nsteps):
+        global_proposed_moves = rng.uniform(low=-0.5*E, high=0.5*E, size=(N, Nprop*3))
+        
+        # All
+        with All.E.modify_view() as mv:
+            mv[:] = global_proposed_moves[All.I.view[:,0], :]
+        All_kmc.propose_with_dats(SITE_MAX_COUNTS, All.S, All.E, All.M, All.D)
+
+        # Near
+        with Near.E.modify_view() as mv:
+            mv[:] = global_proposed_moves[Near.I.view[:,0], :]
+        Near_kmc.propose_with_dats(SITE_MAX_COUNTS, Near.S, Near.E, Near.M, Near.D)
+
+        # Far
+        with Far.E.modify_view() as mv:
+            mv[:] = global_proposed_moves[Far.I.view[:,0], :]
+        Far_kmc.propose_with_dats(SITE_MAX_COUNTS, Far.S, Far.E, Far.M, Far.D)
 
 
+        correct = np.zeros((N, Nprop), REAL)
+        to_test_near = np.zeros((N, Nprop), REAL)
+        to_test_far = np.zeros((N, Nprop), REAL)
 
+        for lid in range(All.npart_local):
+            correct[All.I[lid, 0], :] = All.D[lid, :]
 
+        for lid in range(Near.npart_local):
+            to_test_near[Near.I[lid, 0], :] = Near.D[lid, :]
 
+        for lid in range(Far.npart_local):
+            to_test_far[Far.I[lid, 0], :] = Far.D[lid, :]
 
+        err_proposed_energy = np.linalg.norm(to_test_near + to_test_far - correct, np.inf)
+        
+        assert err_proposed_energy < 10.**-12
 
+        gid_to_accept = rng.randint(N)
+        mov_to_accept = rng.randint(Nprop)
 
+        correct_reduce = np.zeros_like(correct)
+        MPI.COMM_WORLD.Allreduce(correct, correct_reduce)
 
+        previous_energy = All_kmc.energy
+        correct_energy = All_kmc.energy + correct_reduce[gid_to_accept, mov_to_accept]
 
+        # All
+        lid_loc = np.where(All.I.view[:, 0] == gid_to_accept)[0]
+        if len(lid_loc) > 0:
+            lid = lid_loc[0]
+            All_kmc.accept((lid, global_proposed_moves[gid_to_accept, mov_to_accept*3:(mov_to_accept+1)*3]))
+        else:
+            All_kmc.accept(None)           
 
+        err_all_energy = abs(correct_energy - All_kmc.energy) / abs(correct_energy)
+        assert err_all_energy < 10.**-14
+        
+        # Near
+        lid_loc = np.where(Near.I.view[:, 0] == gid_to_accept)[0]
+        if len(lid_loc) > 0:
+            lid = lid_loc[0]
+            Near_kmc.accept((lid, global_proposed_moves[gid_to_accept, mov_to_accept*3:(mov_to_accept+1)*3]))
+        else:
+            Near_kmc.accept(None)           
 
-
-
-
-
+        # Far
+        lid_loc = np.where(Far.I.view[:, 0] == gid_to_accept)[0]
+        if len(lid_loc) > 0:
+            lid = lid_loc[0]
+            Far_kmc.accept((lid, global_proposed_moves[gid_to_accept, mov_to_accept*3:(mov_to_accept+1)*3]))
+        else:
+            Far_kmc.accept(None)           
+        
+        near_far_energy = Near_kmc.energy + Far_kmc.energy
+        err_near_far_energy = abs(correct_energy - near_far_energy) / abs(correct_energy)
+        assert err_near_far_energy < 10.**-13
 
 
 

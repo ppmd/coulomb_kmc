@@ -300,6 +300,8 @@ class _PY_KMCFMM:
         self.initialise()
 
     def test_propose(self, moves, use_python=True):
+        
+        assert self._bc != BCType.FF_ONLY
 
         self._assert_init()
 
@@ -567,7 +569,7 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
 
         mf = "1.0" if self.mirror_direction is None else "2.0"
         
-        if self._bc in (BCType.FREE_SPACE, BCType.NEAREST, BCType.FREE_SPACE, BCType.PBC):
+        if self._bc in (BCType.NEAREST, BCType.FREE_SPACE, BCType.PBC):
             block = """
             UDIFF[rate_location[u1loc]] = ({ENERGY_UNIT}) * (
                 {MF} * (
@@ -683,6 +685,7 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
         # we store an index computed using the mask dat for use in the rate dat, hence
         # they need the same stride
         assert prop_energy_diffs.ncomp == prop_masks.ncomp
+        assert prop_energy_diffs.ncomp * 3 == prop_positions.ncomp
         assert prop_energy_diffs.dtype == REAL
 
         cmove_data = self.md.setup_propose_with_dats(
@@ -696,18 +699,33 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
         max_num_moves = np.max(site_max_counts[:])
         self._tmp_energy_check((num_particles, max_num_moves))
 
-        du0, du1 = self.kmcl.propose(*cmove_data)
-        iu0, iu1 = self.kmco.propose(*cmove_data)
+        if self._bc in (BCType.FREE_SPACE, BCType.PBC, BCType.NEAREST):
 
-        self.du0 = du0
-        self.du1 = du1
-        self.iu0 = iu0
-        self.iu1 = iu1
+            du0, du1 = self.kmcl.propose(*cmove_data)
+            iu0, iu1 = self.kmco.propose(*cmove_data)
+
+            self.du0 = du0
+            self.du1 = du1
+            self.iu0 = iu0
+            self.iu1 = iu1
+
+            du0_ptr = du0.ctypes.get_as_parameter()
+            iu0_ptr = iu0.ctypes.get_as_parameter()
+            du1_ptr = du1.ctypes.get_as_parameter()
+            iu1_ptr = iu1.ctypes.get_as_parameter()
+
+        else:
+
+            tmp_real = ctypes.c_double(0.0)
+            du0_ptr = ctypes.byref(tmp_real)
+            iu0_ptr = ctypes.byref(tmp_real)
+            du1_ptr = ctypes.byref(tmp_real)
+            iu1_ptr = ctypes.byref(tmp_real)
 
         self._si.propose(*tuple(list(cmove_data) + [self._tmp_energies[_ENERGY.U01_SELF]]))
 
         # long range calculation
-        if self._bc == BCType.PBC:
+        if self._bc in (BCType.PBC, BCType.FF_ONLY):
             self._lr_energy.propose(*tuple(list(cmove_data) + [self._tmp_energies[_ENERGY.U01_SELF]]))
 
         self._diff_lib(
@@ -715,10 +733,10 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
             INT64(self._tmp_energies[_ENERGY.U01_SELF].shape[1]),
             cmove_data[2]["exclusive_sum"].ctypes.get_as_parameter(),
             cmove_data[2]["rate_location"].ctypes.get_as_parameter(),
-            du0.ctypes.get_as_parameter(),
-            iu0.ctypes.get_as_parameter(),
-            du1.ctypes.get_as_parameter(),
-            iu1.ctypes.get_as_parameter(),
+            du0_ptr,
+            iu0_ptr,
+            du1_ptr,
+            iu1_ptr,
             self._tmp_energies[_ENERGY.U01_SELF].ctypes.get_as_parameter(),
             prop_energy_diffs.ctypes_data,
         )
