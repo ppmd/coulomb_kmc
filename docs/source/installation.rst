@@ -7,4 +7,4 @@ https://github.com/ppmd/ppmd
 
 Install coulomb_kmc with:
 
-``pip install git+https://github.com/ppmd/coulomb_kmc@master``
+``pip install --upgrade --no-cache-dir git+https://github.com/ppmd/coulomb_kmc@master``
