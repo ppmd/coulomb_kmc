@@ -119,6 +119,127 @@ def test_split_1():
 
 
 
+def test_split_2():
+    L = 6
+    R = 3
+
+    N = 200
+
+    E = 1.
+    rc = E/4
+
+    rng = np.random.RandomState(seed=12415)
+
+    Near = state.State()
+    Near.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    Near.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    Near.npart = N
+    Near.P = data.PositionDat(ncomp=3)
+    Near.Q = data.ParticleDat(ncomp=1)
+    Near.I = data.ParticleDat(ncomp=1, dtype=INT64)
+
+    Far = state.State()
+    Far.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    Far.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    Far.npart = N
+    Far.P = data.PositionDat(ncomp=3)
+    Far.Q = data.ParticleDat(ncomp=1)
+    Far.I = data.ParticleDat(ncomp=1, dtype=INT64)
+
+    All = state.State()
+    All.domain = domain.BaseDomainHalo(extent=(E,E,E))
+    All.domain.boundary_condition = domain.BoundaryTypePeriodic()
+    All.npart = N
+    All.P = data.PositionDat(ncomp=3)
+    All.Q = data.ParticleDat(ncomp=1)
+    All.I = data.ParticleDat(ncomp=1, dtype=INT64)
+
+    pi = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
+    qi = rng.uniform(size=(N, 1))
+    qi -= np.sum(qi) / N
+    gi = np.arange(N).reshape((N, 1))
+
+    with Far.modify() as mv:
+        if MPIRANK == 0:
+            mv.add(
+                {
+                    Far.P: pi,
+                    Far.Q: qi,
+                    Far.I: gi,
+                }
+            )
+    with Near.modify() as mv:
+        if MPIRANK == 0:
+            mv.add(
+                {
+                    Near.P: pi,
+                    Near.Q: qi,
+                    Near.I: gi,
+                }
+            )
+    with All.modify() as mv:
+        if MPIRANK == 0:
+            mv.add(
+                {
+                    All.P: pi,
+                    All.Q: qi,
+                    All.I: gi
+                }
+            )
+
+    Near_kmc = kmc_fmm.KMCFMM(Near.P, Near.Q, Near.domain, boundary_condition='27', l=L, r=R)
+    Far_kmc = kmc_fmm.KMCFMM(Far.P, Far.Q, Far.domain, boundary_condition='ff-only', l=L, r=R)
+    All_kmc = kmc_fmm.KMCFMM(All.P, All.Q, All.domain, boundary_condition='pbc', l=L, r=R)
+
+    Near_kmc.initialise()
+    Far_kmc.initialise()
+    All_kmc.initialise()
+
+    Nsteps = 20
+    Nprop = 4
+
+    for stepx in range(Nsteps):
+        global_proposed_moves = [rng.uniform(low=-0.5*E, high=0.5*E, size=(Nprop,3)) for px in range(N)]
+
+        # All
+        All_proposed_moves = [(lidx, global_proposed_moves[All.I[lidx, 0]] ) for lidx in range(All.npart_local)]
+        All_proposed_energy = All_kmc.propose(All_proposed_moves)
+
+        # Near 
+        Near_proposed_moves = [(lidx, global_proposed_moves[Near.I[lidx, 0]] ) for lidx in range(Near.npart_local)]
+        Near_proposed_energy = Near_kmc.propose(Near_proposed_moves)
+
+        # Far
+        Far_proposed_moves = [(lidx, global_proposed_moves[Far.I[lidx, 0]] ) for lidx in range(Far.npart_local)]
+        Far_proposed_energy = Far_kmc.propose(Far_proposed_moves)
+
+        correct = np.zeros((N, Nprop), REAL)
+        to_test_near = np.zeros((N, Nprop), REAL)
+        to_test_far = np.zeros((N, Nprop), REAL)
+
+        for lid in range(All.npart_local):
+            correct[All.I[lid, 0], :] = All_proposed_energy[lid][:]
+
+        for lid in range(Near.npart_local):
+            to_test_near[Near.I[lid, 0], :] = Near_proposed_energy[lid][:]
+
+        for lid in range(Far.npart_local):
+            to_test_far[Far.I[lid, 0], :] = Far_proposed_energy[lid][:]
+
+        err_proposed_energy = np.linalg.norm(to_test_near + to_test_far - correct, np.inf)
+        
+        assert err_proposed_energy < 10.**-12
+        
+
+
+
+
+
+
+
+
+
+
 
 
 

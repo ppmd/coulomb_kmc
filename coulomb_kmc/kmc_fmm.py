@@ -965,29 +965,14 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
             raise RuntimeError("Run initialise before this call")
 
     def _propose(self, moves):
-
+        
         self._assert_init()
 
         td0 = 0.0
         td1 = 0.0
         ti0 = 0.0
         ti1 = 0.0
-
         cmove_data = self.md.setup_propose(moves)
-
-        td0 = time()
-        du0, du1 = self.kmcl.propose(*cmove_data)
-        td1 = time()
-
-        ti0 = time()
-        iu0, iu1 = self.kmco.propose(*cmove_data)
-        ti1 = time()
-
-        self._profile_inc("c-direct", td1 - td0)
-        self._profile_inc("c-indirect", ti1 - ti0)
-        self._profile_inc("propose_count", cmove_data[0])
-
-        tpd0 = time()
 
         num_particles = cmove_data[1]
         max_num_moves = 0
@@ -999,29 +984,47 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
         # check tmp energy arrays are large enough
         self._tmp_energy_check((num_particles, max_num_moves))
 
-        tmp_index = 0
-        for movxi, movx in enumerate(moves):
 
-            # get passed moves, number of moves
-            movs = np.atleast_2d(movx[1])
-            num_movs = movs.shape[0]
-            new_tmp_index = tmp_index + num_movs
+        if self._bc != BCType.FF_ONLY:
 
-            self._tmp_energies[_ENERGY.U0_DIRECT][movxi, :num_movs] = du0[movxi]
-            self._tmp_energies[_ENERGY.U0_INDIRECT][movxi, :num_movs] = iu0[movxi]
-            self._tmp_energies[_ENERGY.U1_DIRECT][movxi, :num_movs] = du1[tmp_index:new_tmp_index:, 0]
-            self._tmp_energies[_ENERGY.U1_INDIRECT][movxi, :num_movs] = iu1[tmp_index:new_tmp_index:, 0]
+            td0 = time()
+            du0, du1 = self.kmcl.propose(*cmove_data)
+            td1 = time()
 
-            tmp_index = new_tmp_index
+            ti0 = time()
+            iu0, iu1 = self.kmco.propose(*cmove_data)
+            ti1 = time()
 
-        tpd1 = time()
-        self._profile_inc("py-direct-indirect", tpd1 - tpd0)
+            self._profile_inc("c-direct", td1 - td0)
+            self._profile_inc("c-indirect", ti1 - ti0)
+            self._profile_inc("propose_count", cmove_data[0])
+
+            tpd0 = time()
+
+            tmp_index = 0
+            for movxi, movx in enumerate(moves):
+
+                # get passed moves, number of moves
+                movs = np.atleast_2d(movx[1])
+                num_movs = movs.shape[0]
+                new_tmp_index = tmp_index + num_movs
+
+                self._tmp_energies[_ENERGY.U0_DIRECT][movxi, :num_movs] = du0[movxi]
+                self._tmp_energies[_ENERGY.U0_INDIRECT][movxi, :num_movs] = iu0[movxi]
+                self._tmp_energies[_ENERGY.U1_DIRECT][movxi, :num_movs] = du1[tmp_index:new_tmp_index:, 0]
+                self._tmp_energies[_ENERGY.U1_INDIRECT][movxi, :num_movs] = iu1[tmp_index:new_tmp_index:, 0]
+
+                tmp_index = new_tmp_index
+            tpd1 = time()
+            self._profile_inc("py-direct-indirect", tpd1 - tpd0)
+
+        else:
+            for enumx in (_ENERGY.U0_DIRECT, _ENERGY.U0_INDIRECT, _ENERGY.U1_DIRECT, _ENERGY.U1_INDIRECT):
+                self._tmp_energies[enumx][:] = 0
 
         self._si.propose(*tuple(list(cmove_data) + [self._tmp_energies[_ENERGY.U01_SELF]]))
-
         # long range calculation
-        if self._bc == BCType.PBC:
-            # print("LR DISABLED")
+        if self._bc in (BCType.PBC, BCType.FF_ONLY):
             self._lr_energy.propose(*tuple(list(cmove_data) + [self._tmp_energies[_ENERGY.U01_SELF]]))
 
         # compute differences
