@@ -88,17 +88,18 @@ class _PY_KMCFMM:
 
         npoints = points.shape[0]
         out = np.zeros(npoints, dtype=REAL)
+        
+        if self._bc in (BCType.FREE_SPACE, BCType.PBC, BCType.NEAREST):
+            for px in range(npoints):
+                pointx = points[px, :]
+                assert len(pointx) == 3
 
-        for px in range(npoints):
-            pointx = points[px, :]
-            assert len(pointx) == 3
+                direct_field = self._direct_contrib_new(None, pointx)
+                indirect_field = self._charge_indirect_energy_new(None, pointx)
+                # indirect_field = 0
+                out[px] = direct_field + indirect_field
 
-            direct_field = self._direct_contrib_new(None, pointx)
-            indirect_field = self._charge_indirect_energy_new(None, pointx)
-            # indirect_field = 0
-            out[px] = direct_field + indirect_field
-
-        if self._bc == BCType.PBC:
+        if self._bc in (BCType.PBC, BCType.FF_ONLY):
             self._lr_energy.eval_field(points, out)
 
         return out
@@ -538,11 +539,12 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
 
         npoints = points.shape[0]
         out = np.zeros(npoints, dtype=REAL)
+        
+        if self._bc in (BCType.NEAREST, BCType.PBC, BCType.FREE_SPACE):
+            self.kmcl.eval_field(points, out)
+            self.kmco.eval_field(points, out)
 
-        self.kmcl.eval_field(points, out)
-        self.kmco.eval_field(points, out)
-
-        if self._bc == BCType.PBC:
+        if self._bc in (BCType.PBC, BCType.FF_ONLY):
             self._lr_energy.eval_field(points, out)
 
         return out

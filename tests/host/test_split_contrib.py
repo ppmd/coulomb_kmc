@@ -36,6 +36,7 @@ def test_split_1():
     R = 3
 
     N = 200
+
     E = 1.
     rc = E/4
 
@@ -99,9 +100,23 @@ def test_split_1():
     Far_kmc.initialise()
     All_kmc.initialise()
     
+    # Check the initial energies match
     assert abs(All_kmc.energy) > 0.0
     err_energy = abs(Near_kmc.energy + Far_kmc.energy - All_kmc.energy) / abs(All_kmc.energy)
-    assert err_energy < 10**-15
+    assert err_energy < 10.**-14
+
+
+    # Check eval_field is consistent
+    eval_points = rng.uniform(low=-0.5*E, high=0.5*E, size=(N,3))
+    
+    Near_eval = Near_kmc.eval_field(eval_points)
+    Far_eval = Far_kmc.eval_field(eval_points)
+    All_eval = All_kmc.eval_field(eval_points)
+
+    err_eval_field = np.linalg.norm(Near_eval + Far_eval - All_eval, np.inf)
+
+    assert err_eval_field < 10.**-13
+
 
 
 
