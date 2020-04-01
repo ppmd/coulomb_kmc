@@ -253,10 +253,10 @@ def test_pair_direct_dats_1(BC):
 
     if BC == BCType.FREE_SPACE:
         DIRECT = FreeSpaceDirect()
-        TOL = 10.**-15
+        TOL = 10.**-12
     elif BC == BCType.NEAREST:
         DIRECT = NearestDirect(E)   
-        TOL = 10.**-15
+        TOL = 10.**-12
     elif BC == BCType.PBC:
         DIRECT = PBCDirect(E, A.domain, L)
         TOL = 10.**-5
