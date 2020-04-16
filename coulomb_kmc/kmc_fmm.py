@@ -78,6 +78,10 @@ class _PY_KMCFMM:
             self._dsc = np.zeros(27 * cell_occ)
 
     def eval_field(self, points):
+        """
+        For a given (N, 3) NumPy, dtype=ctypes.c_double array of positions computes the potential field at the given
+        positions. N.B. The value of energy_unit does not effect the output of this function.
+        """
         self._assert_init()
 
         # the data structures this uses are not updated by accept
@@ -534,6 +538,11 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
         InjectorExtractor.__init__(self)
 
     def eval_field(self, points):
+        """
+        For a given (N, 3) NumPy, dtype=ctypes.c_double array of positions computes the potential field at the given
+        positions. N.B. The value of energy_unit does not effect the output of this function.
+        """
+
         self._assert_init()
 
         if points.dtype != REAL:

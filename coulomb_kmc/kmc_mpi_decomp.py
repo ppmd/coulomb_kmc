@@ -430,15 +430,17 @@ class FMMMPIDecomp(LocalOctalBase):
             const REAL * RESTRICT extent,
             const REAL * RESTRICT p,
             const REAL * RESTRICT pp,
-            int * RESTRICT err
+            int * RESTRICT err,
+            const INT64 px,
+            const INT64 movx
         ){{
             
-            if (pp[0] < -0.5 * extent[0]) {{ err[0]++; printf("ERROR: Proposed position is outside domain. %f %f %f -> %f %f %f\n", p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
-            if (pp[1] < -0.5 * extent[1]) {{ err[0]++; printf("ERROR: Proposed position is outside domain. %f %f %f -> %f %f %f\n", p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
-            if (pp[2] < -0.5 * extent[2]) {{ err[0]++; printf("ERROR: Proposed position is outside domain. %f %f %f -> %f %f %f\n", p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
-            if (pp[0] >  0.5 * extent[0]) {{ err[0]++; printf("ERROR: Proposed position is outside domain. %f %f %f -> %f %f %f\n", p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
-            if (pp[1] >  0.5 * extent[1]) {{ err[0]++; printf("ERROR: Proposed position is outside domain. %f %f %f -> %f %f %f\n", p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
-            if (pp[2] >  0.5 * extent[2]) {{ err[0]++; printf("ERROR: Proposed position is outside domain. %f %f %f -> %f %f %f\n", p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
+            if (pp[0] < -0.5 * extent[0]) {{ err[0]++; printf("ERROR: Proposed position is outside domain (%ld, %ld). %f %f %f -> %f %f %f\n", px, movx, p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
+            if (pp[1] < -0.5 * extent[1]) {{ err[0]++; printf("ERROR: Proposed position is outside domain (%ld, %ld). %f %f %f -> %f %f %f\n", px, movx, p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
+            if (pp[2] < -0.5 * extent[2]) {{ err[0]++; printf("ERROR: Proposed position is outside domain (%ld, %ld). %f %f %f -> %f %f %f\n", px, movx, p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
+            if (pp[0] >  0.5 * extent[0]) {{ err[0]++; printf("ERROR: Proposed position is outside domain (%ld, %ld). %f %f %f -> %f %f %f\n", px, movx, p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
+            if (pp[1] >  0.5 * extent[1]) {{ err[0]++; printf("ERROR: Proposed position is outside domain (%ld, %ld). %f %f %f -> %f %f %f\n", px, movx, p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
+            if (pp[2] >  0.5 * extent[2]) {{ err[0]++; printf("ERROR: Proposed position is outside domain (%ld, %ld). %f %f %f -> %f %f %f\n", px, movx, p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
             
             REAL d0 = p[0] - pp[0];
             REAL d1 = p[1] - pp[1];
@@ -446,9 +448,9 @@ class FMMMPIDecomp(LocalOctalBase):
 
             {CHECK_MOD}
 
-            if ( (d0*d0) > ({MAX_MOVE_2}) ){{ err[0]++; printf("ERROR: Proposed move violates max_move. %f %f %f -> %f %f %f\n", p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
-            if ( (d1*d1) > ({MAX_MOVE_2}) ){{ err[0]++; printf("ERROR: Proposed move violates max_move. %f %f %f -> %f %f %f\n", p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
-            if ( (d2*d2) > ({MAX_MOVE_2}) ){{ err[0]++; printf("ERROR: Proposed move violates max_move. %f %f %f -> %f %f %f\n", p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
+            if ( (d0*d0) > ({MAX_MOVE_2}) ){{ err[0]++; printf("ERROR: Proposed move violates max_move (%ld, %ld). %f %f %f -> %f %f %f\n", px, movx, p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
+            if ( (d1*d1) > ({MAX_MOVE_2}) ){{ err[0]++; printf("ERROR: Proposed move violates max_move (%ld, %ld). %f %f %f -> %f %f %f\n", px, movx, p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
+            if ( (d2*d2) > ({MAX_MOVE_2}) ){{ err[0]++; printf("ERROR: Proposed move violates max_move (%ld, %ld). %f %f %f -> %f %f %f\n", px, movx, p[0], p[1], p[2], pp[0], pp[1], pp[2]);}}
         }}
 
 
@@ -542,7 +544,7 @@ class FMMMPIDecomp(LocalOctalBase):
                         new_positions[nind*3 + 1] = prop_positions[prop_ind + 1];
                         new_positions[nind*3 + 2] = prop_positions[prop_ind + 2];
 
-                        check_move(extent, &current_positions[px*3], &prop_positions[prop_ind], &err);
+                        check_move(extent, &current_positions[px*3], &prop_positions[prop_ind], &err, px, movx);
 
                         INT64 tmp_cell[3] = {{0,0,0}};
                         REAL tmp_pos[3] = {{0.0, 0.0, 0.0}};
