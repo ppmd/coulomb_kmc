@@ -53,7 +53,7 @@ def test_propose_extract_1(BC):
     """
 
 
-    L = 12
+    L = 16
 
     N = 20
     E = 2*3.1416
@@ -139,8 +139,11 @@ def test_propose_extract_1(BC):
         # direct extract energy
         phi_direct_1 = direct(len(inds), pi[inds, :], qi[inds, :])
         diff_direct = phi_direct_1 - phi_direct_0
+        
 
         err = abs(diff_extractor - diff_direct) / abs(diff_direct)
+
+        assert err < 10.**-5 or abs(diff_extractor - diff_direct) < 10.**-5
 
         diff_extractor2 = kmc.propose_extract((remove_inds, remove_inds))
         
@@ -598,6 +601,138 @@ def test_get_energy_1(BC):
         assert np.linalg.norm(A.E[ids, 0].ravel() - to_test_1.ravel(), np.inf) < 10.**-14
 
         
+
+
+
+
+@pytest.mark.skipif('MPISIZE > 1')
+@pytest.mark.parametrize("BC", ('pbc', ))
+def test_propose_extract_split_1(BC):
+    """
+    Tests proposed moves one by one against direct calculation.
+    """
+
+
+    L = 12
+
+    N = 20
+    E = 2*3.1416
+
+
+    NEAR = state.State(
+        domain=domain.BaseDomainHalo(
+            extent=(E,E,E),
+            boundary_condition=domain.BoundaryTypePeriodic()
+        ),
+        particle_dats={
+            'P': data.PositionDat(ncomp=3),
+            'Q': data.ParticleDat(ncomp=1),
+            'GID': data.ParticleDat(ncomp=1, dtype=INT64),
+        }
+    )
+
+    FAR = state.State(
+        domain=domain.BaseDomainHalo(
+            extent=(E,E,E),
+            boundary_condition=domain.BoundaryTypePeriodic()
+        ),
+        particle_dats={
+            'P': data.PositionDat(ncomp=3),
+            'Q': data.ParticleDat(ncomp=1),
+            'GID': data.ParticleDat(ncomp=1, dtype=INT64),
+        }
+    )
+
+    rng = np.random.RandomState(3251)
+
+    pi = rng.uniform(low=-0.5*E, high=0.5*E, size=(N, 3))
+    qi = np.zeros((N,1), REAL)
+    assert N % 2 == 0
+    for px in range(N):
+        qi[px, 0] = (-1)**px
+    
+    gi = np.arange(N).reshape((N, 1))
+
+
+    for sx in (FAR, NEAR):
+        with sx.modify() as m:
+            if MPIRANK == 0:
+                m.add({
+                    sx.P: pi[:, :],
+                    sx.Q: qi[:, :],
+                    sx.GID: gi[:, :]
+                })
+
+    FAR_KMC = kmc_fmm.KMCFMM(FAR.P, FAR.Q, FAR.domain, r=3, l=L, max_move=1.0, boundary_condition='ff-only')
+    NEAR_KMC = kmc_fmm.KMCFMM(NEAR.P, NEAR.Q, NEAR.domain, r=3, l=L, max_move=1.0, boundary_condition='27')
+
+
+    FAR_KMC.initialise()
+    NEAR_KMC.initialise()
+
+    direct = _direct_chooser(BC, NEAR.domain, L)
+    phi_direct_0 = direct(N, pi, qi)
+
+    
+    for testx in range(20):
+
+        # find a +ve/-ve pair of charges
+
+        num_remove = rng.randint(1, 10)
+        remove_inds = []
+        available = set(range(N))
+        
+        for tx in range(num_remove):
+            ind = rng.randint(0, N)
+            while((NEAR.Q[ind, 0] < 0) or (ind not in available)):
+                ind = rng.randint(0, N)
+        
+            remove_inds.append(ind)
+            available.remove(ind)
+
+        for tx in range(num_remove):
+            ind = rng.randint(0, N)
+            while((NEAR.Q[ind, 0] > 0) or (ind not in available)):
+
+                ind = rng.randint(0, N)
+            remove_inds.append(ind)
+            available.remove(ind)
+
+        assert len(remove_inds) == 2*num_remove
+
+        gids = [int(NEAR.GID[gx, 0]) for gx in remove_inds]
+
+        NEAR_diff = NEAR_KMC.propose_extract(remove_inds)
+        FAR_diff = FAR_KMC.propose_extract(remove_inds)
+
+        inds = set(range(N))
+        for gx in gids:
+            inds.remove(gx)
+        inds = np.array(tuple(inds), 'int')
+
+
+        # direct extract energy
+        phi_direct_1 = direct(len(inds), pi[inds, :], qi[inds, :])
+        diff_direct = phi_direct_1 - phi_direct_0
+
+
+        to_test = NEAR_diff + FAR_diff
+        err_abs = abs(to_test - diff_direct)
+        err = err_abs / abs(diff_direct)
+        assert err < 10.**-5 or err_abs < 10**-5
+
+
+        NEAR_diff2 = NEAR_KMC.propose_extract((remove_inds, remove_inds))
+        FAR_diff2 = FAR_KMC.propose_extract((remove_inds, remove_inds))
+        
+        to_test2 = NEAR_diff2 + FAR_diff2
+        assert abs(to_test2[0] - to_test) < 10.**-12
+        assert abs(to_test2[1] - to_test) < 10.**-12
+
+
+
+
+
 
 
 
