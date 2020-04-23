@@ -731,6 +731,121 @@ def test_propose_extract_split_1(BC):
 
 
 
+    
+@pytest.mark.skipif('MPISIZE > 1')
+@pytest.mark.parametrize("BC", ('pbc', ))
+def test_extract_split_1(BC):
+    """
+    Tests extraction of charges, assumes propose_extract works (i.e passes above test).
+    """
+
+
+    L = 16
+    N = 20
+    E = 2*3.1416
+
+
+    NEAR = state.State(
+        domain=domain.BaseDomainHalo(
+            extent=(E,E,E),
+            boundary_condition=domain.BoundaryTypePeriodic()
+        ),
+        particle_dats={
+            'P': data.PositionDat(ncomp=3),
+            'Q': data.ParticleDat(ncomp=1),
+            'GID': data.ParticleDat(ncomp=1, dtype=INT64),
+        }
+    )
+
+    FAR = state.State(
+        domain=domain.BaseDomainHalo(
+            extent=(E,E,E),
+            boundary_condition=domain.BoundaryTypePeriodic()
+        ),
+        particle_dats={
+            'P': data.PositionDat(ncomp=3),
+            'Q': data.ParticleDat(ncomp=1),
+            'GID': data.ParticleDat(ncomp=1, dtype=INT64),
+        }
+    )
+
+
+
+    rng = np.random.RandomState(3251)
+
+    pi = rng.uniform(low=-0.5*E, high=0.5*E, size=(N, 3))
+    qi = np.zeros((N,1), REAL)
+    assert N % 2 == 0
+    for px in range(N):
+        qi[px, 0] = (-1)**px
+    
+    gi = np.arange(N).reshape((N, 1))
+
+
+    for sx in (NEAR, FAR):
+        with sx.modify() as m:
+            if MPIRANK == 0:
+                m.add({
+                    sx.P: pi[:, :],
+                    sx.Q: qi[:, :],
+                    sx.GID: gi[:, :]
+                })
+
+    FAR_KMC = kmc_fmm.KMCFMM(FAR.P, FAR.Q, FAR.domain, r=3, l=L, max_move=1.0, boundary_condition='ff-only')
+    NEAR_KMC = kmc_fmm.KMCFMM(NEAR.P, NEAR.Q, NEAR.domain, r=3, l=L, max_move=1.0, boundary_condition='27')
+
+    FAR_KMC.initialise()
+    NEAR_KMC.initialise()
+
+    direct = _direct_chooser(BC, FAR.domain, L)
+    phi_direct_0 = direct(N, pi, qi)
+    
+    for testx in range(10):
+        # find a +ve/-ve pair of charges
+        
+        N = FAR.npart_local
+        remove_inds = []
+        available = set(range(N))
+        
+        ind = rng.randint(0, N)
+        while((FAR.Q[ind, 0] < 0) or (ind not in available)):
+            ind = rng.randint(0, N)
+    
+        remove_inds.append(ind)
+        available.remove(ind)
+
+        ind = rng.randint(0, N)
+        while((FAR.Q[ind, 0] > 0) or (ind not in available)):
+
+            ind = rng.randint(0, N)
+        remove_inds.append(ind)
+        available.remove(ind)
+
+        assert len(remove_inds) == 2
+
+
+        gids = [int(FAR.GID[gx, 0]) for gx in remove_inds]
+        
+
+        kmc_phi_0 = FAR_KMC.energy + NEAR_KMC.energy
+        FAR_diff = FAR_KMC.propose_extract(remove_inds)
+        NEAR_diff = NEAR_KMC.propose_extract(remove_inds)
+        diff_extractor = FAR_diff + NEAR_diff
+
+        FAR_KMC.extract(remove_inds)
+        NEAR_KMC.extract(remove_inds)
+
+        kmc_phi_1 = FAR_KMC.energy + NEAR_KMC.energy
+
+        assert abs(kmc_phi_1 - kmc_phi_0 - diff_extractor) < 10.**-8
+
+        correct = direct(NEAR.npart_local, NEAR.P.view.copy(), NEAR.Q.view.copy())
+
+        assert abs(correct - kmc_phi_1) < 10.**-5
+
+
+
+
 
 
 
