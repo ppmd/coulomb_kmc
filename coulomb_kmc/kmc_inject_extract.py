@@ -109,9 +109,11 @@ class InjectorExtractor(ProfInc):
         h['old_charges'][:] = self.charges[ids, :].copy()
         h['old_ids'][:] = self.group._kmc_fmm_order[ids, :].copy()
         
-        self.kmco.get_old_energy(N, h)
-        self.kmcl.get_old_energy(N, h)
-        if self._bc == BCType.PBC:
+        if self._bc != BCType.FF_ONLY:
+            self.kmco.get_old_energy(N, h)
+            self.kmcl.get_old_energy(N, h)
+
+        if self._bc in (BCType.PBC, BCType.FF_ONLY):
             self._lr_energy.get_old_energy(N, h)
 
         e = h['old_energy_i'] + h['old_energy_d'] + h['old_energy_l']
@@ -281,10 +283,11 @@ class InjectorExtractor(ProfInc):
         for ixi in range(ge.shape[0]):
             movedata = ge[ixi,:]
             
-            self.kmco.extract(movedata)
-            self.kmcl.extract(movedata)
+            if self._bc != BCType.FF_ONLY:
+                self.kmco.extract(movedata)
+                self.kmcl.extract(movedata)
             
-            if self._bc == BCType.PBC:
+            if self._bc in (BCType.PBC, BCType.FF_ONLY):
                 self._lr_energy.extract(movedata)
 
 
@@ -399,11 +402,13 @@ class InjectorExtractor(ProfInc):
             realdata[6]    = charge
             movedata[7]    = gid
             movedata[9]    = new_fmm_cell
-
-            self.kmcl.inject(movedata)
-            self.kmco.inject(movedata)
             
-            if self._bc == BCType.PBC:
+
+            if self._bc != BCType.FF_ONLY:
+                self.kmcl.inject(movedata)
+                self.kmco.inject(movedata)
+            
+            if self._bc in (BCType.PBC, BCType.FF_ONLY):
                 self._lr_energy.inject(movedata)
 
 

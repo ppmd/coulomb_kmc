@@ -273,4 +273,125 @@ def test_inject_1(BC):
 
 
 
+@pytest.mark.skipif('MPISIZE > 1')
+@pytest.mark.parametrize("BC", ('pbc', ))
+def test_propose_inject_split_1(BC):
+    """
+    Tests proposed moves one by one against direct calculation.
+    """
 
+
+    L = 16
+
+    N = 20
+    E = 2*3.1416
+
+    NEAR = state.State(
+        domain=domain.BaseDomainHalo(
+            extent=(E,E,E),
+            boundary_condition=domain.BoundaryTypePeriodic()
+        ),
+        particle_dats={
+            'P': data.PositionDat(ncomp=3),
+            'Q': data.ParticleDat(ncomp=1),
+            'GID': data.ParticleDat(ncomp=1, dtype=INT64),
+        }
+    )
+
+    FAR = state.State(
+        domain=domain.BaseDomainHalo(
+            extent=(E,E,E),
+            boundary_condition=domain.BoundaryTypePeriodic()
+        ),
+        particle_dats={
+            'P': data.PositionDat(ncomp=3),
+            'Q': data.ParticleDat(ncomp=1),
+            'GID': data.ParticleDat(ncomp=1, dtype=INT64),
+        }
+    )
+
+    rng = np.random.RandomState(3251)
+
+    pi = np.array(rng.uniform(low=-0.5*E, high=0.5*E, size=(N, 3)), REAL)
+    qi = np.zeros((N,1), REAL)
+    assert N % 2 == 0
+    for px in range(N):
+        qi[px, 0] = (-1)**px
+    
+    gi = np.arange(N).reshape((N, 1))
+
+    FAR_KMC = kmc_fmm.KMCFMM(FAR.P, FAR.Q, FAR.domain, r=3, l=L, max_move=1.0, boundary_condition='ff-only')
+    NEAR_KMC = kmc_fmm.KMCFMM(NEAR.P, NEAR.Q, NEAR.domain, r=3, l=L, max_move=1.0, boundary_condition='27')
+
+    direct = _direct_chooser(BC, FAR_KMC.domain, L)
+    phi_direct = direct(N, pi[:, :], qi[:, :])
+
+
+    for testx in range(20):
+
+
+        num_add = rng.randint(1, 10)
+        add_inds = []
+        available = set(range(N))
+        
+        for tx in range(num_add):
+            ind = rng.randint(0, N)
+            while((qi[ind, 0] < 0) or (ind not in available)):
+                ind = rng.randint(0, N)
+        
+            add_inds.append(ind)
+            available.remove(ind)
+
+        for tx in range(num_add):
+            ind = rng.randint(0, N)
+            while((qi[ind, 0] > 0) or (ind not in available)):
+
+                ind = rng.randint(0, N)
+            add_inds.append(ind)
+            available.remove(ind)
+
+        assert len(add_inds) == 2*num_add
+
+
+        gids = [int(gi[gx, 0]) for gx in add_inds]
+
+        inds = set(range(N))
+        for gx in gids:
+            inds.remove(gx)
+        inds = np.array(tuple(inds), 'int')
+
+
+        for sx in (FAR, NEAR):
+            with sx.modify() as m:
+                if MPIRANK == 0:
+                    m.add({
+                        sx.P: pi[inds, :],
+                        sx.Q: qi[inds, :],
+                        sx.GID: gi[inds, :]
+                    })
+
+
+        FAR_KMC.initialise()
+        NEAR_KMC.initialise()
+
+        # check initial energy agrees
+        phi_direct_0 = direct(FAR.npart_local, FAR.P.view, FAR.Q.view)
+        diff_move = (pi[np.array(gids), :], qi[np.array(gids), :])
+        # direct extract energy
+        diff_direct = phi_direct - phi_direct_0
+
+    
+        NEAR_diff = NEAR_KMC.propose_inject(*diff_move)
+        FAR_diff = FAR_KMC.propose_inject(*diff_move)
+
+        to_test = NEAR_diff + FAR_diff
+
+        err = abs(to_test - diff_direct) / abs(diff_direct)
+
+        assert err < 10.**-5
+
+
+        for sx in (FAR, NEAR):
+            with sx.modify() as m:
+                m.remove(tuple(range(sx.npart_local)))
+            assert sx.npart == 0
