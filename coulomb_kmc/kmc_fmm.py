@@ -84,6 +84,8 @@ class _PY_KMCFMM:
         """
         self._assert_init()
 
+        points = np.atleast_2d(points)
+
         # the data structures this uses are not updated by accept
         self.initialise()
 
@@ -544,6 +546,8 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
         """
 
         self._assert_init()
+
+        points = np.atleast_2d(points)
 
         if points.dtype != REAL:
             points = np.array(points, dtype=REAL)

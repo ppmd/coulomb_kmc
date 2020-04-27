@@ -1415,7 +1415,7 @@ class LocalCellExpansions(LocalOctalBase):
 
 
     def eval_field(self, points, out):
-
+        points = np.atleast_2d(points)
         N = points.shape[0]
         ncps = (2**(self.fmm.R - 1))
         fmm_cells_per_side = np.array((ncps, ncps, ncps), dtype=INT64)

@@ -344,7 +344,7 @@ class FullLongRangeEnergy(ProfInc):
         :arg points: Places to evaluate field.
         :arg out: Array to populate with the far-field contribution to the field.
         """
- 
+        points = np.atleast_2d(points)
 
         if points.dtype == REAL and points.shape[1] == 3 and out.dtype == REAL and use_c:
             self._c_eval_field(points, out)
