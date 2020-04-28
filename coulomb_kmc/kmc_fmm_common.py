@@ -21,7 +21,7 @@ class LocalOctalBase(ProfInc):
 
     def _get_fmm_cell(self, ix, cell_map, slow_to_fast=False):
         # produces xyz tuple by default
-        cc = cell_map[ix][0]
+        cc = int(cell_map.view[ix][0])
         cx, cy, cz = self._cell_lin_to_tuple(cc)
 
         if not slow_to_fast:
