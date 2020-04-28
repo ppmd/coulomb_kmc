@@ -103,8 +103,10 @@ class InjectorExtractor(ProfInc):
         h['old_ids']           = np.zeros((N, 1), dtype=INT64)
         
         h['old_positions'][:] = self.positions[ids, :].copy()
-        for idi, idx in enumerate(ids):
-            h['old_fmm_cells'][idi] = self.md.get_local_fmm_cell(idx)
+        
+        lids = self.md.get_local_fmm_cell_array(np.array(ids, INT64))
+        assert lids.size == N
+        h['old_fmm_cells'][:] = lids.reshape((N, 1))
 
         h['old_charges'][:] = self.charges[ids, :].copy()
         h['old_ids'][:] = self.group._kmc_fmm_order[ids, :].copy()
