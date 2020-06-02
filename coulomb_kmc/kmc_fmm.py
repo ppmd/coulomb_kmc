@@ -449,7 +449,9 @@ class KMCFMM(_PY_KMCFMM, InjectorExtractor):
         cuda_direct=False,
         mirror_direction=None,
     ):
+        
 
+        self._ordering_buf = None
         # horrible workaround to convert sensible boundary condition
         # parameter format to what exists for PyFMM
 
