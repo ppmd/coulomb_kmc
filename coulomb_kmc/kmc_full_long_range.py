@@ -69,9 +69,10 @@ class FullLongRangeEnergy(ProfInc):
         //         NCOMP
         // nprop * NCOMP
         // nprop * NCOMP
+        // nprop * 3
         """
         ncomp = (self.L**2)*2
-        needed_space = 3 * max_nprop * ncomp + 2 * ncomp
+        needed_space = 3 * max_nprop * ncomp + 2 * ncomp + max_nprop * 3
 
         if self._thread_space[0].shape[0] < needed_space:
             self._thread_space = [np.zeros(needed_space + 16, dtype=REAL) for tx in range(self._nthread)]
@@ -392,6 +393,7 @@ class FullLongRangeEnergy(ProfInc):
         half_ncomp = self.L**2
         def _re_lm(l, m): return l**2 + l + m
 
+        dot_vec_header, dot_vec_src, dot_vec_flops = self._dot_vec_multipole_lib()
 
         mirror_preloop = ''
         mirror_loop_0 = ''
@@ -401,6 +403,7 @@ class FullLongRangeEnergy(ProfInc):
             mcoeff['mcoeffx'] = -1.0 if self.mirror_direction[0] else 1.0 
             mcoeff['mcoeffy'] = -1.0 if self.mirror_direction[1] else 1.0 
             mcoeff['mcoeffz'] = -1.0 if self.mirror_direction[2] else 1.0 
+            mcoeff['EVEC_MULTIPOLE_SRC'] = dot_vec_src
 
             mirror_preloop += '''
             const REAL mopx = opx * {mcoeffx};
@@ -416,22 +419,37 @@ class FullLongRangeEnergy(ProfInc):
             '''.format(**mcoeff)
 
             mirror_loop_0 = '''
-            const REAL mnpx = npx * {mcoeffx};
-            const REAL mnpy = npy * {mcoeffy};
-            const REAL mnpz = npz * {mcoeffz};
 
-            REAL mnradius, mntheta, mnphi;
-            spherical(mnpx, mnpy, mnpz, &mnradius, &mntheta, &mnphi);
+            for(INT64 movii=0 ; movii<nprop ; movii++){{
+                const INT64 movi = movii + exclusive_sum[px];
+                const REAL new_charge = new_charges[movi];
+                const REAL npx = new_positions[3*movi + 0];
+                const REAL npy = new_positions[3*movi + 1];
+                const REAL npz = new_positions[3*movi + 2];
+                
+                const REAL mnpx = npx * {mcoeffx};
+                const REAL mnpy = npy * {mcoeffy};
+                const REAL mnpz = npz * {mcoeffz};
 
-            // add on the new moments
-            // multipole_exp(-1.0*new_charge, mnradius, mntheta, mnphi, &new_moments[movii*NCOMP]);
+                REAL mnradius, mntheta, mnphi;
+                spherical(mnpx, mnpy, mnpz, &mnradius, &mntheta, &mnphi);
 
-            // add on the new evector coefficients
-            // local_dot_vec(-1.0*new_charge, mnradius, mntheta, mnphi, &new_evector[movii*NCOMP]);
-            
-            // combined
-            local_dot_vec_multipole(-1.0 * new_charge, mnradius, mntheta, mnphi,
-                &new_evector[movii*NCOMP], &new_moments[movii*NCOMP]);
+                spherical_tmp[          movii] = mnradius;
+                spherical_tmp[  nprop + movii] = mntheta;
+                spherical_tmp[2*nprop + movii] = mnphi;
+            }}
+
+            //#pragma omp simd
+            for(INT64 movii=0 ; movii<nprop ; movii++){{
+                const INT64 movi = movii + exclusive_sum[px];
+                const REAL new_charge = -1.0 * new_charges[movi];
+                const REAL nradius = spherical_tmp[          movii];
+                const REAL ntheta  = spherical_tmp[  nprop + movii];
+                const REAL nphi    = spherical_tmp[2*nprop + movii];
+                
+                {EVEC_MULTIPOLE_SRC}
+            }}
+
             '''.format(**mcoeff)
 
 
@@ -461,6 +479,7 @@ class FullLongRangeEnergy(ProfInc):
             csr_inline += tmp.format(
                 rowx=rowx
             )
+        
 
 
         src = r'''
@@ -475,7 +494,8 @@ class FullLongRangeEnergy(ProfInc):
         {EVEC_SRC}
 
         {EVEC_MULTIPOLE_HEADER}
-        {EVEC_MULTIPOLE_SRC}
+
+        #define CUBE_IND(L,M) ((L) * ( (L) + 1 ) + (M))
 
         static inline void apply_dipole_correction(
             const REAL * RESTRICT M,
@@ -511,7 +531,33 @@ class FullLongRangeEnergy(ProfInc):
             return tmp;
         }}
 
+        static inline void apply_all_dipole_correction_split(
+            const INT64            nprop,     
+            const REAL  * RESTRICT M,
+            const REAL  * RESTRICT E,
+                  REAL  * RESTRICT O
+        ){{
 
+            const INT64 im_offset = nprop * HALF_NCOMP;
+            
+            for(INT64 movii=0 ; movii<nprop ; movii++){{
+                REAL tmp = 0.0;
+
+                tmp += (DIPOLE_SX * M[RE_1P1*nprop + movii]) * E[RE_1P1*nprop + movii];
+                tmp += (DIPOLE_SX * M[RE_1P1*nprop + movii]) * E[RE_1N1*nprop + movii];
+
+                //tmp -= (DIPOLE_SY * M[IM_1P1*nprop + movii]) * E[IM_1P1*nprop + movii];
+                //tmp += (DIPOLE_SY * M[IM_1P1*nprop + movii]) * E[IM_1N1*nprop + movii];
+
+                tmp -= (DIPOLE_SY * M[im_offset + RE_1P1*nprop + movii]) * E[im_offset + RE_1P1*nprop + movii];
+                tmp += (DIPOLE_SY * M[im_offset + RE_1P1*nprop + movii]) * E[im_offset + RE_1N1*nprop + movii];
+
+                tmp += (DIPOLE_SZ * M[RE_1_0*nprop + movii]) * E[RE_1_0*nprop + movii];
+
+                O[movii] = tmp;
+            }}
+            return;
+        }}
 
         
         static inline REAL dot_product(
@@ -592,6 +638,59 @@ class FullLongRangeEnergy(ProfInc):
         }}
 
 
+        static inline void linop_all_csr_both(
+            const INT64            nprop,     
+            const REAL  * RESTRICT linop_data,
+            const INT64 * RESTRICT linop_indptr,
+            const INT64 * RESTRICT linop_indices,
+            const REAL  * RESTRICT x1,
+            const REAL  * RESTRICT E,
+                  REAL  * RESTRICT out_vec
+        ){{
+            
+            // zero the energy locations
+            for(int ix=0 ; ix<nprop ; ix++){{out_vec[ix] = 0.0;}}
+
+            INT64 data_ind = 0;
+            REAL dot_tmp = 0.0;
+            const INT64 im_offset = nprop * HALF_NCOMP;
+
+            for(INT64 row=0 ; row<HALF_NCOMP ; row++){{
+
+                //REAL row_tmp_1 = 0.0;
+                for(int ix=nprop ; ix<nprop*2 ; ix++){{out_vec[ix] = 0.0;}}
+                //REAL row_tmp_2 = 0.0;
+                for(int ix=nprop*2 ; ix<nprop*3 ; ix++){{out_vec[ix] = 0.0;}}
+
+                for(INT64 col_ind=linop_indptr[row] ; col_ind<linop_indptr[row+1] ; col_ind++){{
+                    const INT64 col = linop_indices[data_ind];
+                    const REAL data = linop_data[data_ind];
+                    data_ind++;
+
+                    //row_tmp_1 += data * x1[col];
+                    //row_tmp_2 += data * x1[col  + HALF_NCOMP];
+                    for(INT64 movii=0 ; movii<nprop ; movii++){{
+                        const INT64 index = col * nprop + movii;
+                        const REAL row_tmp_1 = data * x1[index];
+                        const REAL row_tmp_2 = data * x1[im_offset + index];
+                        
+                        out_vec[nprop + movii] += row_tmp_1;
+                        out_vec[2*nprop + movii] += row_tmp_2;
+                    }}
+                }}
+
+                //dot_tmp += row_tmp_1 * E[row] + row_tmp_2 * E[row + HALF_NCOMP];
+                for(INT64 movii=0 ; movii<nprop ; movii++){{
+                    const REAL row_tmp_1 = out_vec[nprop + movii];
+                    const REAL row_tmp_2 = out_vec[2*nprop + movii];
+
+                    out_vec[movii] += row_tmp_1 * E[row * nprop + movii] + row_tmp_2 * E[row * nprop + im_offset + movii];
+                }}
+            }}
+
+            return;
+        }}
+
 
         #pragma omp declare simd
         static inline REAL linop_csr_both_inline(
@@ -645,6 +744,7 @@ class FullLongRangeEnergy(ProfInc):
                 REAL * RESTRICT old_moments = new_evector + nprop*NCOMP;        // NCOMP
                 REAL * RESTRICT new_moments = old_moments + NCOMP;              // nprop * NCOMP
                 REAL * RESTRICT new_local_moments = new_moments + nprop*NCOMP;  // nprop * NCOMP
+                REAL * RESTRICT spherical_tmp = new_local_moments + nprop*NCOMP;// nprop * NCOMP
 
                 // copy the existing moments
                 for(int nx=0 ; nx<NCOMP ; nx++){{ old_moments[nx] = existing_multipole[nx]; }}
@@ -665,18 +765,33 @@ class FullLongRangeEnergy(ProfInc):
 
                 // loop over the proposed new positions and copy old positions and compute spherical coordinate
                 // vectors
+                
+                const INT64 im_offset = nprop * HALF_NCOMP;
+                for(int lx=0 ; lx<L_LIMIT ; lx++){{
+                    for(int mx=-1*lx ; mx<(lx+1) ; mx++){{
+                        const int old_ind = CUBE_IND(lx, mx);
 
-                for(INT64 movii=0 ; movii<nprop ; movii++){{
-                    // copy the old position moments
-                    for(int nx=0 ; nx<NCOMP ; nx++){{ new_moments[movii*NCOMP + nx] = old_moments[nx]; }}
-                    // copy the old evector coefficients
-                    for(int nx=0 ; nx<NCOMP ; nx++){{ new_evector[movii*NCOMP + nx] = old_evector[nx]; }}
+                        const REAL re_tmp_m = old_moments[old_ind];
+                        const REAL re_tmp_e = old_evector[old_ind];
+                        const REAL im_tmp_m = old_moments[IM_OFFSET + old_ind];
+                        const REAL im_tmp_e = old_evector[IM_OFFSET + old_ind];
+
+
+                        for(int movii=0 ; movii<nprop ; movii++){{
+                            const int new_ind = old_ind * nprop + movii;
+
+                            new_moments[new_ind] = re_tmp_m;
+                            new_evector[new_ind] = re_tmp_e;
+
+                            new_moments[im_offset + new_ind] = im_tmp_m;
+                            new_evector[im_offset + new_ind] = im_tmp_e;
+                        }}
+
+                    }}
                 }}
-
 
                 // loop over the proposed new positions and copy new positions and compute spherical coordinate
                 // vectors
-                #pragma omp simd simdlen(8)
                 for(INT64 movii=0 ; movii<nprop ; movii++){{
                     const INT64 movi = movii + exclusive_sum[px];
                     const REAL new_charge = new_charges[movi];
@@ -687,33 +802,50 @@ class FullLongRangeEnergy(ProfInc):
                     REAL nradius, ntheta, nphi;
                     spherical(npx, npy, npz, &nradius, &ntheta, &nphi);
                     
-                    // combined
-                    local_dot_vec_multipole(new_charge, nradius, ntheta, nphi,
-                        &new_evector[movii*NCOMP], &new_moments[movii*NCOMP]);
+                    spherical_tmp[          movii] = nradius;
+                    spherical_tmp[  nprop + movii] = ntheta;
+                    spherical_tmp[2*nprop + movii] = nphi;
 
-                    {MIRROR_LOOP_0}
                 }}
+                //#pragma omp simd
+                for(INT64 movii=0 ; movii<nprop ; movii++){{
+                    const INT64 movi = movii + exclusive_sum[px];
+                    const REAL new_charge = new_charges[movi];
+                    const REAL nradius = spherical_tmp[          movii];
+                    const REAL ntheta  = spherical_tmp[  nprop + movii];
+                    const REAL nphi    = spherical_tmp[2*nprop + movii];
+                    
+                    {EVEC_MULTIPOLE_SRC}
+                }}
+
                 
+                {MIRROR_LOOP_0}
+
+
+                linop_all_csr_both(
+                    nprop,
+                    linop_data,
+                    linop_indptr, 
+                    linop_indices,
+                    new_moments,
+                    new_evector,
+                    spherical_tmp
+                );
+                apply_all_dipole_correction_split(
+                    nprop,
+                    new_moments,
+                    new_evector,
+                    &spherical_tmp[nprop]
+                );
+
+
                 // #pragma omp simd simdlen(8)
                 for(INT64 movii=0 ; movii<nprop ; movii++){{
                     
                     // apply dot product to each proposed move to get energy
                     
-                    REAL new_energy = 0.5 * linop_csr_both(
-                        linop_data, linop_indptr, linop_indices,
-                        &new_moments[movii*NCOMP],
-                        &new_evector[movii*NCOMP]
-                    );
-
-                    //REAL new_energy = 0.5 * linop_csr_both_inline(
-                    //    &new_moments[movii*NCOMP],
-                    //    &new_evector[movii*NCOMP]
-                    //);
-
-                    new_energy += 0.5 * apply_dipole_correction_split(
-                        &new_moments[movii*NCOMP],
-                        &new_evector[movii*NCOMP]
-                    );
+                    REAL new_energy = 0.5 * spherical_tmp[movii];
+                    new_energy += 0.5 * spherical_tmp[nprop + movii]; 
                     
                     out[px*store_stride + movii] += old_energy - new_energy;
 
@@ -733,8 +865,8 @@ class FullLongRangeEnergy(ProfInc):
             EVEC_SRC=self._lee.create_dot_vec_src,
             MIRROR_PRELOOP=mirror_preloop,
             MIRROR_LOOP_0=mirror_loop_0,
-            EVEC_MULTIPOLE_HEADER=self._lee.create_dot_vec_multipole_header,
-            EVEC_MULTIPOLE_SRC=self._lee.create_dot_vec_multipole_src,
+            EVEC_MULTIPOLE_HEADER=dot_vec_header,
+            EVEC_MULTIPOLE_SRC=dot_vec_src,
             CSR_INLINE=csr_inline
         )
 
@@ -756,11 +888,11 @@ class FullLongRangeEnergy(ProfInc):
                 Define('IM_1P1', str(_re_lm(1, 1) + half_ncomp)),
                 Define('IM_1_0', str(_re_lm(1, 0) + half_ncomp)),
                 Define('IM_1N1', str(_re_lm(1,-1) + half_ncomp)),
+                Define('L_LIMIT', str(self.L)),
             ))
         )
 
         _l = simple_lib_creator(header_code=header, src_code=src)['long_range_energy']
-        
         return _l
 
 
@@ -857,3 +989,72 @@ class FullLongRangeEnergy(ProfInc):
         _l = simple_lib_creator(header_code=header, src_code=src)['old_long_range_energy']
         return _l
 
+
+    def _dot_vec_multipole_lib(self):
+
+        # --- lib to create vector to dot product and mutlipole expansions --- 
+
+        def cube_ind(L, M):
+            return ((L) * ( (L) + 1 ) + (M) )
+
+        sph_gen = SphGen(self.L-1, theta_sym='ntheta', phi_sym='nphi', radius_symbol=False)
+
+        assign_gen =  'double rhol = 1.0;\n'
+        assign_gen += 'double rholcharge = rhol * new_charge;\n'
+        flops = {'+': 0, '-': 0, '*': 0, '/': 0}
+
+        for lx in range(self.L):
+            for mx in range(-lx, lx+1):
+
+                assign_gen += 'new_moments[{ind} * nprop + movii] += {ylmm} * rholcharge;\n'.format(
+                        ind=cube_ind(lx, mx),
+                        ylmm=str(sph_gen.get_y_sym(lx, -mx)[0])
+                    )
+                assign_gen += 'new_moments[im_offset + {ind} * nprop + movii] += {ylmm} * rholcharge;\n'.format(
+                        ind=cube_ind(lx, mx),
+                        ylmm=str(sph_gen.get_y_sym(lx, -mx)[1])
+                    )
+                assign_gen += 'new_evector[{ind} * nprop + movii] += {ylmm} * rholcharge;\n'.format(
+                        ind=cube_ind(lx, mx),
+                        ylmm=str(sph_gen.get_y_sym(lx, mx)[0])
+                    )
+                assign_gen += 'new_evector[im_offset + {ind} * nprop + movii] += (-1.0) * {ylmm} * rholcharge;\n'.format(
+                        ind=cube_ind(lx, mx),
+                        ylmm=str(sph_gen.get_y_sym(lx, mx)[1])
+                    )
+
+                flops['+'] += 4
+                flops['*'] += 5
+
+            assign_gen += 'rhol *= nradius;\n'
+            assign_gen += 'rholcharge = rhol * new_charge;\n'
+            flops['*'] += 2
+
+        flops['+'] += sph_gen.flops['*']
+        flops['-'] += sph_gen.flops['*']
+        flops['*'] += sph_gen.flops['*']
+        flops['/'] += sph_gen.flops['*']
+
+        src = """
+            const int im_offset = nprop * HALF_NCOMP;
+            {SPH_GEN}
+            {ASSIGN_GEN}
+        """
+        header = str(sph_gen.header)
+        
+        src_lib = src.format(
+            SPH_GEN=str(sph_gen.module),
+            ASSIGN_GEN=str(assign_gen),
+            IM_OFFSET=(self.L**2),
+            DECLARE='static inline'
+        )
+
+        src = src.format(
+            SPH_GEN=str(sph_gen.module),
+            ASSIGN_GEN=str(assign_gen),
+            IM_OFFSET=(self.L**2),
+            DECLARE=r'extern "C"'
+        )
+
+
+        return header, src_lib, flops

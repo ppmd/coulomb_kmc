@@ -334,28 +334,34 @@ def test_kmc_fmm_pbc_1():
         return _phi_direct
     
     phi_direct = _direct()
+    
+    M = 3
 
     for rx in range(N):
         #pid = 0
         pid = rng.randint(0, N-1)
-        pos = rng.uniform(low=-0.5*E, high=0.5*E, size=3)
+        pos = rng.uniform(low=-0.5*E, high=0.5*E, size=(M, 3))
 
         old_pos = B.P[pid, :].copy()
-        B.P[pid, :] = pos
-        phi_direct = _direct()
-        B.P[pid, :] = old_pos 
+        
+        phi_direct = []
+        for movx in range(M):
+            B.P[pid, :] = pos[movx, :]
+            phi_direct.append(_direct())
+            B.P[pid, :] = old_pos 
         
         prop_energy = kmc_fmm.test_propose(
             moves=((pid, pos),)
         )
         
-        assert abs(phi_direct) > 0
-        # err = min(abs(prop_energy[0][0] - phi_direct)/abs(phi_direct), abs(prop_energy[0][0] - phi_direct))
+        for movx in range(M):
+            assert abs(phi_direct[movx]) > 0
+            # err = min(abs(prop_energy[0][0] - phi_direct)/abs(phi_direct), abs(prop_energy[0][0] - phi_direct))
 
-        err = abs(prop_energy[0][0] - phi_direct)/abs(phi_direct)
+            err = abs(prop_energy[0][movx] - phi_direct[movx])/abs(phi_direct[movx])
 
-        # print(prop_energy[0][0], phi_direct, abs(prop_energy[0][0] - phi_direct))
-        assert err < eps
+            # print(prop_energy[0][0], phi_direct, abs(prop_energy[0][0] - phi_direct))
+            assert err < eps
 
     fmm.free()
     kmc_fmm.free()
