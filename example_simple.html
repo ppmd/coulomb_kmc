@@ -1,0 +1,141 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>propose &#8212; coulomb_kmc 1 documentation</title>
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="_static/graphviz.css" />
+    <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/doctools.js"></script>
+    <script src="_static/language_data.js"></script>
+    <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="accept" href="example_accept.html" />
+    <link rel="prev" title="Bookkeeping" href="example_bookkeeping.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <div class="section" id="propose">
+<h1><strong>propose</strong><a class="headerlink" href="#propose" title="Permalink to this headline">¶</a></h1>
+<p>It is recommended that the <a class="reference internal" href="example_general.html#propose-with-dats"><span class="std std-ref">propose_with_dats</span></a> interface is used.
+There is a simpler (and less efficient) method to propose moves called <code class="docutils literal notranslate"><span class="pre">propose</span></code>.</p>
+<p>Using <code class="docutils literal notranslate"><span class="pre">propose</span></code> proposed moves can be passed to a <code class="docutils literal notranslate"><span class="pre">KMCFMM</span></code> instance as a tuple of proposed moves.
+If a <code class="docutils literal notranslate"><span class="pre">KMCFMM</span></code> instance is created as in <a class="reference internal" href="example_general.html#propose-with-dats"><span class="std std-ref">propose_with_dats</span></a>, then a set of proposed moves can be passed as</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">energies</span> <span class="o">=</span> <span class="n">kmc_fmm</span><span class="o">.</span><span class="n">propose</span><span class="p">(</span>
+    <span class="p">(</span>
+        <span class="n">id_0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(((</span><span class="n">r_00x</span><span class="p">,</span> <span class="n">r_00y</span><span class="p">,</span> <span class="n">r_00z</span><span class="p">),</span>
+                        <span class="p">(</span><span class="n">r_01x</span><span class="p">,</span> <span class="n">r_01y</span><span class="p">,</span> <span class="n">r_01z</span><span class="p">)))</span>
+    <span class="p">),</span>
+    <span class="p">(</span>
+        <span class="n">id_1</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(((</span><span class="n">r_10x</span><span class="p">,</span> <span class="n">r_10y</span><span class="p">,</span> <span class="n">r_10z</span><span class="p">),</span>
+                        <span class="p">(</span><span class="n">r_11x</span><span class="p">,</span> <span class="n">r_11y</span><span class="p">,</span> <span class="n">r_11z</span><span class="p">)))</span>
+    <span class="p">)</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>The particle ids, e.g. <cite>id_0</cite>, are local to the calling MPI rank.
+The call will return a tuple of NumPy arrays that correspond to the proposed moves that were passed.
+These arrays contain the system energy that would result from the proposed move being accepted.</p>
+</div>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">coulomb_kmc</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kmc_fmm.html">FMM-KMC Interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="example_general.html"><strong>propose_with_dats</strong></a></li>
+<li class="toctree-l1"><a class="reference internal" href="example_bookkeeping.html">Bookkeeping</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#"><strong>propose</strong></a></li>
+<li class="toctree-l1"><a class="reference internal" href="example_accept.html"><strong>accept</strong></a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="development_guide.html">Development Guide</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="modules/coulomb_kmc.html">coulomb_kmc package</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="example_bookkeeping.html" title="previous chapter">Bookkeeping</a></li>
+      <li>Next: <a href="example_accept.html" title="next chapter"><strong>accept</strong></a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2019, William Saunders.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 3.2.1</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="_sources/example_simple.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

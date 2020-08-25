@@ -1,0 +1,262 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>coulomb_kmc.kmc_fmm module &#8212; coulomb_kmc 1 documentation</title>
+    <link rel="stylesheet" href="../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css" />
+    <script id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+    <script src="../_static/jquery.js"></script>
+    <script src="../_static/underscore.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <script src="../_static/language_data.js"></script>
+    <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="coulomb_kmc.kmc_fmm_common module" href="coulomb_kmc.kmc_fmm_common.html" />
+    <link rel="prev" title="coulomb_kmc.kmc_expansion_tools module" href="coulomb_kmc.kmc_expansion_tools.html" />
+   
+  <link rel="stylesheet" href="../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <div class="section" id="module-coulomb_kmc.kmc_fmm">
+<span id="coulomb-kmc-kmc-fmm-module"></span><h1>coulomb_kmc.kmc_fmm module<a class="headerlink" href="#module-coulomb_kmc.kmc_fmm" title="Permalink to this headline">¶</a></h1>
+<p>The KMCFMM class is the user facing interface to this implementation of the FMM-KMC algorithm. The underlying algorithm
+of this implementation is described in <em>Fast electrostatic solvers for kinetic Monte Carlo simulations</em>.</p>
+<dl class="py class">
+<dt id="coulomb_kmc.kmc_fmm.KMCFMM">
+<em class="property">class </em><code class="sig-prename descclassname">coulomb_kmc.kmc_fmm.</code><code class="sig-name descname">KMCFMM</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">positions</span></em>, <em class="sig-param"><span class="n">charges</span></em>, <em class="sig-param"><span class="n">domain</span></em>, <em class="sig-param"><span class="n">N</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="n">boundary_condition</span><span class="o">=</span><span class="default_value">'pbc'</span></em>, <em class="sig-param"><span class="n">r</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="n">shell_width</span><span class="o">=</span><span class="default_value">0.0</span></em>, <em class="sig-param"><span class="n">energy_unit</span><span class="o">=</span><span class="default_value">1.0</span></em>, <em class="sig-param"><span class="n">_debug</span><span class="o">=</span><span class="default_value">False</span></em>, <em class="sig-param"><span class="n">l</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="n">max_move</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="n">cuda_direct</span><span class="o">=</span><span class="default_value">False</span></em>, <em class="sig-param"><span class="n">mirror_direction</span><span class="o">=</span><span class="default_value">None</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_fmm.KMCFMM" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">coulomb_kmc.kmc_fmm._PY_KMCFMM</span></code>, <a class="reference internal" href="coulomb_kmc.kmc_inject_extract.html#coulomb_kmc.kmc_inject_extract.InjectorExtractor" title="coulomb_kmc.kmc_inject_extract.InjectorExtractor"><code class="xref py py-class docutils literal notranslate"><span class="pre">coulomb_kmc.kmc_inject_extract.InjectorExtractor</span></code></a></p>
+<p>This class provides the methods required for the electrostatic energy component in a Kinetic Monte Carlo simulation.
+It is applicable to systems that are cubic with free space, fully periodic and (plate like) Dirichlet boundary
+conditions (work in progress).</p>
+<p>A KMCFMM instance should be initialised, which performs the initial FMM solve, by calling the <strong>initialise</strong> 
+method. Furthermore a KMCFMM instance should be freed by calling the <strong>free</strong> method.</p>
+<p>After <strong>initialise</strong> is called the current system energy is given by the <strong>energy</strong> property. Moves can be proposed
+with the <strong>propose</strong> or <strong>propose_with_dats</strong> methods. A move can be accepted by calling the <strong>accept</strong> method.
+When a move is accepted with the <strong>accept</strong> method the move is also enacted in the position PositionDat that
+the KMCFMM instance is initialised with.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>positions</strong> (<em>PositionDat</em>) – PositionDat(ncomp=3, dtype=ctypes.c_double) containing charge positions.</p></li>
+<li><p><strong>charges</strong> (<em>ParticleDat</em>) – ParticleDat(ncomp=1, dtype=ctypes.c_int64) containing charge values.</p></li>
+<li><p><strong>N</strong> (<em>int</em>) – Number of charges.</p></li>
+<li><p><strong>boundary_condition</strong> (<em>str</em>) – Specific boundary condition as one of: ‘pbc’ for periodic boundary conditions, ‘free_space’ for the simulation cell in a vacuum or ‘27’ for the simulation cell and the nearest 26 periodic images in a vacuum.</p></li>
+<li><p><strong>r</strong> (<em>int</em>) – Number of FMM levels (overrides heuristic choice using N).</p></li>
+<li><p><strong>shell_width</strong> (<em>float</em>) – Additional argument for FMM solver, can be left at the default of 0.0.</p></li>
+<li><p><strong>energy_unit</strong> (<em>float</em>) – Energy unit to use, defaults to 1.0.</p></li>
+<li><p><strong>_debug</strong> (<em>bool</em>) – Debugging flag for FMM solver, can be ignored.</p></li>
+<li><p><strong>l</strong> (<em>int</em>) – Number of expansion terms to use for FMM solve and propose/accept operations.</p></li>
+<li><p><strong>max_move</strong> (<em>float</em>) – Maximum distance of a proposed move.</p></li>
+<li><p><strong>cuda_direct</strong> (<em>bool</em>) – Enable CUDA offloading of direct interactions (work in progress).</p></li>
+<li><p><strong>mirror_direction</strong> (<em>tuple</em>) – Tuple of bools, e.g. (True, False, False) to enable mirror charge handling for Dirichlet boundary conditions (work in progress).</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_fmm.KMCFMM.accept">
+<code class="sig-name descname">accept</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">move</span><span class="o">=</span><span class="default_value">None</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_fmm.KMCFMM.accept" title="Permalink to this definition">¶</a></dt>
+<dd><p>Accept a move passed as a tuple (int: px, np.array: new_pos), where px is the
+current particle local id, and new_pos is the new position e.g.
+(46, np.array(1.0, 2.0, 3.0))</p>
+<p>Note this will move the particle in the position dat used in the intialiser.</p>
+<p>If the KMC instance is defined with a mirror direction <cite>move</cite> should be a tuple
+of moves.
+(42, np.array(1.0, 2.0, 3.0)), (84, np.array(-1.0, 2.0, 3.0))</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>move</strong> (<em>tuple</em>) – move to accept</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="coulomb_kmc.kmc_fmm.KMCFMM.energy">
+<code class="sig-name descname">energy</code><a class="headerlink" href="#coulomb_kmc.kmc_fmm.KMCFMM.energy" title="Permalink to this definition">¶</a></dt>
+<dd><p>Total system energy, valid after a call to <strong>initialise</strong>.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_fmm.KMCFMM.eval_field">
+<code class="sig-name descname">eval_field</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">points</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_fmm.KMCFMM.eval_field" title="Permalink to this definition">¶</a></dt>
+<dd><p>For a given (N, 3) NumPy, dtype=ctypes.c_double array of positions computes the potential field at the given
+positions. N.B. The value of energy_unit does not effect the output of this function.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_fmm.KMCFMM.free">
+<code class="sig-name descname">free</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_fmm.KMCFMM.free" title="Permalink to this definition">¶</a></dt>
+<dd><p>Free the KMCFMM instance. Should be called before program termination. Failure to call this method may result in subsequent MPI race conditions.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_fmm.KMCFMM.get_old_energy_with_dats">
+<code class="sig-name descname">get_old_energy_with_dats</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">masks</span></em>, <em class="sig-param"><span class="n">energy</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_fmm.KMCFMM.get_old_energy_with_dats" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the energy of a set of particles, useful for computing extraction and 
+recombination rates. Currently implemented as a proposed hop where the 
+new charge has a value of zero.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_fmm.KMCFMM.initialise">
+<code class="sig-name descname">initialise</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_fmm.KMCFMM.initialise" title="Permalink to this definition">¶</a></dt>
+<dd><p>Perform the initial FMM solve and initialise the KMCFMM instance. Must be called before propose or accept can be called.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_fmm.KMCFMM.propose">
+<code class="sig-name descname">propose</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">moves</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_fmm.KMCFMM.propose" title="Permalink to this definition">¶</a></dt>
+<dd><p>Propose moves by providing the local index of the particle and proposed new sites.
+NB. Returns system energy of proposed moves.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>moves</strong> (<em>tuple</em>) – Tuple of moves where each element is a pair (id, moves_id) where id is a particle id and moves_id is a NumPy array of new positions.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_fmm.KMCFMM.propose_with_dats">
+<code class="sig-name descname">propose_with_dats</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">site_max_counts</span></em>, <em class="sig-param"><span class="n">current_sites</span></em>, <em class="sig-param"><span class="n">prop_positions</span></em>, <em class="sig-param"><span class="n">prop_masks</span></em>, <em class="sig-param"><span class="n">prop_energy_diffs</span></em>, <em class="sig-param"><span class="n">diff</span><span class="o">=</span><span class="default_value">True</span></em>, <em class="sig-param"><span class="n">prop_charges</span><span class="o">=</span><span class="default_value">None</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_fmm.KMCFMM.propose_with_dats" title="Permalink to this definition">¶</a></dt>
+<dd><p>Compute the energy difference that would occur if a proposed move was performed. For this interface each 
+charge exists at a site type. Each site type has a maximum number of proposed moves associated with it.
+The proposed moves are passed in a ParticleDat along with a mask. The change in system energy is returned in
+the ParticleDat prop_energy_diffs.</p>
+<p>A detailed explanation of this interface, including example bookkeeping algorithms, is given in the paper
+<em>Fast electrostatic solvers for kinetic Monte Carlo simulations</em>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>site_max_counts</strong> (<em>ScalarArray</em>) – ScalarArray(dtype=c_int64)      (Input). Max moves associated with site type.</p></li>
+<li><p><strong>current_sites</strong> (<em>ParticleDat</em>) – ParticleDat(dtype=c_int64)      (Input). Store which site each charge is currently on.</p></li>
+<li><p><strong>prop_positions</strong> (<em>ParticleDat</em>) – ParticleDat(dtype=c_double)     (Input). Set of proposed positions for each charge.</p></li>
+<li><p><strong>prop_masks</strong> (<em>ParticleDat</em>) – ParticleDat(dtype=c_int64)      (Input). Energy is computed for moves with mask &gt; 0.</p></li>
+<li><p><strong>prop_energy_diffs</strong> (<em>ParticleDat</em>) – ParticleDat(dtype=c_double)     (Output. Energy (difference) of each proposed move with mask &gt; 0.</p></li>
+<li><p><strong>diff</strong> (<em>bool</em>) – default True. If diff is True then the prop_energy_diffs ParticleDat is populated with energy differences.</p></li>
+<li><p><strong>prop_charges</strong> (<em>ParticleDat</em>) – ParticleDat(dtype=c_double)     (Input). (optional) Set of proposed new charges.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../index.html">coulomb_kmc</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../kmc_fmm.html">FMM-KMC Interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_general.html"><strong>propose_with_dats</strong></a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_bookkeeping.html">Bookkeeping</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_simple.html"><strong>propose</strong></a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_accept.html"><strong>accept</strong></a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../development_guide.html">Development Guide</a></li>
+</ul>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="coulomb_kmc.html">coulomb_kmc package</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="coulomb_kmc.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.common.html">coulomb_kmc.common module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_direct.html">coulomb_kmc.kmc_direct module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_dirichlet_boundary.html">coulomb_kmc.kmc_dirichlet_boundary module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_expansion_tools.html">coulomb_kmc.kmc_expansion_tools module</a></li>
+<li class="toctree-l3 current"><a class="current reference internal" href="#">coulomb_kmc.kmc_fmm module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_fmm_common.html">coulomb_kmc.kmc_fmm_common module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_fmm_self_interaction.html">coulomb_kmc.kmc_fmm_self_interaction module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_full_long_range.html">coulomb_kmc.kmc_full_long_range module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_inject_extract.html">coulomb_kmc.kmc_inject_extract module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_local.html">coulomb_kmc.kmc_local module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_mpi_decomp.html">coulomb_kmc.kmc_mpi_decomp module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_octal.html">coulomb_kmc.kmc_octal module</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../index.html">Documentation overview</a><ul>
+  <li><a href="coulomb_kmc.html">coulomb_kmc package</a><ul>
+      <li>Previous: <a href="coulomb_kmc.kmc_expansion_tools.html" title="previous chapter">coulomb_kmc.kmc_expansion_tools module</a></li>
+      <li>Next: <a href="coulomb_kmc.kmc_fmm_common.html" title="next chapter">coulomb_kmc.kmc_fmm_common module</a></li>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2019, William Saunders.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 3.2.1</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="../_sources/modules/coulomb_kmc.kmc_fmm.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

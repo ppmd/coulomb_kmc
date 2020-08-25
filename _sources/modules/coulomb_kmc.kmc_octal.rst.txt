@@ -1,0 +1,7 @@
+coulomb\_kmc.kmc\_octal module
+==============================
+
+.. automodule:: coulomb_kmc.kmc_octal
+   :members:
+   :undoc-members:
+   :show-inheritance:

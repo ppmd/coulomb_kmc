@@ -1,0 +1,214 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Development Guide &#8212; coulomb_kmc 1 documentation</title>
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="_static/graphviz.css" />
+    <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/doctools.js"></script>
+    <script src="_static/language_data.js"></script>
+    <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="coulomb_kmc package" href="modules/coulomb_kmc.html" />
+    <link rel="prev" title="accept" href="example_accept.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <div class="section" id="development-guide">
+<h1>Development Guide<a class="headerlink" href="#development-guide" title="Permalink to this headline">¶</a></h1>
+<p>The important dependencies between the Python modules is illustrated in the following graph:</p>
+digraph {
+     node [shape=box,style=solid];
+
+     kmc_dirichlet_boundary;
+
+     kmc_fmm -&gt; kmc_local;
+     kmc_fmm -&gt; kmc_full_long_range;
+     kmc_fmm -&gt; kmc_octal;
+     kmc_fmm -&gt; kmc_fmm_self_interaction;
+     kmc_fmm -&gt; kmc_mpi_decomp;
+     kmc_fmm -&gt; kmc_inject_extract;
+
+     kmc_fmm                -&gt; kmc_fmm_common;
+     kmc_local              -&gt; kmc_fmm_common;
+     kmc_full_long_range    -&gt; kmc_fmm_common;
+     kmc_octal              -&gt; kmc_fmm_common;
+     kmc_mpi_decomp         -&gt; kmc_fmm_common;
+
+     kmc_inject_extract -&gt; kmc_direct;
+
+     kmc_fmm                -&gt; kmc_expansion_tools;
+     kmc_direct             -&gt; kmc_expansion_tools;
+     kmc_octal              -&gt; kmc_expansion_tools;
+     kmc_inject_extract     -&gt; kmc_expansion_tools;
+
+}<p>We now give a brief description of the functionality provided in each module.</p>
+<div class="section" id="kmc-fmm">
+<h2>kmc_fmm<a class="headerlink" href="#kmc-fmm" title="Permalink to this headline">¶</a></h2>
+<p>Provides the main <code class="docutils literal notranslate"><span class="pre">KMCFMM</span></code> class which, by default, defines the <code class="docutils literal notranslate"><span class="pre">initialise</span></code>, <code class="docutils literal notranslate"><span class="pre">propose</span></code>, <code class="docutils literal notranslate"><span class="pre">propose_with_dats</span></code> and <code class="docutils literal notranslate"><span class="pre">accept</span></code> interfaces.
+When <code class="docutils literal notranslate"><span class="pre">initialise</span></code> is called a FMM solver from <code class="docutils literal notranslate"><span class="pre">PPMD</span></code> is created and called to compute the initial system energy and construct the initial local expansions.
+A instance of <code class="docutils literal notranslate"><span class="pre">FMMMPIDecomp</span></code> is created to handle the MPI decomposition of the domain.
+As part of the initialisation process the data structures for direct interactions are initialised using <code class="docutils literal notranslate"><span class="pre">kmc_local</span></code> along with data structures for indirect interactions using <code class="docutils literal notranslate"><span class="pre">kmc_octal</span></code>.
+Long range interactions are initialised using <code class="docutils literal notranslate"><span class="pre">kmc_full_long_range</span></code> and the self interactions are initialised using the <code class="docutils literal notranslate"><span class="pre">kmc_self_interaction</span></code> module.</p>
+<p>Periodic boundary conditions are enacted by splitting the domain into two sets of periodic images.
+The first is the inner set which is formed from the primary image and its nearest neighbours.
+In the inner set energy differences from proposed moves are computed by considering the change in potential field of a move.
+i.e. the difference is calculated in both the indirect and direct parts, as opposed to computing the new energy of the new configuration and subtracting the old energy.
+In the second “far-field” set of periodic images, the new energy is computed in full for each proposed move.
+This splitting approach is why the FMM solver from <code class="docutils literal notranslate"><span class="pre">PPMD</span></code> is used in “27” mode even for the fully periodic case.</p>
+</div>
+<div class="section" id="kmc-dirichlet-boundary">
+<h2>kmc_dirichlet_boundary<a class="headerlink" href="#kmc-dirichlet-boundary" title="Permalink to this headline">¶</a></h2>
+<p>This is a helper module contains the class <code class="docutils literal notranslate"><span class="pre">MirrorChargeSystem</span></code> that aids the construction of systems where each input charge is mirrored in the z-direction such that the potential field is zeroed on the z boundaries.</p>
+</div>
+<div class="section" id="kmc-mpi-decomp">
+<h2>kmc_mpi_decomp<a class="headerlink" href="#kmc-mpi-decomp" title="Permalink to this headline">¶</a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">FMMMPIDecomp</span></code> class performs a domain decomposition of the domain over the MPI ranks. This decomposition step determines which local expansions are required by each rank by taking into account the maximum move size. This class also provides the <code class="docutils literal notranslate"><span class="pre">setup_propose</span></code> method which translates passed proposed moves, in either the <code class="docutils literal notranslate"><span class="pre">propose</span></code> or <code class="docutils literal notranslate"><span class="pre">propose_with_dats</span></code> format, into an internal format that can be passed to the modules that handle the indirect, direct, long-range and self interaction components.</p>
+</div>
+<div class="section" id="kmc-octal">
+<h2>kmc_octal<a class="headerlink" href="#kmc-octal" title="Permalink to this headline">¶</a></h2>
+<p>The class <code class="docutils literal notranslate"><span class="pre">LocalCellExpansions</span></code> handles the interactions through local expansions for the primary image and its nearest 26 neighbours. At initialisation the required expansions are copied from the owning rank in the FMM solver using MPI RMA operations.
+Proposed moves are passed using the format specified in <code class="docutils literal notranslate"><span class="pre">kmc_mpi_decomp</span></code>.</p>
+</div>
+<div class="section" id="kmc-local">
+<h2>kmc_local<a class="headerlink" href="#kmc-local" title="Permalink to this headline">¶</a></h2>
+<p>The class <code class="docutils literal notranslate"><span class="pre">LocalParticleData</span></code> computes direct interactions between charges. At initialisation particle positions and charges are copied into local data structures. Proposed moves are passed in the standard format specified in <code class="docutils literal notranslate"><span class="pre">kmc_mpi_decomp</span></code>.</p>
+</div>
+<div class="section" id="kmc-fmm-self-interaction">
+<h2>kmc_fmm_self_interaction<a class="headerlink" href="#kmc-fmm-self-interaction" title="Permalink to this headline">¶</a></h2>
+<p>When moves are proposed the new energy contains a self interaction contribution that should be subtracted. This module computes the self interactions between the new position and the old images in the primary image and its nearest neighbours. There are no spurious contributions from further away periodic images as these images are handled “in full” by the <code class="docutils literal notranslate"><span class="pre">kmc_full_long_range</span></code> module.</p>
+</div>
+<div class="section" id="kmc-full-long-range">
+<h2>kmc_full_long_range<a class="headerlink" href="#kmc-full-long-range" title="Permalink to this headline">¶</a></h2>
+<p>Computes the far-field contribution for proposed moves (and initialisation). The main class <code class="docutils literal notranslate"><span class="pre">FullLongRangeEnergy</span></code> maintains the level zero multipole expansion for the original charge locations in the domain. When a move is proposed the current contribution for the moving charge is subtracted and the new contribution is added. The long range multipole to local operator is applied to give the local expansion for the far-field contribution.</p>
+<p>The class also maintains the vector of coefficients that when used in a dot product with the far-field local expansion give the far-field energy contribution. As with the multipole expansion, the current contribution of the moving charge is subtracted from this vector and the new contribution added. The new set of coefficients is then used to compute the proposed far-field contribution.</p>
+</div>
+<div class="section" id="kmc-inject-extract">
+<h2>kmc_inject_extract<a class="headerlink" href="#kmc-inject-extract" title="Permalink to this headline">¶</a></h2>
+<p>Contains a parent class that when inherited adds the <code class="docutils literal notranslate"><span class="pre">propose_inject</span></code>, <code class="docutils literal notranslate"><span class="pre">inject</span></code>, <code class="docutils literal notranslate"><span class="pre">propose_extract</span></code> and <code class="docutils literal notranslate"><span class="pre">extract</span></code> methods to the <code class="docutils literal notranslate"><span class="pre">KMCFMM</span></code> class. When extractions/injections are proposed this class uses functionality in <code class="docutils literal notranslate"><span class="pre">kmc_direct</span></code> to compute the self energy of the involved group of charges. In general, this self energy is non-zero when the group of charges involved contains more than one charge. As we only allow injections and extractions in mirror mode there is always a self energy term.</p>
+<p>This module also contains the <code class="docutils literal notranslate"><span class="pre">DiscoverInjectExtract</span></code> class which, at each iteration,  finds empty inject sites and charges that exist on extract sites. Critically, these methods assume that the number of inject and extract sites is small in comparison to the number of charges in the simulation.</p>
+</div>
+<div class="section" id="kmc-direct">
+<h2>kmc_direct<a class="headerlink" href="#kmc-direct" title="Permalink to this headline">¶</a></h2>
+<p>Contains electrostatic solvers for systems containing small numbers of charges. i.e. small enough that direct methods are the most efficient to compute the electrostatic energy of the system. Along with testing, these methods are used to compute the self energy of groups of charges in inject and extract scenarios.</p>
+</div>
+<div class="section" id="kmc-expansion-tools">
+<h2>kmc_expansion_tools<a class="headerlink" href="#kmc-expansion-tools" title="Permalink to this headline">¶</a></h2>
+<p>Contains methods to generate code that computes and evaluates local and multipole expansions. This functionality should (and is) be merged into <code class="docutils literal notranslate"><span class="pre">PPMD</span></code>.</p>
+</div>
+</div>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">coulomb_kmc</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kmc_fmm.html">FMM-KMC Interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="example_general.html"><strong>propose_with_dats</strong></a></li>
+<li class="toctree-l1"><a class="reference internal" href="example_bookkeeping.html">Bookkeeping</a></li>
+<li class="toctree-l1"><a class="reference internal" href="example_simple.html"><strong>propose</strong></a></li>
+<li class="toctree-l1"><a class="reference internal" href="example_accept.html"><strong>accept</strong></a></li>
+</ul>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Development Guide</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#kmc-fmm">kmc_fmm</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#kmc-dirichlet-boundary">kmc_dirichlet_boundary</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#kmc-mpi-decomp">kmc_mpi_decomp</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#kmc-octal">kmc_octal</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#kmc-local">kmc_local</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#kmc-fmm-self-interaction">kmc_fmm_self_interaction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#kmc-full-long-range">kmc_full_long_range</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#kmc-inject-extract">kmc_inject_extract</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#kmc-direct">kmc_direct</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#kmc-expansion-tools">kmc_expansion_tools</a></li>
+</ul>
+</li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="modules/coulomb_kmc.html">coulomb_kmc package</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="example_accept.html" title="previous chapter"><strong>accept</strong></a></li>
+      <li>Next: <a href="modules/coulomb_kmc.html" title="next chapter">coulomb_kmc package</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2019, William Saunders.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 3.2.1</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="_sources/development_guide.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

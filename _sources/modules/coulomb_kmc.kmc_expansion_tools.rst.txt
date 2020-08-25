@@ -1,0 +1,7 @@
+coulomb\_kmc.kmc\_expansion\_tools module
+=========================================
+
+.. automodule:: coulomb_kmc.kmc_expansion_tools
+   :members:
+   :undoc-members:
+   :show-inheritance:

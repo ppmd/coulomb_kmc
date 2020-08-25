@@ -1,0 +1,7 @@
+coulomb\_kmc.kmc\_dirichlet\_boundary module
+============================================
+
+.. automodule:: coulomb_kmc.kmc_dirichlet_boundary
+   :members:
+   :undoc-members:
+   :show-inheritance:

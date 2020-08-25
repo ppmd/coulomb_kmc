@@ -1,0 +1,270 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>coulomb_kmc.kmc_inject_extract module &#8212; coulomb_kmc 1 documentation</title>
+    <link rel="stylesheet" href="../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css" />
+    <script id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+    <script src="../_static/jquery.js"></script>
+    <script src="../_static/underscore.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <script src="../_static/language_data.js"></script>
+    <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="coulomb_kmc.kmc_local module" href="coulomb_kmc.kmc_local.html" />
+    <link rel="prev" title="coulomb_kmc.kmc_full_long_range module" href="coulomb_kmc.kmc_full_long_range.html" />
+   
+  <link rel="stylesheet" href="../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <div class="section" id="module-coulomb_kmc.kmc_inject_extract">
+<span id="coulomb-kmc-kmc-inject-extract-module"></span><h1>coulomb_kmc.kmc_inject_extract module<a class="headerlink" href="#module-coulomb_kmc.kmc_inject_extract" title="Permalink to this headline">¶</a></h1>
+<p>Module to handle injection and extraction of charges from a PyFMM instance.</p>
+<p>Currently implemented for 1 MPI rank only.</p>
+<dl class="py class">
+<dt id="coulomb_kmc.kmc_inject_extract.DiscoverInjectExtract">
+<em class="property">class </em><code class="sig-prename descclassname">coulomb_kmc.kmc_inject_extract.</code><code class="sig-name descname">DiscoverInjectExtract</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">inject_sites</span></em>, <em class="sig-param"><span class="n">extract_sites</span></em>, <em class="sig-param"><span class="n">positions</span></em>, <em class="sig-param"><span class="n">extract_flag</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_inject_extract.DiscoverInjectExtract" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>class to identify particles which are on sites where they can be extracted
+from and empty sites where particles can be injected.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>inject_sites</strong> – Tuple <cite>((r_x, r_y, r_z),…</cite> where particles can be injected.</p></li>
+<li><p><strong>extract_sites</strong> – Tuple of positions where charges can be extracted from.</p></li>
+<li><p><strong>positions</strong> – PositionDat to use for particle positions.</p></li>
+<li><p><strong>extract_flag</strong> – <cite>ParticleDat(ncomp=1, dtype=INT64)</cite> to use for marking potential extractions.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt id="coulomb_kmc.kmc_inject_extract.InjectorExtractor">
+<em class="property">class </em><code class="sig-prename descclassname">coulomb_kmc.kmc_inject_extract.</code><code class="sig-name descname">InjectorExtractor</code><a class="headerlink" href="#coulomb_kmc.kmc_inject_extract.InjectorExtractor" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="coulomb_kmc.common.html#coulomb_kmc.common.ProfInc" title="coulomb_kmc.common.ProfInc"><code class="xref py py-class docutils literal notranslate"><span class="pre">coulomb_kmc.common.ProfInc</span></code></a></p>
+<p>Class to propose and accept the injection and extraction of charges. 
+Is inherited by KMCFMM.</p>
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_inject_extract.InjectorExtractor.compute_energy">
+<code class="sig-name descname">compute_energy</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">positions</span></em>, <em class="sig-param"><span class="n">charges</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_inject_extract.InjectorExtractor.compute_energy" title="Permalink to this definition">¶</a></dt>
+<dd><p>Compute the energy of a set of charges in a domain.
+Assumes that the number of charges is small.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>positions</strong> – Nx3, c_double NumPy array of positiions.</p></li>
+<li><p><strong>charges</strong> – Nx1, c_double NumPy array of charge values.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_inject_extract.InjectorExtractor.extract">
+<code class="sig-name descname">extract</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">ids</span><span class="o">=</span><span class="default_value">()</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_inject_extract.InjectorExtractor.extract" title="Permalink to this definition">¶</a></dt>
+<dd><p>Extract the set of charges given by local ids.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>ids</strong> – Iterable of particle local ids to remove.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_inject_extract.InjectorExtractor.get_energy">
+<code class="sig-name descname">get_energy</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">ids</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_inject_extract.InjectorExtractor.get_energy" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the energy of each charge in the iterable ids.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>ids</strong> – Local ids of charges.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_inject_extract.InjectorExtractor.get_energy_with_dats">
+<code class="sig-name descname">get_energy_with_dats</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">masks</span></em>, <em class="sig-param"><span class="n">energy</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_inject_extract.InjectorExtractor.get_energy_with_dats" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the current energy conribution of the charges with positive mask values.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>masks</strong> – ParticleDat(ncomp=1, dtype=c_int64) (Input) Indicate the relevant charges.</p></li>
+<li><p><strong>energy</strong> – ParticleDat(ncomp=1, dtype=c_double) (Output) Storage for energy contribution.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_inject_extract.InjectorExtractor.inject">
+<code class="sig-name descname">inject</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">add</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_inject_extract.InjectorExtractor.inject" title="Permalink to this definition">¶</a></dt>
+<dd><p>Inject a set of charges. e.g.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">kmc</span> <span class="o">=</span> <span class="n">KMCFMM</span><span class="p">(</span><span class="o">....</span><span class="p">)</span>
+<span class="n">kmc</span><span class="o">.</span><span class="n">inject</span><span class="p">({</span>
+    <span class="n">A</span><span class="o">.</span><span class="n">P</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">((</span>
+        <span class="p">(</span><span class="n">r_x1</span><span class="p">,</span> <span class="n">r_y1</span><span class="p">,</span> <span class="n">r_z1</span><span class="p">),</span>
+        <span class="p">(</span><span class="n">r_x2</span><span class="p">,</span> <span class="n">r_y2</span><span class="p">,</span> <span class="n">r_z2</span><span class="p">),</span>
+    <span class="p">)),</span>
+    <span class="n">A</span><span class="o">.</span><span class="n">Q</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(((</span><span class="o">-</span><span class="mf">1.0</span><span class="p">),</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">))),</span>
+    <span class="o">..</span>
+<span class="p">})</span>
+</pre></div>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>add</strong> – Dictonary of the style of <cite>state.modifier.add</cite>.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_inject_extract.InjectorExtractor.propose_extract">
+<code class="sig-name descname">propose_extract</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">ids</span></em>, <em class="sig-param"><span class="n">self_energy</span><span class="o">=</span><span class="default_value">True</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_inject_extract.InjectorExtractor.propose_extract" title="Permalink to this definition">¶</a></dt>
+<dd><p>Propose the extraction of a set of charges by providing the local
+particle ids. Returns the change of energy if the charges were
+removed.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>ids</strong> – Iterable of local charge id to remove.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_inject_extract.InjectorExtractor.propose_inject">
+<code class="sig-name descname">propose_inject</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">positions</span></em>, <em class="sig-param"><span class="n">charges</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_inject_extract.InjectorExtractor.propose_inject" title="Permalink to this definition">¶</a></dt>
+<dd><p>Propose the injection of a set of charges. Returns the change in system
+energy if the set of charges were added.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>positions</strong> – New charge positions.</p></li>
+<li><p><strong>charges</strong> – New charge values.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../index.html">coulomb_kmc</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../kmc_fmm.html">FMM-KMC Interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_general.html"><strong>propose_with_dats</strong></a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_bookkeeping.html">Bookkeeping</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_simple.html"><strong>propose</strong></a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_accept.html"><strong>accept</strong></a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../development_guide.html">Development Guide</a></li>
+</ul>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="coulomb_kmc.html">coulomb_kmc package</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="coulomb_kmc.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.common.html">coulomb_kmc.common module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_direct.html">coulomb_kmc.kmc_direct module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_dirichlet_boundary.html">coulomb_kmc.kmc_dirichlet_boundary module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_expansion_tools.html">coulomb_kmc.kmc_expansion_tools module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_fmm.html">coulomb_kmc.kmc_fmm module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_fmm_common.html">coulomb_kmc.kmc_fmm_common module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_fmm_self_interaction.html">coulomb_kmc.kmc_fmm_self_interaction module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_full_long_range.html">coulomb_kmc.kmc_full_long_range module</a></li>
+<li class="toctree-l3 current"><a class="current reference internal" href="#">coulomb_kmc.kmc_inject_extract module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_local.html">coulomb_kmc.kmc_local module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_mpi_decomp.html">coulomb_kmc.kmc_mpi_decomp module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_octal.html">coulomb_kmc.kmc_octal module</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../index.html">Documentation overview</a><ul>
+  <li><a href="coulomb_kmc.html">coulomb_kmc package</a><ul>
+      <li>Previous: <a href="coulomb_kmc.kmc_full_long_range.html" title="previous chapter">coulomb_kmc.kmc_full_long_range module</a></li>
+      <li>Next: <a href="coulomb_kmc.kmc_local.html" title="next chapter">coulomb_kmc.kmc_local module</a></li>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2019, William Saunders.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 3.2.1</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="../_sources/modules/coulomb_kmc.kmc_inject_extract.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

@@ -1,0 +1,26 @@
+coulomb\_kmc package
+====================
+
+.. automodule:: coulomb_kmc
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 4
+
+   coulomb_kmc.common
+   coulomb_kmc.kmc_direct
+   coulomb_kmc.kmc_dirichlet_boundary
+   coulomb_kmc.kmc_expansion_tools
+   coulomb_kmc.kmc_fmm
+   coulomb_kmc.kmc_fmm_common
+   coulomb_kmc.kmc_fmm_self_interaction
+   coulomb_kmc.kmc_full_long_range
+   coulomb_kmc.kmc_inject_extract
+   coulomb_kmc.kmc_local
+   coulomb_kmc.kmc_mpi_decomp
+   coulomb_kmc.kmc_octal

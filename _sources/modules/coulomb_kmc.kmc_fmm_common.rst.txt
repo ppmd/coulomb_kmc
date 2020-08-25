@@ -1,0 +1,7 @@
+coulomb\_kmc.kmc\_fmm\_common module
+====================================
+
+.. automodule:: coulomb_kmc.kmc_fmm_common
+   :members:
+   :undoc-members:
+   :show-inheritance:

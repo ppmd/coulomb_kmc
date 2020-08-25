@@ -1,0 +1,7 @@
+coulomb\_kmc.kmc\_inject\_extract module
+========================================
+
+.. automodule:: coulomb_kmc.kmc_inject_extract
+   :members:
+   :undoc-members:
+   :show-inheritance:

@@ -1,0 +1,297 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bookkeeping &#8212; coulomb_kmc 1 documentation</title>
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="_static/graphviz.css" />
+    <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/doctools.js"></script>
+    <script src="_static/language_data.js"></script>
+    <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="propose" href="example_simple.html" />
+    <link rel="prev" title="propose_with_dats" href="example_general.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <div class="section" id="bookkeeping">
+<h1>Bookkeeping<a class="headerlink" href="#bookkeeping" title="Permalink to this headline">¶</a></h1>
+<p>Here we describe how to implement Algorithm 2 in  <em>Fast electrostatic solvers for kinetic Monte Carlo simulations</em> with a ParticleLoop and a PairLoop.
+The ParticleLoop and PairLoop are the fundamental looping operations of the performance-portable framework for Molecular Dynamics (PPMD) <a class="reference external" href="https://github.com/ppmd/ppmd">https://github.com/ppmd/ppmd</a>.
+We use the following definitions for ParticleLoop and PairLoop.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">ParticleLoop</span> <span class="o">=</span> <span class="n">loop</span><span class="o">.</span><span class="n">ParticleLoopOMP</span>
+<span class="n">PairLoop</span> <span class="o">=</span> <span class="n">pairloop</span><span class="o">.</span><span class="n">CellByCellOMP</span>
+</pre></div>
+</div>
+<p>We assume a state <code class="docutils literal notranslate"><span class="pre">A</span></code> is initialised as follows, as described in <a class="reference internal" href="example_general.html#propose-with-dats"><span class="std std-ref">propose_with_dats</span></a>.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create a state &quot;A&quot;</span>
+
+<span class="n">A</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">State</span><span class="p">()</span>
+
+<span class="c1"># Set the number of particles</span>
+<span class="n">A</span><span class="o">.</span><span class="n">npart</span> <span class="o">=</span> <span class="n">N</span>
+
+<span class="c1"># Set the domain (must be cubic)</span>
+<span class="n">A</span><span class="o">.</span><span class="n">domain</span> <span class="o">=</span> <span class="n">domain</span><span class="o">.</span><span class="n">BaseDomainHalo</span><span class="p">(</span><span class="n">extent</span><span class="o">=</span><span class="p">(</span><span class="n">E</span><span class="p">,</span><span class="n">E</span><span class="p">,</span><span class="n">E</span><span class="p">))</span>
+<span class="c1"># set the boundary condition for the domain (note this does not</span>
+<span class="c1"># set the domain for the FMMKMC)</span>
+<span class="n">A</span><span class="o">.</span><span class="n">domain</span><span class="o">.</span><span class="n">boundary_condition</span> <span class="o">=</span> <span class="n">domain</span><span class="o">.</span><span class="n">BoundaryTypePeriodic</span><span class="p">()</span>
+
+<span class="c1"># Create a PositionDat for particle positions and a ParticleDat</span>
+<span class="c1"># for particle charge values</span>
+<span class="n">A</span><span class="o">.</span><span class="n">P</span> <span class="o">=</span> <span class="n">PositionDat</span><span class="p">(</span><span class="n">ncomp</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+<span class="n">A</span><span class="o">.</span><span class="n">Q</span> <span class="o">=</span> <span class="n">ParticleDat</span><span class="p">(</span><span class="n">ncomp</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="c1"># Create dats for other desired properties such as global id</span>
+<span class="n">A</span><span class="o">.</span><span class="n">GID</span> <span class="o">=</span> <span class="n">ParticleDat</span><span class="p">(</span><span class="n">ncomp</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">INT64</span><span class="p">)</span>
+
+<span class="c1"># ParticleDat for ``current_sites``</span>
+<span class="n">A</span><span class="o">.</span><span class="n">sites</span> <span class="o">=</span> <span class="n">ParticleDat</span><span class="p">(</span><span class="n">ncomp</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">INT64</span><span class="p">)</span>
+<span class="c1"># ParticleDat for ``prop_positions``</span>
+<span class="n">A</span><span class="o">.</span><span class="n">prop_positions</span> <span class="o">=</span> <span class="n">ParticleDat</span><span class="p">(</span><span class="n">ncomp</span><span class="o">=</span><span class="n">M</span><span class="o">*</span><span class="mi">3</span><span class="p">)</span>
+<span class="c1"># ParticleDat for ``prop_masks``</span>
+<span class="n">A</span><span class="o">.</span><span class="n">prop_masks</span> <span class="o">=</span> <span class="n">ParticleDat</span><span class="p">(</span><span class="n">ncomp</span><span class="o">=</span><span class="n">M</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">INT64</span><span class="p">)</span>
+<span class="c1"># ParticleDat for ``prop_energy_diffs``</span>
+<span class="n">A</span><span class="o">.</span><span class="n">prop_diffs</span> <span class="o">=</span> <span class="n">ParticleDat</span><span class="p">(</span><span class="n">ncomp</span><span class="o">=</span><span class="n">M</span><span class="p">)</span>
+
+<span class="c1"># ScalarArray that holds the number of moves per site type</span>
+<span class="c1"># this example uses a cubic lattice with one site type,</span>
+<span class="n">site_max_counts</span> <span class="o">=</span> <span class="n">ScalarArray</span><span class="p">(</span><span class="n">ncomp</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">INT64</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The first step of the algorithm is to loop over all particles and populate the ParticleDat <code class="docutils literal notranslate"><span class="pre">prop_positions</span></code> with a ParticleLoop.
+In this example the particles move on a cubic lattice.
+The set of proposed moves are computed by taking the current particle position and adding an offset for each proposed position. In this example there are <code class="docutils literal notranslate"><span class="pre">M</span></code> proposed positions for each site (and <code class="docutils literal notranslate"><span class="pre">M</span></code> corresponding offsets).</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># make proposed positions kernel</span>
+<span class="n">prop_pos_kernel_src</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;&#39;&#39;</span>
+<span class="s1">// current pos</span>
+<span class="s1">const double p0 = P.i[0];</span>
+<span class="s1">const double p1 = P.i[1];</span>
+<span class="s1">const double p2 = P.i[2];</span>
+
+<span class="s1">// reset mask</span>
+<span class="s1">for (int mx=0 ; mx&lt;M ; mx++){</span>
+<span class="s1">    MASK.i[mx] = 1;</span>
+<span class="s1">}</span>
+
+<span class="s1">// form proposed positions from offsets</span>
+<span class="s1">for (int mx=0 ; mx&lt; M ; mx++){</span>
+<span class="s1">    double n0 = p0 + OA[mx*3 + 0];</span>
+<span class="s1">    double n1 = p1 + OA[mx*3 + 1];</span>
+<span class="s1">    double n2 = p2 + OA[mx*3 + 2];</span>
+
+<span class="s1">    // wrap positions into domain</span>
+<span class="s1">    if ( n0 &lt; LOWER ) { n0 += EXTENT; }</span>
+<span class="s1">    if ( n1 &lt; LOWER ) { n1 += EXTENT; }</span>
+<span class="s1">    if ( n2 &lt; LOWER ) { n2 += EXTENT; }</span>
+<span class="s1">    if ( n0 &gt; UPPER ) { n0 -= EXTENT; }</span>
+<span class="s1">    if ( n1 &gt; UPPER ) { n1 -= EXTENT; }</span>
+<span class="s1">    if ( n2 &gt; UPPER ) { n2 -= EXTENT; }</span>
+
+<span class="s1">    PP.i[mx*3 + 0] = n0;</span>
+<span class="s1">    PP.i[mx*3 + 1] = n1;</span>
+<span class="s1">    PP.i[mx*3 + 2] = n2;</span>
+<span class="s1">}</span>
+<span class="s1">&#39;&#39;&#39;</span>
+
+<span class="c1"># create a kernel from the kernel source</span>
+<span class="n">prop_pos_kernel</span> <span class="o">=</span> <span class="n">kernel</span><span class="o">.</span><span class="n">Kernel</span><span class="p">(</span>
+    <span class="s1">&#39;prop_pos_kernel&#39;</span><span class="p">,</span>
+    <span class="n">prop_pos_kernel_src</span><span class="p">,</span>
+    <span class="n">constants</span><span class="o">=</span><span class="p">(</span>
+        <span class="n">Constant</span><span class="p">(</span><span class="s1">&#39;M&#39;</span><span class="p">,</span> <span class="n">M</span><span class="p">),</span>
+        <span class="n">Constant</span><span class="p">(</span><span class="s1">&#39;LOWER&#39;</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">E</span><span class="p">),</span>
+        <span class="n">Constant</span><span class="p">(</span><span class="s1">&#39;UPPER&#39;</span><span class="p">,</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">E</span><span class="p">),</span>
+        <span class="n">Constant</span><span class="p">(</span><span class="s1">&#39;EXTENT&#39;</span><span class="p">,</span> <span class="n">E</span><span class="p">)</span>
+    <span class="p">)</span>
+<span class="p">)</span>
+
+<span class="c1"># create a ParticleLoop from the kernel</span>
+<span class="n">prop_pos</span> <span class="o">=</span> <span class="n">ParticleLoop</span><span class="p">(</span>
+    <span class="n">kernel</span><span class="o">=</span><span class="n">prop_pos_kernel</span><span class="p">,</span>
+    <span class="n">dat_dict</span><span class="o">=</span><span class="p">{</span>
+        <span class="s1">&#39;P&#39;</span>     <span class="p">:</span> <span class="n">A</span><span class="o">.</span><span class="n">P</span><span class="p">(</span><span class="n">READ</span><span class="p">),</span>
+        <span class="s1">&#39;PP&#39;</span>    <span class="p">:</span> <span class="n">A</span><span class="o">.</span><span class="n">prop_positions</span><span class="p">(</span><span class="n">WRITE</span><span class="p">),</span>
+        <span class="s1">&#39;OA&#39;</span>    <span class="p">:</span> <span class="n">offsets_sa</span><span class="p">(</span><span class="n">READ</span><span class="p">),</span>
+        <span class="s1">&#39;MASK&#39;</span>  <span class="p">:</span> <span class="n">A</span><span class="o">.</span><span class="n">prop_masks</span><span class="p">(</span><span class="n">WRITE</span><span class="p">)</span>
+    <span class="p">}</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>The ParticleLoop <code class="docutils literal notranslate"><span class="pre">prop_pos</span></code> is executed by calling</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">prop_pos</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>Now that the proposed positions are stored in <code class="docutils literal notranslate"><span class="pre">prop_pos</span></code> we remove proposed moves that would result in particle overlap by masking off “bad” moves.
+We discover potential overlaps with the PairLoop operation.
+For each particle we loop over neighbouring particles within <code class="docutils literal notranslate"><span class="pre">max_move</span></code> and check for an overlap with the proposed moves.
+If an overlap is detected then the corresponding move is removed by setting <code class="docutils literal notranslate"><span class="pre">prop_masks</span></code> to a value less than 1 for that move.
+We allow for any value less than 1 such that recombination events can be identified, the current FMM-KMC implementation does not support recombination.</p>
+<p>We provide now the example kernel to mask off proposed moves that would cause an overlap. It is important to note that PPMD <strong>does not</strong> wrap particle positions around the periodic boundary.
+To be explicit: if a particle has a <span class="math notranslate nohighlight">\(x\)</span> position of <span class="math notranslate nohighlight">\(-0.5E + \delta\)</span> then it will be exposed with a <span class="math notranslate nohighlight">\(x\)</span> position of <span class="math notranslate nohighlight">\(0.5E + \delta\)</span> when observed over the periodic boundary in a PairLoop.
+This convention avoids the use of conditionals in PairLoops for inter-particle interactions, which is the primary use case of the PPMD framework.</p>
+<p>Bearing this in mind, we recompute the proposed moves for each particle for each neighbour, without wrapping around the boundary, and then compare particle positions.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># make exclude kernel</span>
+
+<span class="n">exclude_kernel_src</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;&#39;&#39;</span>
+<span class="s1">// current position of particle i</span>
+<span class="s1">const double p0 = P.i[0];</span>
+<span class="s1">const double p1 = P.i[1];</span>
+<span class="s1">const double p2 = P.i[2];</span>
+
+<span class="s1">// read particle j position</span>
+<span class="s1">const double pj0 = P.j[0];</span>
+<span class="s1">const double pj1 = P.j[1];</span>
+<span class="s1">const double pj2 = P.j[2];</span>
+
+<span class="s1">// check each proposed position</span>
+<span class="s1">for (int mx=0 ; mx&lt; M ; mx++){</span>
+
+<span class="s1">    // form the proposed position without wrapping</span>
+<span class="s1">    double n0 = p0 + OA[mx*3 + 0];</span>
+<span class="s1">    double n1 = p1 + OA[mx*3 + 1];</span>
+<span class="s1">    double n2 = p2 + OA[mx*3 + 2];</span>
+
+<span class="s1">    // difference to particle j position</span>
+<span class="s1">    const double d0 = pj0 - n0;</span>
+<span class="s1">    const double d1 = pj1 - n1;</span>
+<span class="s1">    const double d2 = pj2 - n2;</span>
+
+<span class="s1">    // if they overlap, mask off the position</span>
+<span class="s1">    const double r2 = d0*d0 + d1*d1 + d2*d2;</span>
+
+<span class="s1">    // using a ternary operator aids autovectorisation.</span>
+<span class="s1">    MASK.i[mx] = (r2 &lt; TOL) ? 0 : MASK.i[mx];</span>
+<span class="s1">}</span>
+<span class="s1">&#39;&#39;&#39;</span>
+
+<span class="c1"># create kernel from kernel source</span>
+<span class="n">exclude_kernel</span> <span class="o">=</span> <span class="n">kernel</span><span class="o">.</span><span class="n">Kernel</span><span class="p">(</span>
+    <span class="s1">&#39;exclude_kernel&#39;</span><span class="p">,</span>
+    <span class="n">exclude_kernel_src</span><span class="p">,</span>
+    <span class="n">constants</span><span class="o">=</span><span class="p">(</span>
+        <span class="n">Constant</span><span class="p">(</span><span class="s1">&#39;M&#39;</span><span class="p">,</span> <span class="n">M</span><span class="p">),</span>
+        <span class="n">Constant</span><span class="p">(</span><span class="s1">&#39;TOL&#39;</span><span class="p">,</span> <span class="mf">0.01</span><span class="p">)</span>
+    <span class="p">)</span>
+<span class="p">)</span>
+
+<span class="c1"># create pairloop from kernel</span>
+<span class="n">exclude</span> <span class="o">=</span> <span class="n">PairLoop</span><span class="p">(</span>
+    <span class="n">kernel</span><span class="o">=</span><span class="n">exclude_kernel</span><span class="p">,</span>
+    <span class="n">dat_dict</span><span class="o">=</span><span class="p">{</span>
+        <span class="s1">&#39;P&#39;</span>     <span class="p">:</span> <span class="n">A</span><span class="o">.</span><span class="n">P</span><span class="p">(</span><span class="n">READ</span><span class="p">),</span>
+        <span class="s1">&#39;OA&#39;</span>    <span class="p">:</span> <span class="n">offsets_sa</span><span class="p">(</span><span class="n">READ</span><span class="p">),</span>
+        <span class="s1">&#39;MASK&#39;</span>  <span class="p">:</span> <span class="n">A</span><span class="o">.</span><span class="n">prop_masks</span><span class="p">(</span><span class="n">WRITE</span><span class="p">)</span>
+    <span class="p">},</span>
+    <span class="n">shell_cutoff</span> <span class="o">=</span> <span class="n">max_move</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>As for the ParticleLoop, the PairLoop <code class="docutils literal notranslate"><span class="pre">exclude</span></code> can be executed with</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exclude</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">coulomb_kmc</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kmc_fmm.html">FMM-KMC Interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="example_general.html"><strong>propose_with_dats</strong></a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Bookkeeping</a></li>
+<li class="toctree-l1"><a class="reference internal" href="example_simple.html"><strong>propose</strong></a></li>
+<li class="toctree-l1"><a class="reference internal" href="example_accept.html"><strong>accept</strong></a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="development_guide.html">Development Guide</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="modules/coulomb_kmc.html">coulomb_kmc package</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="example_general.html" title="previous chapter"><strong>propose_with_dats</strong></a></li>
+      <li>Next: <a href="example_simple.html" title="next chapter"><strong>propose</strong></a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2019, William Saunders.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 3.2.1</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="_sources/example_bookkeeping.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

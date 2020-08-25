@@ -1,0 +1,239 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>coulomb_kmc.kmc_full_long_range module &#8212; coulomb_kmc 1 documentation</title>
+    <link rel="stylesheet" href="../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css" />
+    <script id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+    <script src="../_static/jquery.js"></script>
+    <script src="../_static/underscore.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <script src="../_static/language_data.js"></script>
+    <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="coulomb_kmc.kmc_inject_extract module" href="coulomb_kmc.kmc_inject_extract.html" />
+    <link rel="prev" title="coulomb_kmc.kmc_fmm_self_interaction module" href="coulomb_kmc.kmc_fmm_self_interaction.html" />
+   
+  <link rel="stylesheet" href="../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <div class="section" id="module-coulomb_kmc.kmc_full_long_range">
+<span id="coulomb-kmc-kmc-full-long-range-module"></span><h1>coulomb_kmc.kmc_full_long_range module<a class="headerlink" href="#module-coulomb_kmc.kmc_full_long_range" title="Permalink to this headline">¶</a></h1>
+<dl class="py class">
+<dt id="coulomb_kmc.kmc_full_long_range.FullLongRangeEnergy">
+<em class="property">class </em><code class="sig-prename descclassname">coulomb_kmc.kmc_full_long_range.</code><code class="sig-name descname">FullLongRangeEnergy</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">L</span></em>, <em class="sig-param"><span class="n">domain</span></em>, <em class="sig-param"><span class="n">local_exp_eval</span></em>, <em class="sig-param"><span class="n">mirror_direction</span><span class="o">=</span><span class="default_value">None</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_full_long_range.FullLongRangeEnergy" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="coulomb_kmc.common.html#coulomb_kmc.common.ProfInc" title="coulomb_kmc.common.ProfInc"><code class="xref py py-class docutils literal notranslate"><span class="pre">coulomb_kmc.common.ProfInc</span></code></a></p>
+<p>Class to apply the “far-field” operator R in <em>Fast electrostatic solvers for kinetic Monte Carlo simulations</em>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>L</strong> (<em>int</em>) – Number of expansion terms.</p></li>
+<li><p><strong>domain</strong> – domain to use.</p></li>
+<li><p><strong>local_exp_eval</strong> – LocalExpEval instance to use for expansion manipulation.</p></li>
+<li><p><strong>mirror_direction</strong> – Mirror direction tuple for Dirichlet boundary conditions (default None).</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_full_long_range.FullLongRangeEnergy.accept">
+<code class="sig-name descname">accept</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">movedata</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_full_long_range.FullLongRangeEnergy.accept" title="Permalink to this definition">¶</a></dt>
+<dd><p>Accept a move using the coulomb_kmc internal accepted move data structure.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>movedata</strong> – Move to accept.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_full_long_range.FullLongRangeEnergy.eval_field">
+<code class="sig-name descname">eval_field</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">points</span></em>, <em class="sig-param"><span class="n">out</span></em>, <em class="sig-param"><span class="n">use_c</span><span class="o">=</span><span class="default_value">True</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_full_long_range.FullLongRangeEnergy.eval_field" title="Permalink to this definition">¶</a></dt>
+<dd><p>Evaluate the far-field contribution to the potential field.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>points</strong> – Places to evaluate field.</p></li>
+<li><p><strong>out</strong> – Array to populate with the far-field contribution to the field.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_full_long_range.FullLongRangeEnergy.extract">
+<code class="sig-name descname">extract</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">movedata</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_full_long_range.FullLongRangeEnergy.extract" title="Permalink to this definition">¶</a></dt>
+<dd><p>Extract a charge using the coulomb_kmc internal accepted move data structure.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>movedata</strong> – Data for extraction.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_full_long_range.FullLongRangeEnergy.get_old_energy">
+<code class="sig-name descname">get_old_energy</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">num_particles</span></em>, <em class="sig-param"><span class="n">host_data</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_full_long_range.FullLongRangeEnergy.get_old_energy" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_full_long_range.FullLongRangeEnergy.initialise">
+<code class="sig-name descname">initialise</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">positions</span></em>, <em class="sig-param"><span class="n">charges</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_full_long_range.FullLongRangeEnergy.initialise" title="Permalink to this definition">¶</a></dt>
+<dd><p>Initialise the data structures K and E (see paper).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>positions</strong> – Initial positions of charges.</p></li>
+<li><p><strong>charges</strong> – Initial charge values.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_full_long_range.FullLongRangeEnergy.inject">
+<code class="sig-name descname">inject</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">movedata</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_full_long_range.FullLongRangeEnergy.inject" title="Permalink to this definition">¶</a></dt>
+<dd><p>Inject a charge using the coulomb_kmc internal accepted move data structure.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>movedata</strong> – Data for injection.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_full_long_range.FullLongRangeEnergy.propose">
+<code class="sig-name descname">propose</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">total_movs</span></em>, <em class="sig-param"><span class="n">num_particles</span></em>, <em class="sig-param"><span class="n">host_data</span></em>, <em class="sig-param"><span class="n">cuda_data</span></em>, <em class="sig-param"><span class="n">arr</span></em>, <em class="sig-param"><span class="n">use_python</span><span class="o">=</span><span class="default_value">False</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_full_long_range.FullLongRangeEnergy.propose" title="Permalink to this definition">¶</a></dt>
+<dd><p>Propose a move using the coulomb_kmc internal proposed move data structures.
+For details see <cite>coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.setup_propose_with_dats</cite>.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_full_long_range.FullLongRangeEnergy.py_propose">
+<code class="sig-name descname">py_propose</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">total_movs</span></em>, <em class="sig-param"><span class="n">num_particles</span></em>, <em class="sig-param"><span class="n">host_data</span></em>, <em class="sig-param"><span class="n">cuda_data</span></em>, <em class="sig-param"><span class="n">arr</span></em>, <em class="sig-param"><span class="n">use_python</span><span class="o">=</span><span class="default_value">True</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_full_long_range.FullLongRangeEnergy.py_propose" title="Permalink to this definition">¶</a></dt>
+<dd><p>Propose a move using the coulomb_kmc internal proposed move data structures.
+For details see <cite>coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.setup_propose_with_dats</cite>.</p>
+<p>Warning: uses Python and hence will be slow (for testing).</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../index.html">coulomb_kmc</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../kmc_fmm.html">FMM-KMC Interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_general.html"><strong>propose_with_dats</strong></a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_bookkeeping.html">Bookkeeping</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_simple.html"><strong>propose</strong></a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_accept.html"><strong>accept</strong></a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../development_guide.html">Development Guide</a></li>
+</ul>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="coulomb_kmc.html">coulomb_kmc package</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="coulomb_kmc.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.common.html">coulomb_kmc.common module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_direct.html">coulomb_kmc.kmc_direct module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_dirichlet_boundary.html">coulomb_kmc.kmc_dirichlet_boundary module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_expansion_tools.html">coulomb_kmc.kmc_expansion_tools module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_fmm.html">coulomb_kmc.kmc_fmm module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_fmm_common.html">coulomb_kmc.kmc_fmm_common module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_fmm_self_interaction.html">coulomb_kmc.kmc_fmm_self_interaction module</a></li>
+<li class="toctree-l3 current"><a class="current reference internal" href="#">coulomb_kmc.kmc_full_long_range module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_inject_extract.html">coulomb_kmc.kmc_inject_extract module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_local.html">coulomb_kmc.kmc_local module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_mpi_decomp.html">coulomb_kmc.kmc_mpi_decomp module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_octal.html">coulomb_kmc.kmc_octal module</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../index.html">Documentation overview</a><ul>
+  <li><a href="coulomb_kmc.html">coulomb_kmc package</a><ul>
+      <li>Previous: <a href="coulomb_kmc.kmc_fmm_self_interaction.html" title="previous chapter">coulomb_kmc.kmc_fmm_self_interaction module</a></li>
+      <li>Next: <a href="coulomb_kmc.kmc_inject_extract.html" title="next chapter">coulomb_kmc.kmc_inject_extract module</a></li>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2019, William Saunders.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 3.2.1</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="../_sources/modules/coulomb_kmc.kmc_full_long_range.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

@@ -1,0 +1,293 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>coulomb_kmc.kmc_mpi_decomp module &#8212; coulomb_kmc 1 documentation</title>
+    <link rel="stylesheet" href="../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css" />
+    <script id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+    <script src="../_static/jquery.js"></script>
+    <script src="../_static/underscore.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <script src="../_static/language_data.js"></script>
+    <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="coulomb_kmc.kmc_octal module" href="coulomb_kmc.kmc_octal.html" />
+    <link rel="prev" title="coulomb_kmc.kmc_local module" href="coulomb_kmc.kmc_local.html" />
+   
+  <link rel="stylesheet" href="../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <div class="section" id="module-coulomb_kmc.kmc_mpi_decomp">
+<span id="coulomb-kmc-kmc-mpi-decomp-module"></span><h1>coulomb_kmc.kmc_mpi_decomp module<a class="headerlink" href="#module-coulomb_kmc.kmc_mpi_decomp" title="Permalink to this headline">¶</a></h1>
+<dl class="py class">
+<dt id="coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp">
+<em class="property">class </em><code class="sig-prename descclassname">coulomb_kmc.kmc_mpi_decomp.</code><code class="sig-name descname">FMMMPIDecomp</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">fmm</span></em>, <em class="sig-param"><span class="n">max_move</span></em>, <em class="sig-param"><span class="n">boundary_condition</span></em>, <em class="sig-param"><span class="n">cuda</span><span class="o">=</span><span class="default_value">False</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="coulomb_kmc.kmc_fmm_common.html#coulomb_kmc.kmc_fmm_common.LocalOctalBase" title="coulomb_kmc.kmc_fmm_common.LocalOctalBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">coulomb_kmc.kmc_fmm_common.LocalOctalBase</span></code></a></p>
+<p>Class that handles the MPI decomposition and converts proposed moves into
+the internal representation expected by the classes that handle the direct
+and indirect interactions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fmm</strong> – FMM instance to use.</p></li>
+<li><p><strong>max_move</strong> (<em>float</em>) – Maximum distance of any hop.</p></li>
+<li><p><strong>boundary_condition</strong> – Boundary condition to use.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.free_win_ind">
+<code class="sig-name descname">free_win_ind</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.free_win_ind" title="Permalink to this definition">¶</a></dt>
+<dd><p>Free the MPI.Win for the global to local map for FMM cells.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.get_local_fmm_cell">
+<code class="sig-name descname">get_local_fmm_cell</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">idx</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.get_local_fmm_cell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Helper function that returns the local fmm cell linear index for a particle.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>idx</strong> – Local particle index.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.get_local_fmm_cell_array">
+<code class="sig-name descname">get_local_fmm_cell_array</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">ids</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.get_local_fmm_cell_array" title="Permalink to this definition">¶</a></dt>
+<dd><p>For each local id in an ctypes.c_int64 numpy array returns the linear local id in the local data 
+structure of fmm cells.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>ids</strong> – NumPy array (INT64) of local ids.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.get_win_ind">
+<code class="sig-name descname">get_win_ind</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.get_win_ind" title="Permalink to this definition">¶</a></dt>
+<dd><p>Create and return the MPI.Win for the global to local map for FMM cells.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.initialise">
+<code class="sig-name descname">initialise</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">positions</span></em>, <em class="sig-param"><span class="n">charges</span></em>, <em class="sig-param"><span class="n">fmm_cells</span></em>, <em class="sig-param"><span class="n">ids</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.initialise" title="Permalink to this definition">¶</a></dt>
+<dd><p>Initialise the data structures for the direct interactions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>positions</strong> – Initial positions of charges.</p></li>
+<li><p><strong>charges</strong> – Initial charge values.</p></li>
+<li><p><strong>fmm_cells</strong> – FMM cells of the input charges.</p></li>
+<li><p><strong>ids</strong> – Unique global ids of charges.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.setup_propose">
+<code class="sig-name descname">setup_propose</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">moves</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.setup_propose" title="Permalink to this definition">¶</a></dt>
+<dd><p>Converts a tuple of proposed moves into the internal data structure for
+proposed moves.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>moves</strong> – Proposed moves in tuple form. e.g. ((id, proposed_positions), …).</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.setup_propose_with_dats">
+<code class="sig-name descname">setup_propose_with_dats</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">site_max_counts</span></em>, <em class="sig-param"><span class="n">current_sites</span></em>, <em class="sig-param"><span class="n">prop_positions</span></em>, <em class="sig-param"><span class="n">prop_masks</span></em>, <em class="sig-param"><span class="n">prop_energy_diffs</span></em>, <em class="sig-param"><span class="n">prop_charges</span><span class="o">=</span><span class="default_value">None</span></em><span class="sig-paren">)</span><a class="headerlink" href="#coulomb_kmc.kmc_mpi_decomp.FMMMPIDecomp.setup_propose_with_dats" title="Permalink to this definition">¶</a></dt>
+<dd><p>Converts proposed moves passed with the <cite>propose_with_dats</cite> interface
+into the internal data structure for proposed moves that can be passed
+to the classes for direct and indirect interactions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>site_max_counts</strong> – ScalarArray, dtype=c_int64      Input</p></li>
+<li><p><strong>current_sites</strong> – ParticleDat, dtype=c_int64      Input</p></li>
+<li><p><strong>prop_positions</strong> – ParticleDat, dtype=c_double     Input</p></li>
+<li><p><strong>prop_masks</strong> – ParticleDat, dtype=c_int64      Input</p></li>
+<li><p><strong>prop_energy_diffs</strong> – ParticleDat, dtype=c_double     Output</p></li>
+<li><p><strong>prop_charges</strong> – ParticleDat, dtype=c_double     Input (optional)</p></li>
+</ul>
+</dd>
+</dl>
+<dl>
+<dt>Returns:</dt><dd><p>tuple – (<cite>total_moves</cite>, <cite>num_particles</cite>, <cite>host_data</cite>, <cite>cuda_data</cite>),
+where <cite>total_moves</cite> is the total number of proposed moves, 
+<cite>num_particles</cite> is the number of particles (charges) with proposed
+moves, <cite>host_data</cite> is the proposed move data on the host and
+<cite>cuda_data</cite> is the proposed move data on a CUDA device (if
+applicable).</p>
+<p>The <cite>host_data</cite> and <cite>cuda_data</cite> contain the following entries:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 29%" />
+<col style="width: 71%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><cite>rate_location</cite></p></td>
+<td><p>Storage location of change in energy value.</p></td>
+</tr>
+<tr class="row-even"><td><p><cite>new_positions</cite></p></td>
+<td><p>Proposed positions.</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>new_charges</cite></p></td>
+<td><p>Proposed charges.</p></td>
+</tr>
+<tr class="row-even"><td><p><cite>new_ids</cite></p></td>
+<td><p>Global ids of proposed moves.</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>new_fmm_cells</cite></p></td>
+<td><p>New FMM cell containing proposed move.</p></td>
+</tr>
+<tr class="row-even"><td><p><cite>new_shifted_positions</cite></p></td>
+<td><p>Proposed position shifted into halo region on sub-domain.</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>old_positions</cite></p></td>
+<td><p>Original position.</p></td>
+</tr>
+<tr class="row-even"><td><p><cite>old_charges</cite></p></td>
+<td><p>Original charge.</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>old_ids</cite></p></td>
+<td><p>Original global id.</p></td>
+</tr>
+<tr class="row-even"><td><p><cite>old_fmm_cells</cite></p></td>
+<td><p>Original FMM cell.</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>exclusive_sum</cite></p></td>
+<td><p>Used as a map from old positions to new positions.</p></td>
+</tr>
+</tbody>
+</table>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../index.html">coulomb_kmc</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../kmc_fmm.html">FMM-KMC Interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_general.html"><strong>propose_with_dats</strong></a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_bookkeeping.html">Bookkeeping</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_simple.html"><strong>propose</strong></a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_accept.html"><strong>accept</strong></a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../development_guide.html">Development Guide</a></li>
+</ul>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="coulomb_kmc.html">coulomb_kmc package</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="coulomb_kmc.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.common.html">coulomb_kmc.common module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_direct.html">coulomb_kmc.kmc_direct module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_dirichlet_boundary.html">coulomb_kmc.kmc_dirichlet_boundary module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_expansion_tools.html">coulomb_kmc.kmc_expansion_tools module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_fmm.html">coulomb_kmc.kmc_fmm module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_fmm_common.html">coulomb_kmc.kmc_fmm_common module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_fmm_self_interaction.html">coulomb_kmc.kmc_fmm_self_interaction module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_full_long_range.html">coulomb_kmc.kmc_full_long_range module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_inject_extract.html">coulomb_kmc.kmc_inject_extract module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_local.html">coulomb_kmc.kmc_local module</a></li>
+<li class="toctree-l3 current"><a class="current reference internal" href="#">coulomb_kmc.kmc_mpi_decomp module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coulomb_kmc.kmc_octal.html">coulomb_kmc.kmc_octal module</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../index.html">Documentation overview</a><ul>
+  <li><a href="coulomb_kmc.html">coulomb_kmc package</a><ul>
+      <li>Previous: <a href="coulomb_kmc.kmc_local.html" title="previous chapter">coulomb_kmc.kmc_local module</a></li>
+      <li>Next: <a href="coulomb_kmc.kmc_octal.html" title="next chapter">coulomb_kmc.kmc_octal module</a></li>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2019, William Saunders.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 3.2.1</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="../_sources/modules/coulomb_kmc.kmc_mpi_decomp.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

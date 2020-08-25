@@ -1,0 +1,182 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>propose_with_dats &#8212; coulomb_kmc 1 documentation</title>
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="_static/graphviz.css" />
+    <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/doctools.js"></script>
+    <script src="_static/language_data.js"></script>
+    <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Bookkeeping" href="example_bookkeeping.html" />
+    <link rel="prev" title="FMM-KMC Interface" href="kmc_fmm.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <div class="section" id="propose-with-dats">
+<h1><strong>propose_with_dats</strong><a class="headerlink" href="#propose-with-dats" title="Permalink to this headline">¶</a></h1>
+<p>This is a skeleton example based on <code class="docutils literal notranslate"><span class="pre">examples/propose_with_dats_example.py</span></code>, it is intended to provide the motivating ideas for <strong>propose_with_dats</strong>. For a executable script please use the example.</p>
+<p>First we create a state <code class="docutils literal notranslate"><span class="pre">A</span></code> with the <code class="docutils literal notranslate"><span class="pre">ParticleDats</span></code> and <code class="docutils literal notranslate"><span class="pre">ScalarArrays</span></code> required.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create a state &quot;A&quot;</span>
+
+<span class="n">A</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">State</span><span class="p">()</span>
+
+<span class="c1"># Set the number of particles</span>
+<span class="n">A</span><span class="o">.</span><span class="n">npart</span> <span class="o">=</span> <span class="n">N</span>
+
+<span class="c1"># Set the domain (must be cubic)</span>
+<span class="n">A</span><span class="o">.</span><span class="n">domain</span> <span class="o">=</span> <span class="n">domain</span><span class="o">.</span><span class="n">BaseDomainHalo</span><span class="p">(</span><span class="n">extent</span><span class="o">=</span><span class="p">(</span><span class="n">E</span><span class="p">,</span><span class="n">E</span><span class="p">,</span><span class="n">E</span><span class="p">))</span>
+<span class="c1"># set the boundary condition for the domain (note this does not</span>
+<span class="c1"># set the domain for the FMMKMC)</span>
+<span class="n">A</span><span class="o">.</span><span class="n">domain</span><span class="o">.</span><span class="n">boundary_condition</span> <span class="o">=</span> <span class="n">domain</span><span class="o">.</span><span class="n">BoundaryTypePeriodic</span><span class="p">()</span>
+
+<span class="c1"># Create a PositionDat for particle positions and a ParticleDat</span>
+<span class="c1"># for particle charge values</span>
+<span class="n">A</span><span class="o">.</span><span class="n">P</span> <span class="o">=</span> <span class="n">PositionDat</span><span class="p">(</span><span class="n">ncomp</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+<span class="n">A</span><span class="o">.</span><span class="n">Q</span> <span class="o">=</span> <span class="n">ParticleDat</span><span class="p">(</span><span class="n">ncomp</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="c1"># Create dats for other desired properties such as global id</span>
+<span class="n">A</span><span class="o">.</span><span class="n">GID</span> <span class="o">=</span> <span class="n">ParticleDat</span><span class="p">(</span><span class="n">ncomp</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">INT64</span><span class="p">)</span>
+
+<span class="c1"># ParticleDat for ``current_sites``</span>
+<span class="n">A</span><span class="o">.</span><span class="n">sites</span> <span class="o">=</span> <span class="n">ParticleDat</span><span class="p">(</span><span class="n">ncomp</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">INT64</span><span class="p">)</span>
+<span class="c1"># ParticleDat for ``prop_positions``</span>
+<span class="n">A</span><span class="o">.</span><span class="n">prop_positions</span> <span class="o">=</span> <span class="n">ParticleDat</span><span class="p">(</span><span class="n">ncomp</span><span class="o">=</span><span class="n">M</span><span class="o">*</span><span class="mi">3</span><span class="p">)</span>
+<span class="c1"># ParticleDat for ``prop_masks``</span>
+<span class="n">A</span><span class="o">.</span><span class="n">prop_masks</span> <span class="o">=</span> <span class="n">ParticleDat</span><span class="p">(</span><span class="n">ncomp</span><span class="o">=</span><span class="n">M</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">INT64</span><span class="p">)</span>
+<span class="c1"># ParticleDat for ``prop_energy_diffs``</span>
+<span class="n">A</span><span class="o">.</span><span class="n">prop_diffs</span> <span class="o">=</span> <span class="n">ParticleDat</span><span class="p">(</span><span class="n">ncomp</span><span class="o">=</span><span class="n">M</span><span class="p">)</span>
+
+<span class="c1"># ScalarArray that holds the number of moves per site type</span>
+<span class="c1"># this example uses a cubic lattice with one site type,</span>
+<span class="n">site_max_counts</span> <span class="o">=</span> <span class="n">ScalarArray</span><span class="p">(</span><span class="n">ncomp</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">INT64</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The charge properties should now be initialised. After particle positions and charges are set the <code class="docutils literal notranslate"><span class="pre">KMCFMM</span></code> instance can be created and initialised. The number of FMM levels <code class="docutils literal notranslate"><span class="pre">r</span></code> should be tuned for a particular machine and number of charges. The number of expansion terms <code class="docutils literal notranslate"><span class="pre">l</span></code> determines the accuracy of the method, e.g. <code class="docutils literal notranslate"><span class="pre">l=12</span></code> for ~4-5 significant figures.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># create KMCFMM instance</span>
+<span class="n">kmc_fmm</span> <span class="o">=</span> <span class="n">KMCFMM</span><span class="p">(</span><span class="n">positions</span><span class="o">=</span><span class="n">A</span><span class="o">.</span><span class="n">P</span><span class="p">,</span> <span class="n">charges</span><span class="o">=</span><span class="n">A</span><span class="o">.</span><span class="n">Q</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="n">A</span><span class="o">.</span><span class="n">domain</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="n">R</span><span class="p">,</span>
+<span class="n">l</span><span class="o">=</span><span class="n">L</span><span class="p">,</span> <span class="n">boundary_condition</span><span class="o">=</span><span class="s1">&#39;pbc&#39;</span><span class="p">,</span> <span class="n">max_move</span><span class="o">=</span><span class="n">max_move_dim</span><span class="p">)</span>
+
+<span class="c1"># initialise the KMCFMM instance</span>
+<span class="n">kmc_fmm</span><span class="o">.</span><span class="n">initialise</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>Algorithm 2 in  <em>Fast electrostatic solvers for kinetic Monte Carlo simulations</em> describes a sufficient method to populate the <code class="docutils literal notranslate"><span class="pre">prop_positions</span></code> and <code class="docutils literal notranslate"><span class="pre">prop_masks</span></code> ParticleDats.
+See the <a class="reference internal" href="example_bookkeeping.html#bookkeeping"><span class="std std-ref">Bookkeeping</span></a> section for more details. The <code class="docutils literal notranslate"><span class="pre">propose_with_dats_example.py</span></code> example contains an implementation of this algorithm. Note: this algorithm (and implementation) can be readily extended to only consider charges that are close to an accepted move, this reduces the number of redundant bookkeeping operations.
+After this bookkeeping is performed, the change in system energy for the set of all proposed moves is computed by the call to <code class="docutils literal notranslate"><span class="pre">propose_with_dats</span></code>.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">KMCFMM</span></code> implementation expects all proposed positions to be inside the simulation domain.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">kmc_fmm</span><span class="o">.</span><span class="n">propose_with_dats</span><span class="p">(</span><span class="n">site_max_counts</span><span class="p">,</span> <span class="n">A</span><span class="o">.</span><span class="n">sites</span><span class="p">,</span> <span class="n">A</span><span class="o">.</span><span class="n">prop_positions</span><span class="p">,</span>
+    <span class="n">A</span><span class="o">.</span><span class="n">prop_masks</span><span class="p">,</span> <span class="n">A</span><span class="o">.</span><span class="n">prop_diffs</span><span class="p">,</span> <span class="n">diff</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The computed energy difference are stored in the <code class="docutils literal notranslate"><span class="pre">A.prop_diffs</span></code> ParticleDat. By using a ParticleLoop or by using NumPy calls rates can be computed. Once a move is chosen to be accepted it should be passed to the <code class="docutils literal notranslate"><span class="pre">accept</span></code>  method of the <code class="docutils literal notranslate"><span class="pre">KMCFMM</span></code> instance. This call will update the <code class="docutils literal notranslate"><span class="pre">KMCFMM</span></code> instance and update the particle position in the PositionDat the <code class="docutils literal notranslate"><span class="pre">KMCFMM</span></code> instance was created with.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">accept</span></code> method is called with a tuple <code class="docutils literal notranslate"><span class="pre">(id,</span> <span class="pre">np.array((r_x,</span> <span class="pre">r_y,</span> <span class="pre">r_z)))</span></code> of local particle id and new position. By “local particle id” we require the local index of the particle to move on the owning MPI rank. In the provided example we use the <code class="docutils literal notranslate"><span class="pre">np.where</span></code> to locate a particle using its global id stored in <code class="docutils literal notranslate"><span class="pre">A.GID</span></code>.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">kmc_fmm</span><span class="o">.</span><span class="n">accept</span><span class="p">(</span><span class="n">move</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Only one MPI rank should call <code class="docutils literal notranslate"><span class="pre">accept</span></code> with a tuple, all other ranks should pass <code class="docutils literal notranslate"><span class="pre">None</span></code>.</p>
+</div>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">coulomb_kmc</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kmc_fmm.html">FMM-KMC Interface</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#"><strong>propose_with_dats</strong></a></li>
+<li class="toctree-l1"><a class="reference internal" href="example_bookkeeping.html">Bookkeeping</a></li>
+<li class="toctree-l1"><a class="reference internal" href="example_simple.html"><strong>propose</strong></a></li>
+<li class="toctree-l1"><a class="reference internal" href="example_accept.html"><strong>accept</strong></a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="development_guide.html">Development Guide</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="modules/coulomb_kmc.html">coulomb_kmc package</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="kmc_fmm.html" title="previous chapter">FMM-KMC Interface</a></li>
+      <li>Next: <a href="example_bookkeeping.html" title="next chapter">Bookkeeping</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2019, William Saunders.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 3.2.1</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="_sources/example_general.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

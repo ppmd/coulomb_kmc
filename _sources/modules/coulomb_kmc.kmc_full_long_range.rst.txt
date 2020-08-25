@@ -1,0 +1,7 @@
+coulomb\_kmc.kmc\_full\_long\_range module
+==========================================
+
+.. automodule:: coulomb_kmc.kmc_full_long_range
+   :members:
+   :undoc-members:
+   :show-inheritance:
