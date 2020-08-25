@@ -213,7 +213,7 @@ class FMMSelfInteraction:
 
                 const INT64 nprop = exclusive_sum[px+1] - exclusive_sum[px];
 
-                #pragma omp simd simdlen(8)
+                #pragma omp simd
                 for(INT64 movii=0 ; movii<nprop ; movii++){{
                     const INT64 movi = movii + exclusive_sum[px];
                     const REAL npx = new_positions[3*movi + 0];

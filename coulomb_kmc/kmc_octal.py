@@ -611,9 +611,9 @@ class LocalCellExpansions(LocalOctalBase):
                 }}
 
 // hopefully the intel compiler will not generate broken code at some point
-#ifndef __INTEL_COMPILER
-#pragma omp simd simdlen(BLOCK_SIZE)
-#endif
+//#ifndef __INTEL_COMPILER
+//#pragma omp simd simdlen(BLOCK_SIZE)
+//#endif
                 for(INT64 bix=0 ; bix<BLOCK_SIZE ; bix++){{
 
                     const INT64 idx = bdx*BLOCK_SIZE + bix;
